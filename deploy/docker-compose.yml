@@ -22,7 +22,7 @@ services:
       # Akaid Asistanı kaynak Markdown'ları (depoya girmez; sunucuya ayrıca yüklenir)
       - /opt/mezhep/kaynaklar:/kaynaklar:ro
     ports:
-      - "127.0.0.1:${WEB_PORT:-3200}:3000"
+      - "127.0.0.1:${WEB_PORT:-3400}:3000"
     deploy:
       resources:
         limits:

@@ -27,8 +27,8 @@ fi
 
 [ -f "$isaret" ] || exit 0
 if [ "$(docker inspect -f '{{.State.Running}}' vebides-nginx-1 2>/dev/null)" = true ] &&
-  docker exec vebides-nginx-1 test -x /docker-entrypoint.d/42-mezhep.sh; then
-  docker exec vebides-nginx-1 /docker-entrypoint.d/42-mezhep.sh
+  docker exec vebides-nginx-1 test -x /docker-entrypoint.d/46-mezhep.sh; then
+  docker exec vebides-nginx-1 /docker-entrypoint.d/46-mezhep.sh
   docker exec vebides-nginx-1 nginx -t -q && docker exec vebides-nginx-1 nginx -s reload
 fi
 rm -f "$isaret"

@@ -8,7 +8,7 @@ Uygulama (site + üye/yönetim paneli + API + Akaid Asistanı) tek bir Docker ka
 | Adres | https://mezhep.ihyadijital.com |
 | Sunucuda | `/opt/mezhep` (kod: `src/`, ayarlar: `.env`, asistan kaynakları: `kaynaklar/`, yedekler: `yedekler/`) |
 | Compose projesi | `mezhep` (kapsayıcı `mezhep-app-1`, birim `mezhep_veri` → `/data`) |
-| Uygulama portu | yalnızca `127.0.0.1:3200` |
+| Uygulama portu | yalnızca `127.0.0.1:3400` |
 | HTTPS | vebides nginx'i (80/443); site `vebides-nginx/` ile eklenir, vebides dosyaları değiştirilmez |
 
 ## İlk kurulum

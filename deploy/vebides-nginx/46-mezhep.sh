@@ -1,6 +1,6 @@
 #!/bin/sh
 # Mezhep.Org: vebides nginx kapsayıcısı her açılışta çalıştırır (compose.override.yml bağlar).
-# Elle: docker exec vebides-nginx-1 /docker-entrypoint.d/42-mezhep.sh && docker exec vebides-nginx-1 nginx -s reload
+# Elle: docker exec vebides-nginx-1 /docker-entrypoint.d/46-mezhep.sh && docker exec vebides-nginx-1 nginx -s reload
 # Siteyi yalnızca sertifikası varsa ve yapılandırma geçerliyse ekler; bu projedeki bir eksik ya da hata
 # vebides nginx'inin ve aynı nginx'teki diğer sitelerin (ykk vb.) açılmasını hiçbir zaman engellemez.
 set -u
