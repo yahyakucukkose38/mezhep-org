@@ -233,6 +233,158 @@
     });
   });
 
+  /* ---------- üyelik (yalnızca sunucu modunda: <meta name="mz-dynamic">) ---------- */
+  if ($('meta[name="mz-dynamic"]')) {
+    var apiCall = function (method, url, body) {
+      return fetch("/api" + url, {
+        method: method, credentials: "same-origin",
+        headers: { "x-mz": "1", "Content-Type": "application/json" },
+        body: body ? JSON.stringify(body) : undefined
+      }).then(function (r) { return r.json().then(function (j) { if (!r.ok) throw j; return j; }); });
+    };
+    var me = null, pending = null;
+    var acc = $("[data-account]");
+    var renderAccount = function () {
+      if (!acc) return;
+      if (!me) {
+        acc.innerHTML = '<a class="btn btn-ghost btn-sm acc-signup" href="/panel/#/kayit">Üye ol</a><a class="btn btn-primary btn-sm" href="/panel/#/giris">Giriş</a>';
+        return;
+      }
+      var n = pending ? pending.submissions + pending.users + pending.comments : 0;
+      acc.innerHTML = '<div class="acc-menu"><button class="acc-btn" type="button" aria-haspopup="true" aria-expanded="false"><span class="avatar">' +
+        esc(me.name.split(/\s+/).filter(Boolean).map(function (w) { return w[0]; }).slice(0, 2).join("").toUpperCase()) + "</span>" +
+        (n ? '<span class="acc-dot" aria-label="' + n + ' bekleyen iş">' + n + "</span>" : "") +
+        '</button><div class="acc-pop" role="menu"><div class="acc-head"><strong>' + esc(me.name) + "</strong><span>" + esc(me.email) + "</span></div>" +
+        '<a role="menuitem" href="/panel/">Üye panelim</a>' +
+        (me.role === "admin" ? '<a role="menuitem" href="/panel/#/yonetim">Yönetim paneli' + (n ? ' <span class="badge b-rose">' + n + "</span>" : "") + "</a>" : "") +
+        '<button role="menuitem" type="button" data-logout>Çıkış yap</button></div></div>';
+      var btn = $(".acc-btn", acc), pop = $(".acc-pop", acc);
+      btn.addEventListener("click", function (e) { e.stopPropagation(); var o = pop.classList.toggle("open"); btn.setAttribute("aria-expanded", o); });
+      document.addEventListener("click", function () { pop.classList.remove("open"); btn.setAttribute("aria-expanded", "false"); });
+      $("[data-logout]", acc).addEventListener("click", function () { apiCall("POST", "/auth/logout").then(function () { location.reload(); }); });
+    };
+
+    var fmtTime = function (s) { var d = new Date(String(s).replace(" ", "T") + "Z"); return isNaN(d) ? "" : d.toLocaleDateString("tr-TR", { day: "numeric", month: "long", year: "numeric" }); };
+    var paras = function (t) { return esc(t).split(/\n{2,}/).map(function (p) { return "<p>" + p.replace(/\n/g, "<br>") + "</p>"; }).join(""); };
+    var loadComments = function (box) {
+      var target = box.getAttribute("data-comments"), list = $("[data-comment-list]", box), form = $("[data-comment-form]", box);
+      apiCall("GET", "/comments?target=" + encodeURIComponent(target)).then(function (j) {
+        var rows = j.items.map(function (c) {
+          return '<div class="comment"><div class="post-head"><span class="avatar">' + esc(c.name.split(/\s+/).map(function (w) { return w[0]; }).slice(0, 2).join("")) +
+            "</span><div><strong>" + esc((c.title ? c.title + " " : "") + c.name) + "</strong><br>" + fmtTime(c.created_at) + '</div></div><div class="prose">' + paras(c.body) + "</div></div>";
+        }).concat(j.pending.map(function (c) {
+          return '<div class="comment is-pending"><div class="post-head"><span class="badge b-gold">Onay bekliyor</span> Yorumunuz yönetici onayından sonra herkese görünecek.</div><div class="prose">' + paras(c.body) + "</div></div>";
+        }));
+        list.innerHTML = rows.length ? rows.join("") : '<p class="muted">Henüz yorum yok. İlk yorumu siz yazın.</p>';
+      }).catch(function () { list.innerHTML = '<p class="muted">Yorumlar yüklenemedi.</p>'; });
+      if (!me) {
+        form.innerHTML = '<p class="muted">Yorum yazmak için <a href="/panel/#/giris">giriş yapın</a> ya da <a href="/panel/#/kayit">üye olun</a>.</p>';
+      } else if (me.status !== "active") {
+        form.innerHTML = '<p class="muted">Üyeliğiniz onaylandıktan sonra yorum yazabilirsiniz.</p>';
+      } else {
+        form.innerHTML = '<form class="comment-form"><label class="sr-only" for="yorum-' + esc(target) + '">Yorumunuz</label><textarea id="yorum-' + esc(target) +
+          '" rows="4" maxlength="3000" required placeholder="Yorumunuzu yazın…"></textarea><div class="comment-actions"><span class="muted">Yorumlar yönetici onayından sonra yayınlanır.</span><button class="btn btn-primary btn-sm" type="submit">Gönder</button></div></form>';
+        var f = $("form", form);
+        f.addEventListener("submit", function (e) {
+          e.preventDefault();
+          var ta = $("textarea", f), b = $("button", f);
+          b.disabled = true;
+          apiCall("POST", "/comments", { target: target, body: ta.value }).then(function () { ta.value = ""; loadComments(box); })
+            .catch(function (err) { alert((err && err.error) || "Yorum gönderilemedi."); })
+            .then(function () { b.disabled = false; });
+        });
+      }
+    };
+
+    /* ---- Akaid Asistanı (sağ alt) ---- */
+    var SUGGEST = ["Hudûs delili nedir?", "Mâtürîdî ile Eş'arî arasındaki farklar nelerdir?", "Kesb nazariyesi nedir?", "Allah'ın varlığının delilleri nelerdir?"];
+    var aiStore = { get: function () { try { return JSON.parse(sessionStorage.getItem("mz-asistan") || "[]"); } catch (e) { return []; } },
+      set: function (v) { try { sessionStorage.setItem("mz-asistan", JSON.stringify(v.slice(-20))); } catch (e) {} } };
+    var md = function (t) {
+      var blocks = esc(t).split(/\n{2,}/).map(function (b) {
+        var lines = b.split("\n");
+        if (lines.every(function (l) { return /^\s*([-*•]|\d+[.)])\s+/.test(l); })) {
+          return "<ul>" + lines.map(function (l) { return "<li>" + l.replace(/^\s*([-*•]|\d+[.)])\s+/, "") + "</li>"; }).join("") + "</ul>";
+        }
+        return "<p>" + b.replace(/\n/g, "<br>") + "</p>";
+      }).join("");
+      return blocks.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>").replace(/\[(\d{1,2})\]/g, '<sup class="cite">$1</sup>');
+    };
+    var setupAssistant = function (st) {
+      if (!st.enabled) return;
+      document.body.classList.add("has-assistant");
+      var fab = document.createElement("button");
+      fab.className = "ai-fab"; fab.type = "button"; fab.setAttribute("aria-haspopup", "dialog"); fab.setAttribute("aria-expanded", "false");
+      fab.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M8 9h8M8 13h5"/></svg><span>Akaid Asistanı</span>';
+      var box = document.createElement("section");
+      box.className = "ai-box"; box.setAttribute("role", "dialog"); box.setAttribute("aria-label", "Akaid Asistanı"); box.hidden = true;
+      box.innerHTML = '<header class="ai-head"><img src="/assets/img/logo.jpg" alt="" width="44" height="30"><div><strong>Akaid Asistanı</strong><span>Ehl-i Sünnet itikad kaynaklarından</span></div>' +
+        '<button type="button" class="ai-icon" data-new title="Yeni sohbet" aria-label="Yeni sohbet"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>' +
+        '<button type="button" class="ai-icon" data-close title="Kapat" aria-label="Kapat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button></header>' +
+        '<div class="ai-log" aria-live="polite"></div><div class="ai-foot"></div>';
+      document.body.appendChild(box); document.body.appendChild(fab);
+      var log = $(".ai-log", box), foot = $(".ai-foot", box), history = aiStore.get(), sending = false;
+
+      var bubble = function (m) {
+        if (m.role === "user") return '<div class="ai-msg me"><div class="ai-bubble">' + esc(m.content).replace(/\n/g, "<br>") + "</div></div>";
+        var src = (m.sources || []).length ? '<details class="ai-src"><summary>Kaynaklar (' + m.sources.length + ")</summary><ol>" +
+          m.sources.map(function (s) { return "<li value=\"" + s.n + '">' + esc(s.title) + (s.heading ? " <span>— " + esc(s.heading) + "</span>" : "") + "</li>"; }).join("") + "</ol></details>" : "";
+        return '<div class="ai-msg' + (m.error ? " err" : "") + '"><div class="ai-bubble prose">' + (m.error ? esc(m.content) : md(m.content)) + src + "</div></div>";
+      };
+      var draw = function () {
+        var intro = '<div class="ai-msg"><div class="ai-bubble prose"><p>Selâmün aleyküm! Ehl-i Sünnet (Mâtürîdî ve Eş\'arî) itikadına dair sorularınızı arşivdeki kaynaklara dayanarak yanıtlıyorum.</p>' +
+          '<p class="ai-note">Yanıtlar yapay zekâ ile derlenir ve hata içerebilir; önemli konularda kaynaklara ve hocalarımıza başvurun. Fetva verilmez.</p></div></div>';
+        var chips = !history.length && me && me.status === "active" ? '<div class="ai-chips">' + SUGGEST.map(function (q) { return '<button type="button" class="chip" data-q="' + esc(q) + '">' + esc(q) + "</button>"; }).join("") + "</div>" : "";
+        log.innerHTML = intro + chips + history.map(bubble).join("") + (sending ? '<div class="ai-msg"><div class="ai-bubble ai-typing"><span></span><span></span><span></span></div></div>' : "");
+        $$("[data-q]", log).forEach(function (b) { b.addEventListener("click", function () { send(b.getAttribute("data-q")); }); });
+        log.scrollTop = log.scrollHeight;
+      };
+      var drawFoot = function (remaining) {
+        if (!me) { foot.innerHTML = '<p class="ai-gate">Asistanı kullanmak için <a href="/panel/#/giris">giriş yapın</a> ya da <a href="/panel/#/kayit">üye olun</a>.</p>'; return; }
+        if (me.status !== "active") { foot.innerHTML = '<p class="ai-gate">Üyeliğiniz onaylandıktan sonra asistanı kullanabilirsiniz.</p>'; return; }
+        foot.innerHTML = '<form class="ai-form"><label class="sr-only" for="ai-in">Sorunuz</label><textarea id="ai-in" rows="1" maxlength="' + st.maxInputChars + '" placeholder="Sorunuzu yazın…"></textarea>' +
+          '<button class="ai-send" type="submit" aria-label="Gönder"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4z"/><path d="M22 2 11 13"/></svg></button></form>' +
+          '<div class="ai-meta" data-meta>' + (remaining ? "Bugün kalan: " + remaining.requests + " soru" : "") + "</div>";
+        var f = $("form", foot), ta = $("textarea", f);
+        ta.addEventListener("input", function () { ta.style.height = "auto"; ta.style.height = Math.min(ta.scrollHeight, 140) + "px"; });
+        ta.addEventListener("keydown", function (e) { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); f.requestSubmit(); } });
+        f.addEventListener("submit", function (e) { e.preventDefault(); send(ta.value); });
+      };
+      var send = function (text) {
+        text = String(text || "").trim();
+        if (!text || sending) return;
+        var past = history.filter(function (m) { return !m.error; }).map(function (m) { return { role: m.role, content: m.content }; }).slice(-12);
+        history.push({ role: "user", content: text }); sending = true; draw();
+        var ta = $("textarea", foot); if (ta) { ta.value = ""; ta.style.height = "auto"; ta.disabled = true; }
+        apiCall("POST", "/ai/chat", { message: text, history: past }).then(function (j) {
+          history.push({ role: "assistant", content: j.answer, sources: j.sources });
+          var meta = $("[data-meta]", foot); if (meta && j.remaining) meta.textContent = "Bugün kalan: " + j.remaining.requests + " soru";
+        }).catch(function (err) {
+          history.push({ role: "assistant", error: true, content: (err && err.error) || "Asistana ulaşılamadı. Lütfen tekrar deneyin." });
+        }).then(function () {
+          sending = false; aiStore.set(history); draw();
+          var t2 = $("textarea", foot); if (t2) { t2.disabled = false; t2.focus(); }
+        });
+      };
+      var open = function (on) {
+        box.hidden = !on; fab.setAttribute("aria-expanded", on); document.body.classList.toggle("ai-open", on);
+        if (on) { draw(); var t = $("textarea", foot); (t || $("[data-close]", box)).focus(); } else fab.focus();
+      };
+      fab.addEventListener("click", function () { open(box.hidden); });
+      $("[data-close]", box).addEventListener("click", function () { open(false); });
+      $("[data-new]", box).addEventListener("click", function () { history = []; aiStore.set(history); draw(); });
+      box.addEventListener("keydown", function (e) { if (e.key === "Escape") open(false); });
+      drawFoot(st.remaining);
+    };
+
+    apiCall("GET", "/me").then(function (j) { me = j.user; pending = j.pending || null; })
+      .catch(function () {})
+      .then(function () {
+        renderAccount(); $$("[data-comments]").forEach(loadComments);
+        apiCall("GET", "/ai/status").then(setupAssistant).catch(function () {});
+      });
+  }
+
   /* ---------- galeri ışık kutusu ---------- */
   var gal = $("[data-gallery]"), lb = $(".lightbox");
   if (gal && lb) {

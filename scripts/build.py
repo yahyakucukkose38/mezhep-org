@@ -3,13 +3,25 @@
 Kullanım:  python scripts/build.py
 data/*.json dosyalarını okur ve sitenin tüm HTML sayfalarını proje köküne yazar.
 Veriyi güncellemek için JSON dosyalarını düzenleyip betiği yeniden çalıştırmanız yeterlidir.
+
+Sunucu (server/) aynı betiği ortam değişkenleriyle çağırır:
+  MZ_DATA      JSON klasörü (varsayılan: data/)
+  MZ_OUT       çıktı klasörü (varsayılan: proje kökü)
+  MZ_DYNAMIC=1 üyelik özellikleri: giriş düğmesi, yorumlar, düzeltme önerisi bağlantıları
+  MZ_MEDIA_DIR / MZ_UPLOAD_DIR  media/ ve uploads/ yollarının diskteki yeri (dosya var mı denetimi için)
 """
 import json, os, re, html, random, unicodedata
 from collections import Counter, defaultdict
 from datetime import date
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DATA = os.path.join(ROOT, "data")
+PROJECT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT = os.environ.get("MZ_OUT") or PROJECT
+DATA = os.environ.get("MZ_DATA") or os.path.join(PROJECT, "data")
+DYNAMIC = os.environ.get("MZ_DYNAMIC") == "1"
+FILE_ROOTS = {"media/": os.environ.get("MZ_MEDIA_DIR") or os.path.join(ROOT, "media"),
+              "uploads/": os.environ.get("MZ_UPLOAD_DIR") or os.path.join(ROOT, "uploads")}
+# Sayfalardaki tek satır içi betik; sunucu CSP'si bunun özetine izin verir (server/src/index.js THEME_SCRIPT).
+THEME_SCRIPT = 'document.documentElement.className="js";try{var t=localStorage.getItem("mz-theme");if(t)document.documentElement.dataset.theme=t}catch(e){}'
 SITE = "Mezhep.Org"
 SITE_URL = os.environ.get("MZ_SITE_URL", "https://mezhep.ihyadijital.com/")
 TODAY = date.today()
@@ -23,7 +35,11 @@ def load(name):
 members, works, topics = load("members"), load("works"), load("topics")
 links, files, albums, pages = load("links"), load("files"), load("albums"), load("pages")
 E = lambda s: html.escape(str(s or ""), quote=True)
-exists = lambda p: os.path.exists(os.path.join(ROOT, *p.split("/")))
+def exists(p):
+    for prefix, base in FILE_ROOTS.items():
+        if p.startswith(prefix):
+            return os.path.exists(os.path.join(base, *p[len(prefix):].split("/")))
+    return os.path.exists(os.path.join(ROOT, *p.split("/")))
 AYLAR = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"]
 AY_KISA = ["Oca", "Şub", "Mar", "Nis", "May", "Haz", "Tem", "Ağu", "Eyl", "Eki", "Kas", "Ara"]
 
@@ -137,7 +153,7 @@ def layout(path, title, body, desc="", active="", data=None):
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=Fraunces:ital,opsz,wght@0,9..144,400..700;1,9..144,400..600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="{r}assets/css/style.css">
-<script>document.documentElement.className="js";try{{var t=localStorage.getItem("mz-theme");if(t)document.documentElement.dataset.theme=t}}catch(e){{}}</script>
+<script>{THEME_SCRIPT}</script>{'<meta name="mz-dynamic" content="1">' if DYNAMIC else ""}
 </head>
 <body data-root="{r}">
 <a class="skip" href="#main">İçeriğe geç</a>
@@ -148,6 +164,7 @@ def layout(path, title, body, desc="", active="", data=None):
     <div class="header-actions">
       <button class="search-trigger" data-open-search type="button" aria-label="Sitede ara">{ic("search")}<span>Sitede ara…</span><kbd>Ctrl K</kbd></button>
       <button class="icon-btn theme-toggle" type="button" aria-label="Temayı değiştir">{ic("moon", "moon")}{ic("sun", "sun")}</button>
+      {'<div class="account" data-account><a class="btn btn-primary btn-sm" href="/panel/#/giris">Giriş</a></div>' if DYNAMIC else ""}
       <button class="icon-btn menu-btn" type="button" aria-label="Menüyü aç" aria-expanded="false">{ic("menu")}</button>
     </div>
   </div>
@@ -165,7 +182,7 @@ def layout(path, title, body, desc="", active="", data=None):
       </div>
       <div><h4>Keşfet</h4><ul><li><a href="{r}akademisyenler.html">Akademisyenler</a></li><li><a href="{r}eserler.html">Eserler</a></li><li><a href="{r}eserler.html#tur=Doktora">Doktora Tezleri</a></li><li><a href="{r}eserler.html#tur=Yüksek Lisans">Yüksek Lisans Tezleri</a></li></ul></div>
       <div><h4>Güncel</h4><ul><li><a href="{r}haberler.html">Haberler</a></li><li><a href="{r}etkinlikler.html">Etkinlikler</a></li><li><a href="{r}galeri.html">Fotoğraf Galerisi</a></li><li><a href="{r}kaynaklar.html">Kaynaklar</a></li></ul></div>
-      <div><h4>Site</h4><ul><li><a href="{r}hakkinda.html">Hakkında</a></li><li><a href="{r}hakkinda.html#sss">Sık Sorulanlar</a></li><li><a href="{r}hakkinda.html#kosullar">Kullanım Koşulları</a></li><li><a href="{r}hakkinda.html#iletisim">İletişim</a></li></ul></div>
+      <div><h4>Site</h4><ul><li><a href="{r}hakkinda.html">Hakkında</a></li><li><a href="{r}hakkinda.html#sss">Sık Sorulanlar</a></li><li><a href="{r}hakkinda.html#kosullar">Kullanım Koşulları</a></li><li><a href="{r}hakkinda.html#iletisim">İletişim</a></li>{'<li><a href="/panel/#/kayit">Üye ol</a></li><li><a href="/panel/">Üye paneli</a></li>' if DYNAMIC else ""}</ul></div>
     </div>
     <div class="footer-bottom"><span>© 2006–{TODAY.year} Mezhep.Org · Tüm hakları saklıdır.</span><span>Ahmet İshak DEMİR adına</span></div>
   </div>
@@ -189,12 +206,26 @@ def layout(path, title, body, desc="", active="", data=None):
         f.write(doc)
 
 
-def page_hero(title, lead="", crumbs=(), eyebrow=""):
+def dyn_button(href, label, icon="star", primary=False):
+    """Yalnızca sunucu (üyelik) modunda görünen panel bağlantısı."""
+    if not DYNAMIC:
+        return ""
+    return '<a class="btn %s btn-sm" href="/panel/#/%s" data-needs-login>%s %s</a>' % ("btn-primary" if primary else "btn-ghost", href, ic(icon), E(label))
+
+
+def comments_block(target):
+    if not DYNAMIC:
+        return ""
+    return ('<section class="panel comments" id="yorumlar" data-comments="%s"><h3>Yorumlar</h3>'
+            '<div data-comment-list><p class="muted">Yorumlar yükleniyor…</p></div><div data-comment-form></div></section>' % target)
+
+
+def page_hero(title, lead="", crumbs=(), eyebrow="", actions=""):
     cr = ""
     if crumbs:
         cr = '<nav class="crumbs" aria-label="Konum">' + ic("chev").join(
             '<a href="{ROOT}%s">%s</a>' % (h, E(t)) if h else "<span>%s</span>" % E(t) for h, t in crumbs) + "</nav>"
-    return f'''<section class="page-hero">{PATTERN}<div class="container">{cr}{('<div class="eyebrow">%s</div>' % E(eyebrow)) if eyebrow else ""}<h1>{E(title)}</h1>{('<p>%s</p>' % lead) if lead else ""}</div></section>'''
+    return f'''<section class="page-hero">{PATTERN}<div class="container">{cr}{('<div class="eyebrow">%s</div>' % E(eyebrow)) if eyebrow else ""}<h1>{E(title)}</h1>{('<p>%s</p>' % lead) if lead else ""}{('<div class="hero-actions" style="margin-top:20px">%s</div>' % actions) if actions else ""}</div></section>'''
 
 
 # ---------------------------------------------------------------- veri hazırlığı
@@ -262,7 +293,7 @@ for t in topics:
     for p in t["posts"]:
         p["html"] = drop_missing(p["html"])
     img = (t.get("image") or "").replace("{ROOT}", "")
-    t["image"] = img if img.startswith("media/") and exists(img) else ""
+    t["image"] = img if img.startswith(("media/", "uploads/")) and exists(img) else ""
     t["sort"] = parse_date(t.get("date", ""))
 news = sorted([t for t in topics if t["forum"] == "haber"], key=lambda t: (t["sort"], t["id"]), reverse=True)
 events = sorted([t for t in topics if t["forum"] == "etkinlik"], key=lambda t: (t["sort"], t["id"]), reverse=True)
@@ -270,7 +301,7 @@ others = [t for t in topics if t["forum"] not in ("haber", "etkinlik")]
 
 COORD = [(1, "Ankara", 2007), (2, "Elazığ", 2010), (3, "Isparta", 2012), (4, "Çorum", 2013), (5, "Sivas", 2014),
          (6, "Konya", 2015), (7, "Antalya", 2019), (8, "Rize", 2023), (9, "İstanbul", 2025)]
-if os.path.isdir(os.path.join(ROOT, "media")):
+if os.path.isdir(FILE_ROOTS["media/"]):
     # sunucuda bulunmayan (indirilemeyen) fotoğrafları ayıkla, tam boyu yoksa küçük resmi kullan
     for a in albums:
         a["photos"] = [dict(p, src=p["src"] if exists(p["src"]) else p["thumb"]) for p in a["photos"] if exists(p["thumb"])]
@@ -400,7 +431,8 @@ def build_members():
     unis = sorted({m["university"] for m in members if m["university"]}, key=fold)
     opts = '<option value="">Tüm üniversiteler</option>' + "".join('<option>%s</option>' % E(u) for u in unis)
     data = [dict(id=m["id"], n=m["name"], t=m["title"], u=m["university"], c=m["city"], f=m["filter"], s=m["slug"], w=len(by_member_works[m["id"]]), p=m.get("photo", "")) for m in members]
-    body = page_hero("Akademisyenler", "İslam Mezhepleri Tarihi alanındaki öğretim elemanları, araştırmacılar ve rahmetle andığımız hocalarımız. Tashih ve eklemelerinizi bekliyoruz.", [("index.html", "Ana Sayfa"), ("", "Akademisyenler")], "%d kişi · %d üniversite" % (len(members), len(unis)))
+    body = page_hero("Akademisyenler", "İslam Mezhepleri Tarihi alanındaki öğretim elemanları, araştırmacılar ve rahmetle andığımız hocalarımız. Tashih ve eklemelerinizi bekliyoruz.", [("index.html", "Ana Sayfa"), ("", "Akademisyenler")], "%d kişi · %d üniversite" % (len(members), len(unis)),
+                     dyn_button("oneri/member", "Eksik akademisyeni ekleyin", "users"))
     body += f'''
 <div class="toolbar"><div class="container">
   <div class="row"><label class="input">{ic("search")}<input type="search" data-q placeholder="İsim, üniversite veya şehir ara…" aria-label="Akademisyen ara"></label>
@@ -436,7 +468,7 @@ def build_members():
     {news_html}
     {"" if (bio or ws or rel) else '<div class="panel empty">Bu akademisyen için henüz özgeçmiş veya eser bilgisi eklenmemiş. Katkıda bulunmak için <a href="{ROOT}hakkinda.html#iletisim">bize ulaşın</a>.</div>'}
   </div>
-  <aside><div class="panel"><h3>Bilgiler</h3><dl class="dl">{info}</dl></div><a class="btn btn-ghost" href="{{ROOT}}akademisyenler.html">{ic("left")} Tüm akademisyenler</a></aside>
+  <aside><div class="panel"><h3>Bilgiler</h3><dl class="dl">{info}</dl></div>{dyn_button("sahiplen/%d" % m["id"], "Bu profil benim", "users", True)}{dyn_button("oneri/member/%d" % m["id"], "Düzeltme öner", "copy")}<a class="btn btn-ghost" href="{{ROOT}}akademisyenler.html">{ic("left")} Tüm akademisyenler</a></aside>
 </div>'''
         layout(m["slug"], m["name"], body, "%s — %s" % (m["display"], m["university"]), "akademisyenler.html")
 
@@ -463,7 +495,8 @@ def build_works():
     sopts = '<option value="new">En yeni</option><option value="old">En eski</option><option value="az">Başlık (A–Z)</option><option value="pop">En çok okunan</option>'
     data = [dict(id=w["id"], t=w["title"], a=w["author"], k=w["kind"], y=w["year"], i=w["institution"], p=w["place"], h=w["hits"], s=w["slug"],
                  d=w["contributor"], x=1 if (w["ozet"] or w["abstract"]) else 0) for w in works]
-    body = page_hero("Eserler", "İslam Mezhepleri ile ilgili akademik çalışmalar: tezler, kitaplar, makaleler ve tebliğler. Amacımız Mezhepler Tarihi çalışmalarını eksiksiz ve özetleriyle birlikte derlemek.", [("index.html", "Ana Sayfa"), ("", "Eserler")], "%d eser · %d tez" % (len(works), STATS["theses"]))
+    body = page_hero("Eserler", "İslam Mezhepleri ile ilgili akademik çalışmalar: tezler, kitaplar, makaleler ve tebliğler. Amacımız Mezhepler Tarihi çalışmalarını eksiksiz ve özetleriyle birlikte derlemek.", [("index.html", "Ana Sayfa"), ("", "Eserler")], "%d eser · %d tez" % (len(works), STATS["theses"]),
+                     dyn_button("oneri/work", "Eser ekleyin", "book", True))
     body += f'''
 <div class="toolbar"><div class="container">
   <div class="row"><label class="input">{ic("search")}<input type="search" data-q placeholder="Başlık, yazar, danışman veya kurum ara…" aria-label="Eser ara"></label>
@@ -500,9 +533,10 @@ def build_works():
   <div>
     <div class="panel">{tabs}</div>
     <div class="panel"><h3>Kaynak gösterimi</h3><p style="margin:0 0 14px;color:var(--ink-2)" data-cite>{E(cite(w))}</p><button class="btn btn-ghost btn-sm" type="button" data-copy>{ic("copy")} Kopyala</button></div>
+    {comments_block("work:%d" % w["id"])}
     <div class="panel"><h3>Benzer eserler</h3><div class="feed" style="margin-top:14px">{"".join(work_item(x) for x in similar[:4])}</div></div>
   </div>
-  <aside><div class="panel"><h3>Künye</h3><dl class="dl">{info}</dl></div>{btn}<a class="btn btn-ghost" href="{{ROOT}}eserler.html">{ic("left")} Tüm eserler</a></aside>
+  <aside><div class="panel"><h3>Künye</h3><dl class="dl">{info}</dl></div>{btn}{dyn_button("oneri/work/%d" % w["id"], "Düzeltme öner", "copy")}<a class="btn btn-ghost" href="{{ROOT}}eserler.html">{ic("left")} Tüm eserler</a></aside>
 </div>'''
         layout(w["slug"], w["title"], body, strip_tags(w["ozet"] or w["abstract"])[:160] or "%s — %s" % (w["title"], w["author"]), "eserler.html")
 
@@ -516,7 +550,8 @@ def build_news():
     years = sorted({t["sort"][0] for t in news if t["sort"][0]}, reverse=True)
     yopts = '<option value="">Tüm yıllar</option>' + "".join("<option>%d</option>" % y for y in years)
     data = [dict(id=t["id"], t=t["title"], g=t["tag"], d=t.get("date", ""), y=t["sort"][0], m=t.get("summary", "")[:200], s=t["slug"], i=(t.get("image") or "").replace("{ROOT}", "")) for t in news]
-    body = page_hero("Haberler", "Bilim dalımızdan yeni doktorlar, doçentlik ve profesörlük unvanları, atamalar, vefat haberleri ve duyurular.", [("index.html", "Ana Sayfa"), ("", "Haberler")], "%d haber" % len(news))
+    body = page_hero("Haberler", "Bilim dalımızdan yeni doktorlar, doçentlik ve profesörlük unvanları, atamalar, vefat haberleri ve duyurular.", [("index.html", "Ana Sayfa"), ("", "Haberler")], "%d haber" % len(news),
+                     dyn_button("oneri/topic", "Haber gönderin", "news", True))
     body += f'''
 <div class="toolbar"><div class="container">
   <div class="row"><label class="input">{ic("search")}<input type="search" data-q placeholder="Haberlerde ara…" aria-label="Haber ara"></label><select class="select" data-filter-select="year" aria-label="Yıl">{yopts}</select></div>
@@ -545,7 +580,7 @@ def build_news():
         info = "".join(f"<dt>{k}</dt><dd>{v}</dd>" for k, v in [("Kategori", E(t["tag"])), ("Tarih", tr_date(t.get("date"))), ("Yazan", E(t.get("author"))), ("Mesaj", len(t["posts"]) if len(t["posts"]) > 1 else "")] if v)
         body = page_hero(t["title"], "", [("index.html", "Ana Sayfa"), (href, label), ("", t["tag"])], tr_date(t.get("date")))
         body += f'''<div class="container detail">
-  <div><article class="panel">{posts}</article>{('<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(240px,1fr));margin-top:18px">%s</div>' % nav) if nav else ""}</div>
+  <div><article class="panel">{posts}</article>{comments_block("topic:%d" % t["id"])}{('<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(240px,1fr));margin-top:18px">%s</div>' % nav) if nav else ""}</div>
   <aside><div class="panel"><h3>Ayrıntılar</h3><dl class="dl">{info}</dl></div><div class="panel"><h3>Diğer {label.lower()}</h3><div class="feed" style="margin-top:12px">{"".join(feed_topic(x) for x in more)}</div></div><a class="btn btn-ghost" href="{{ROOT}}{href}">{ic("left")} {label}</a></aside>
 </div>'''
         layout(t["slug"], t["title"], body, t.get("summary", "")[:160], href)
@@ -666,9 +701,25 @@ def build_index():
     idx += [["e", w["title"], "%s · %s%s" % (w["kind"], w["author"], (" · %d" % w["year"]) if w["year"] else ""), w["slug"]] for w in works]
     idx += [["h", t["title"], "%s · %s" % (t["tag"], tr_date(t.get("date"))), t["slug"]] for t in sorted(topics, key=lambda t: t["sort"], reverse=True)]
     idx += [["g", "%s — %s" % (a["event"], a["name"]), "%d fotoğraf" % len(a["photos"]), a["slug"]] for a in albums]
+    os.makedirs(os.path.join(ROOT, "assets", "js"), exist_ok=True)
     with open(os.path.join(ROOT, "assets", "js", "search-index.js"), "w", encoding="utf-8") as f:
         f.write("window.MZ_INDEX=" + json.dumps(idx, ensure_ascii=False, separators=(",", ":")) + ";")
 
 
-build_home(); build_members(); build_works(); build_news(); build_events(); build_gallery(); build_resources(); build_about(); build_index()
+def build_404():
+    # Sunucu her derinlikten bu sayfayı döndürür; göreli yollar yerine kök yolları kullanılır.
+    body = f'''<section class="page-hero">{PATTERN}<div class="container" style="text-align:center;padding:40px 0">
+<div class="eyebrow">404</div><h1>Aradığınız sayfa bulunamadı</h1><p style="margin:0 auto">Sayfa taşınmış ya da kaldırılmış olabilir. Ana sayfadan devam edebilir ya da sitede arama yapabilirsiniz.</p>
+<div class="hero-actions" style="justify-content:center;margin-top:24px"><a class="btn btn-primary" href="/index.html">Ana sayfa</a><button class="btn btn-ghost" type="button" data-open-search>{ic("search")} Sitede ara</button></div></div></section>'''
+    layout("404.html", "Sayfa bulunamadı", body)
+    p = os.path.join(ROOT, "404.html")
+    with open(p, encoding="utf-8") as f:
+        doc = f.read()
+    doc = doc.replace('href="assets/', 'href="/assets/').replace('src="assets/', 'src="/assets/').replace('data-root=""', 'data-root="/"')
+    doc = re.sub(r'href="(?!https?:|/|#|mailto:)([^"]+\.html[^"]*)"', r'href="/\1"', doc)
+    with open(p, "w", encoding="utf-8") as f:
+        f.write(doc)
+
+
+build_home(); build_members(); build_works(); build_news(); build_events(); build_gallery(); build_resources(); build_about(); build_index(); build_404()
 print("Tamam:", STATS)

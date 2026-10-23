@@ -1,0 +1,5 @@
+# yerel sunucu verisi (veritabanı, yüklemeler, üretilmiş site) ve bağımlılıklar
+.yerel/
+server/node_modules/
+deploy/.env
+*.log

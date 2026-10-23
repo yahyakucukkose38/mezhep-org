@@ -1,0 +1,32 @@
+# Mezhep.Org — sunucuda /opt/mezhep/src/deploy içinde:  docker compose --env-file /opt/mezhep/.env up -d --build
+# Uygulama yalnızca 127.0.0.1:${WEB_PORT}'te açılır; internete HTTPS ile vebides nginx'i çıkarır (deploy/vebides-nginx).
+# Veritabanı, yüklenen dosyalar, kaynak indeksi ve üretilmiş site "veri" biriminde (/data) kalıcıdır.
+name: mezhep
+
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: mezhep-uygulama:latest
+    restart: unless-stopped
+    env_file: /opt/mezhep/.env
+    environment:
+      MZ_DATA_DIR: /data
+      PUBLIC_ORIGIN: https://${ALAN_ADI}
+      MZ_SITE_URL: https://${ALAN_ADI}/
+      COOKIE_SECURE: "true"
+      TRUST_PROXY: loopback, uniquelocal
+    volumes:
+      - veri:/data
+      # Akaid Asistanı kaynak Markdown'ları (depoya girmez; sunucuya ayrıca yüklenir)
+      - /opt/mezhep/kaynaklar:/kaynaklar:ro
+    ports:
+      - "127.0.0.1:${WEB_PORT:-3200}:3000"
+    deploy:
+      resources:
+        limits:
+          memory: 768m
+
+volumes:
+  veri:

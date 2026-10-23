@@ -1,0 +1,14 @@
+.git
+.yerel
+.yerel-sunucu.log
+server/node_modules
+deploy/.env
+# statik sürümün (GitHub Pages) üretilmiş sayfaları; sunucu siteyi kendi üretir
+*.html
+akademisyen
+eser
+haber
+galeri
+assets/js/search-index.js
+CNAME
+.nojekyll

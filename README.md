@@ -48,6 +48,26 @@ python scripts/media.py  .
 python scripts/build.py
 ```
 
+## Üyelik, yönetim paneli ve Akaid Asistanı (sunucu sürümü)
+
+`server/` klasörü sitenin dinamik sürümüdür: üyelik (kayıt, giriş, yönetici onayı), üyelerin eser ekleme /
+düzeltme önerisi / haber gönderme / profil sahiplenme / yorum yazma akışları, yönetici onay kuyruğu, içerik
+düzenleme, üye yönetimi ve sağ alttaki **Akaid Asistanı** (OpenAI `gpt-6-luna`, Ehl-i Sünnet itikad kaynakları).
+Onaylanan her değişiklikten sonra site `scripts/build.py` ile birkaç saniyede yeniden üretilir.
+
+Yerelde çalıştırma:
+
+```
+cd server
+npm install
+MZ_ADMIN_EMAIL=siz@ornek.com npm start          # http://localhost:3000, panel: /panel/
+npm run kaynak -- "<akaid markdown klasörü>"    # asistan kaynak indeksi (isteğe bağlı)
+npm test                                        # 31 uçtan uca test
+```
+
+Asistan için `OPENAI_API_KEY` ortam değişkeni gerekir (yalnızca sunucuda; bkz. `deploy/.env.example`).
+Sunucuya yayın: [deploy/README.md](deploy/README.md).
+
 ## Notlar
 
 - Bağlantılar bölümündeki sitelerin gerçek adresleri ve "indir" bölümündeki 2 dosya (transkripsiyon yazı tipleri)

@@ -1,0 +1,22 @@
+{
+  "name": "mezhep-sunucu",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Mezhep.Org üyelik, yönetim paneli ve API sunucusu",
+  "main": "src/index.js",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning src/index.js",
+    "dev": "node --disable-warning=ExperimentalWarning --watch src/index.js",
+    "test": "node --disable-warning=ExperimentalWarning --test \"test/*.test.js\"",
+    "yonetici": "node --disable-warning=ExperimentalWarning src/cli.js",
+    "kaynak": "node --disable-warning=ExperimentalWarning src/ai/corpus.js"
+  },
+  "dependencies": {
+    "express": "^5.3.0",
+    "multer": "^2.5.0",
+    "sanitize-html": "^2.18.1"
+  }
+}
