@@ -1,0 +1,670 @@
+"""Mezhep.Org statik site üreteci.
+
+Kullanım:  python scripts/build.py
+data/*.json dosyalarını okur ve sitenin tüm HTML sayfalarını proje köküne yazar.
+Veriyi güncellemek için JSON dosyalarını düzenleyip betiği yeniden çalıştırmanız yeterlidir.
+"""
+import json, os, re, html, random, unicodedata
+from collections import Counter, defaultdict
+from datetime import date
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DATA = os.path.join(ROOT, "data")
+SITE = "Mezhep.Org"
+TODAY = date.today()
+
+
+def load(name):
+    with open(os.path.join(DATA, name + ".json"), encoding="utf-8") as f:
+        return json.load(f)
+
+
+members, works, topics = load("members"), load("works"), load("topics")
+links, files, albums, pages = load("links"), load("files"), load("albums"), load("pages")
+E = lambda s: html.escape(str(s or ""), quote=True)
+exists = lambda p: os.path.exists(os.path.join(ROOT, *p.split("/")))
+AYLAR = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"]
+AY_KISA = ["Oca", "Şub", "Mar", "Nis", "May", "Haz", "Tem", "Ağu", "Eyl", "Eki", "Kas", "Ara"]
+
+
+def fold(s):
+    s = (s or "").replace("İ", "i").replace("I", "ı").lower()
+    s = s.replace("ı", "i")
+    s = unicodedata.normalize("NFKD", s)
+    return re.sub(r"\s+", " ", "".join(c for c in s if not unicodedata.combining(c))).strip()
+
+
+def parse_date(d):
+    m = re.match(r"(\d{1,2})\.(\d{1,2})\.(\d{4})", d or "")
+    return (int(m.group(3)), int(m.group(2)), int(m.group(1))) if m else (0, 0, 0)
+
+
+def tr_date(d, short=False):
+    y, m, g = parse_date(d)
+    if not y: return ""
+    return "%d %s %d" % (g, (AY_KISA if short else AYLAR)[m - 1], y)
+
+
+def initials(name):
+    p = [w for w in re.split(r"\s+", name or "") if w and w[0].isalpha()]
+    return (p[0][0] + (p[-1][0] if len(p) > 1 else "")).upper() if p else "?"
+
+
+def avatar(m, cls=""):
+    inner = '<img src="{ROOT}%s" alt="" loading="lazy">' % E(m["photo"]) if m.get("photo") else initials(m["name"])
+    return '<span class="avatar %s">%s</span>' % (cls, inner)
+
+
+def drop_missing(h):
+    """Eski sunucuda bulunmayan yerel medya dosyalarına giden <img> ve bağlantıları temizler."""
+    h = re.sub(r'<img src="\{ROOT\}(media/[^"]+)"[^>]*>', lambda m: m.group(0) if exists(m.group(1)) else "", h or "")
+    return re.sub(r'<a href="\{ROOT\}(media/[^"]+)"[^>]*>(.*?)</a>', lambda m: m.group(0) if exists(m.group(1)) else m.group(2), h, flags=re.S)
+
+
+def strip_tags(h):
+    return html.unescape(re.sub(r"<[^>]+>", " ", h or "")).replace("\xa0", " ").strip()
+
+
+# ---------------------------------------------------------------- ikonlar
+I = {
+    "search": '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
+    "users": '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>',
+    "book": '<path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/>',
+    "news": '<path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-2 2Zm0 0a2 2 0 0 1-2-2v-9c0-1.1.9-2 2-2h2"/><path d="M18 14h-8M15 18h-5M10 6h8v4h-8z"/>',
+    "calendar": '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>',
+    "image": '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/>',
+    "link": '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
+    "info": '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>',
+    "arrow": '<path d="M5 12h14M12 5l7 7-7 7"/>',
+    "chev": '<path d="m9 18 6-6-6-6"/>',
+    "moon": '<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>',
+    "sun": '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>',
+    "menu": '<path d="M4 6h16M4 12h16M4 18h16"/>',
+    "x": '<path d="M18 6 6 18M6 6l12 12"/>',
+    "left": '<path d="m15 18-6-6 6-6"/>',
+    "up": '<path d="m18 15-6-6-6 6"/>',
+    "ext": '<path d="M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>',
+    "file": '<path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/>',
+    "grad": '<path d="M22 10 12 5 2 10l10 5 10-5Z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/>',
+    "pin": '<path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/>',
+    "copy": '<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
+    "mail": '<rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 5L2 7"/>',
+    "fb": '<path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/>',
+    "download": '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>',
+    "star": '<path d="M12 2 14.6 9.4 22 12l-7.4 2.6L12 22l-2.6-7.4L2 12l7.4-2.6z"/>',
+    "quote": '<path d="M3 21c3 0 7-1 7-8V5c0-1.25-.76-2.02-2-2H4c-1.25 0-2 .75-2 1.97V11c0 1.25.75 2 2 2 1 0 1 0 1 1v1c0 1-1 2-2 2s-1 .01-1 1.03V20c0 1 0 1 1 1zM15 21c3 0 7-1 7-8V5c0-1.25-.76-2.02-2-2h-4c-1.25 0-2 .75-2 1.97V11c0 1.25.75 2 2 2h.75c0 2.25.25 4-2.75 4v3c0 1 0 1 1 1z"/>',
+}
+
+
+def ic(n, cls=""):
+    return '<svg class="%s" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">%s</svg>' % (cls, I[n])
+
+
+STAR = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true"><path d="M12 2.5l2.8 2.7h3.9v3.9l2.8 2.9-2.8 2.8v3.9h-3.9L12 21.5l-2.8-2.8H5.3v-3.9L2.5 12l2.8-2.9V5.2h3.9z"/><circle cx="12" cy="12" r="3.2"/></svg>'
+
+PATTERN = '''<svg class="hero-pattern" width="100%" height="100%" aria-hidden="true"><defs><pattern id="girih" width="96" height="96" patternUnits="userSpaceOnUse"><g fill="none" stroke="currentColor" stroke-width="1.2"><path d="M48 8l11.3 28.7L88 48 59.3 59.3 48 88 36.7 59.3 8 48l28.7-11.3z"/><path d="M19.7 19.7h56.6v56.6H19.7z" transform="rotate(45 48 48)"/><rect x="19.7" y="19.7" width="56.6" height="56.6"/><circle cx="48" cy="48" r="10"/><path d="M0 0l19.7 19.7M96 0 76.3 19.7M0 96l19.7-19.7M96 96 76.3 76.3"/></g></pattern></defs><rect width="100%" height="100%" fill="url(#girih)"/></svg>'''
+
+BIG_STAR = '<svg class="pattern" viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M50 4l13 33 33 13-33 13-13 33-13-33L4 50l33-13z"/><rect x="21" y="21" width="58" height="58" transform="rotate(45 50 50)"/><rect x="21" y="21" width="58" height="58"/><circle cx="50" cy="50" r="14"/><circle cx="50" cy="50" r="30"/></svg>'
+
+NAV = [("index.html", "Ana Sayfa"), ("akademisyenler.html", "Akademisyenler"), ("eserler.html", "Eserler"),
+       ("haberler.html", "Haberler"), ("etkinlikler.html", "Etkinlikler"), ("galeri.html", "Galeri"),
+       ("kaynaklar.html", "Kaynaklar"), ("hakkinda.html", "Hakkında")]
+
+
+def layout(path, title, body, desc="", active="", data=None):
+    depth = path.count("/")
+    r = "../" * depth
+    nav = "".join('<a href="%s%s"%s>%s</a>' % (r, h, ' aria-current="page"' if h == active else "", t) for h, t in NAV)
+    data_tag = ""
+    if data is not None:
+        data_tag = '<script type="application/json" id="page-data">%s</script>' % json.dumps(data, ensure_ascii=False).replace("</", "<\\/")
+    full_title = "%s · %s" % (title, SITE) if title != SITE else "%s · İslam Mezhepleri Tarihi Koordinasyon Sitesi" % SITE
+    doc = f'''<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{E(full_title)}</title>
+<meta name="description" content="{E(desc or 'İlahiyat ve İslami İlimler Fakülteleri İslam Mezhepleri Tarihi Anabilim Dalı Koordinasyon Sitesi: akademisyenler, tezler, kitaplar, makaleler, haberler ve etkinlikler.')}">
+<meta property="og:title" content="{E(title)}">
+<meta property="og:site_name" content="{SITE}">
+<meta name="theme-color" content="#0f5c4d">
+<link rel="icon" href="{r}assets/img/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=Fraunces:ital,opsz,wght@0,9..144,400..700;1,9..144,400..600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{r}assets/css/style.css">
+<script>document.documentElement.className="js";try{{var t=localStorage.getItem("mz-theme");if(t)document.documentElement.dataset.theme=t}}catch(e){{}}</script>
+</head>
+<body data-root="{r}">
+<a class="skip" href="#main">İçeriğe geç</a>
+<header class="site-header">
+  <div class="container">
+    <a class="brand" href="{r}index.html" aria-label="{SITE} ana sayfa"><span class="brand-mark">{STAR}</span><span>Mezhep.Org<small>İslam Mezhepleri Tarihi</small></span></a>
+    <nav class="nav" aria-label="Ana menü">{nav}</nav>
+    <div class="header-actions">
+      <button class="search-trigger" data-open-search type="button" aria-label="Sitede ara">{ic("search")}<span>Sitede ara…</span><kbd>Ctrl K</kbd></button>
+      <button class="icon-btn theme-toggle" type="button" aria-label="Temayı değiştir">{ic("moon", "moon")}{ic("sun", "sun")}</button>
+      <button class="icon-btn menu-btn" type="button" aria-label="Menüyü aç" aria-expanded="false">{ic("menu")}</button>
+    </div>
+  </div>
+</header>
+<main id="main">
+{body}
+</main>
+<footer class="site-footer">
+  <div class="container">
+    <div class="footer-grid">
+      <div>
+        <a class="brand" href="{r}index.html"><span class="brand-mark">{STAR}</span><span>Mezhep.Org<small>İslam Mezhepleri Tarihi</small></span></a>
+        <p>İlahiyat ve İslami İlimler Fakülteleri İslam Mezhepleri Tarihi Anabilim Dalı Koordinasyon Sitesi. 2006'dan beri alanın akademik hafızası.</p>
+        <div class="socials"><a class="icon-btn" href="https://www.facebook.com/Mezhep.Org/" target="_blank" rel="noopener" aria-label="Facebook">{ic("fb")}</a></div>
+      </div>
+      <div><h4>Keşfet</h4><ul><li><a href="{r}akademisyenler.html">Akademisyenler</a></li><li><a href="{r}eserler.html">Eserler</a></li><li><a href="{r}eserler.html#tur=Doktora">Doktora Tezleri</a></li><li><a href="{r}eserler.html#tur=Yüksek Lisans">Yüksek Lisans Tezleri</a></li></ul></div>
+      <div><h4>Güncel</h4><ul><li><a href="{r}haberler.html">Haberler</a></li><li><a href="{r}etkinlikler.html">Etkinlikler</a></li><li><a href="{r}galeri.html">Fotoğraf Galerisi</a></li><li><a href="{r}kaynaklar.html">Kaynaklar</a></li></ul></div>
+      <div><h4>Site</h4><ul><li><a href="{r}hakkinda.html">Hakkında</a></li><li><a href="{r}hakkinda.html#sss">Sık Sorulanlar</a></li><li><a href="{r}hakkinda.html#kosullar">Kullanım Koşulları</a></li><li><a href="{r}hakkinda.html#iletisim">İletişim</a></li></ul></div>
+    </div>
+    <div class="footer-bottom"><span>© 2006–{TODAY.year} Mezhep.Org · Tüm hakları saklıdır.</span><span>Ahmet İshak DEMİR adına</span></div>
+  </div>
+</footer>
+<button class="icon-btn to-top" type="button" aria-label="Yukarı çık">{ic("up")}</button>
+<div class="cmdk" role="dialog" aria-modal="true" aria-label="Sitede ara">
+  <div class="cmdk-box">
+    <div class="cmdk-input">{ic("search")}<input type="search" placeholder="Akademisyen, eser, haber ara…" autocomplete="off" aria-label="Arama"><kbd>Esc</kbd></div>
+    <div class="cmdk-list" role="listbox"></div>
+    <div class="cmdk-foot"><span>↑↓ gezin</span><span>↵ aç</span><span>Esc kapat</span></div>
+  </div>
+</div>
+{data_tag}
+<script src="{r}assets/js/app.js" defer></script>
+</body>
+</html>'''
+    doc = doc.replace("{ROOT}", r)
+    out = os.path.join(ROOT, path)
+    os.makedirs(os.path.dirname(out), exist_ok=True)
+    with open(out, "w", encoding="utf-8") as f:
+        f.write(doc)
+
+
+def page_hero(title, lead="", crumbs=(), eyebrow=""):
+    cr = ""
+    if crumbs:
+        cr = '<nav class="crumbs" aria-label="Konum">' + ic("chev").join(
+            '<a href="{ROOT}%s">%s</a>' % (h, E(t)) if h else "<span>%s</span>" % E(t) for h, t in crumbs) + "</nav>"
+    return f'''<section class="page-hero">{PATTERN}<div class="container">{cr}{('<div class="eyebrow">%s</div>' % E(eyebrow)) if eyebrow else ""}<h1>{E(title)}</h1>{('<p>%s</p>' % lead) if lead else ""}</div></section>'''
+
+
+# ---------------------------------------------------------------- veri hazırlığı
+GROUP_LABEL = {"Öğretim Elemanları": "Öğretim Elemanı", "Üniversite Dışı Elemanlar": "Üniversite Dışı",
+               "Emekliler": "Emekli", "Rahmetle Andıklarımız": "Rahmetle Andıklarımız"}
+RANK_ORDER = ["Prof. Dr.", "Doç. Dr.", "Dr. Öğr. Üyesi", "Dr.", "Arş. Gör."]
+
+
+def member_filter(m):
+    if m["group"] == "Öğretim Elemanları": return m["rank"] or "Diğer"
+    return GROUP_LABEL.get(m["group"], m["group"] or "Diğer")
+
+
+for m in members:
+    m["slug"] = "akademisyen/%d.html" % m["id"]
+    m["filter"] = member_filter(m)
+    m["display"] = ("%s %s" % (m["title"], m["name"])).strip() if m["title"] not in ("Klasik Dönem", "Yakın Dönem", "Emekliler") else m["name"]
+    m["key"] = fold(m["name"])
+    m["photo"] = m.get("photo") if m.get("photo") and exists(m["photo"]) else ""
+    m["bio"] = drop_missing(m["bio"])
+
+
+def work_type(w):
+    if w["category"] == "Tezler": return w["type"] or "Tez"
+    return {"Kitaplar": "Kitap", "Makaleler": "Makale", "Tebliğler": "Tebliğ"}.get(w["category"], w["category"] or "Diğer")
+
+
+TYPE_BADGE = {"Doktora": "b-brand", "Yüksek Lisans": "b-indigo", "Doçentlik": "b-gold", "Kitap": "b-gold", "Makale": "b-rose", "Tebliğ": ""}
+for w in works:
+    w["kind"] = work_type(w)
+    w["slug"] = "eser/%d.html" % w["id"]
+    w["key"] = fold(w["author"])
+
+by_member_works = defaultdict(list)
+mkeys = {m["key"]: m for m in members if m["key"]}
+for w in works:
+    if w["key"] in mkeys: by_member_works[mkeys[w["key"]]["id"]].append((w, "Yazar"))
+    ck = fold(re.sub(r"^.*?(Dr\.|Gör\.)\s*", "", w["contributor"]))
+    if ck in mkeys: by_member_works[mkeys[ck]["id"]].append((w, "Danışman" if "Dan" in w["contribType"] else (w["contribType"] or "Katkı")))
+
+
+def topic_tag(t):
+    if t["forum"] == "etkinlik": return "Etkinlik"
+    if t["forum"] == "kitap": return "Kitap"
+    m = re.match(r"^\s*([^:]{3,28}):", t["title"])
+    if m:
+        tag = m.group(1).strip()
+        tag = {"Yeni Dr. Öğr. Üyesi": "Atama", "Yer Değişimi": "Atama", "Yeni Profesör": "Profesörlük", "Yeni Doçent": "Doçentlik",
+               "Yeni Doktor": "Yeni Doktor", "Vefat": "Vefat"}.get(tag, tag)
+        if tag in ("Atama", "Profesörlük", "Doçentlik", "Yeni Doktor", "Vefat"): return tag
+    tl = fold(t["title"])
+    if "sempozyum" in tl or "kongre" in tl or "panel" in tl or "calistay" in tl or "toplanti" in tl: return "Etkinlik"
+    if "vefat" in tl: return "Vefat"
+    if "docent" in tl: return "Doçentlik"
+    if "profesor" in tl: return "Profesörlük"
+    if "doktor" in tl or "tez" in tl: return "Yeni Doktor"
+    if "dergi" in tl or "makalat" in tl or "kitap" in tl: return "Yayın"
+    return "Duyuru"
+
+
+TAG_BADGE = {"Yeni Doktor": "b-brand", "Doçentlik": "b-gold", "Profesörlük": "b-gold", "Atama": "b-indigo", "Vefat": "b-rose", "Etkinlik": "b-brand", "Yayın": "b-indigo", "Kitap": "b-gold"}
+for t in topics:
+    t["tag"] = topic_tag(t)
+    t["slug"] = "haber/%d.html" % t["id"]
+    for p in t["posts"]:
+        p["html"] = drop_missing(p["html"])
+    img = (t.get("image") or "").replace("{ROOT}", "")
+    t["image"] = img if img.startswith("media/") and exists(img) else ""
+    t["sort"] = parse_date(t.get("date", ""))
+news = sorted([t for t in topics if t["forum"] == "haber"], key=lambda t: (t["sort"], t["id"]), reverse=True)
+events = sorted([t for t in topics if t["forum"] == "etkinlik"], key=lambda t: (t["sort"], t["id"]), reverse=True)
+others = [t for t in topics if t["forum"] not in ("haber", "etkinlik")]
+
+COORD = [(1, "Ankara", 2007), (2, "Elazığ", 2010), (3, "Isparta", 2012), (4, "Çorum", 2013), (5, "Sivas", 2014),
+         (6, "Konya", 2015), (7, "Antalya", 2019), (8, "Rize", 2023), (9, "İstanbul", 2025)]
+if os.path.isdir(os.path.join(ROOT, "media")):
+    # sunucuda bulunmayan (indirilemeyen) fotoğrafları ayıkla, tam boyu yoksa küçük resmi kullan
+    for a in albums:
+        a["photos"] = [dict(p, src=p["src"] if exists(p["src"]) else p["thumb"]) for p in a["photos"] if exists(p["thumb"])]
+    albums[:] = [a for a in albums if a["photos"]]
+album_groups = defaultdict(list)
+for a in albums:
+    a["slug"] = "galeri/%d-%d.html" % (a["cid"], a["sid"])
+    album_groups[a["event"]].append(a)
+n_photos = sum(len(a["photos"]) for a in albums)
+STATS = dict(members=len(members), works=len(works), theses=sum(1 for w in works if w["category"] == "Tezler"),
+             news=len(news), events=len(events), photos=n_photos,
+             universities=len({m["university"] for m in members if m["university"]}))
+
+
+def news_card(t, cls=""):
+    img = '<img src="{ROOT}%s" alt="" loading="lazy">' % E(t["image"].replace("{ROOT}", "")) if t.get("image") else ic("news")
+    return f'''<a class="card news-card {cls}" href="{{ROOT}}{t["slug"]}"><div class="thumb">{img}</div><div class="meta"><span class="badge {TAG_BADGE.get(t["tag"], "")}">{E(t["tag"])}</span><span>{tr_date(t.get("date"))}</span></div><h3 class="clamp-2">{E(t["title"])}</h3><p class="clamp-3">{E(t.get("summary", ""))}</p></a>'''
+
+
+def feed_topic(t):
+    y, m, d = t["sort"]
+    chip = f'<div class="date-chip"><b>{d}</b><span>{AY_KISA[m-1] if m else ""} {str(y)[2:] if y else ""}</span></div>'
+    return f'''<a class="feed-item" href="{{ROOT}}{t["slug"]}">{chip}<div class="body"><span class="badge {TAG_BADGE.get(t["tag"], "")}">{E(t["tag"])}</span><h3>{E(t["title"])}</h3><p class="clamp-2">{E(t.get("summary", ""))}</p></div><span class="chev">{ic("chev")}</span></a>'''
+
+
+def work_item(w):
+    bits = [E(w["author"])]
+    if w["year"]: bits.append(str(w["year"]))
+    if w["institution"]: bits.append(E(w["institution"]))
+    elif w["place"]: bits.append(E(w["place"]))
+    return f'''<a class="feed-item" href="{{ROOT}}{w["slug"]}"><div class="body"><span class="badge {TYPE_BADGE.get(w["kind"], "")}">{E(w["kind"])}</span><h3>{E(w["title"])}</h3><p>{' · '.join(bits)}</p></div><span class="chev">{ic("chev")}</span></a>'''
+
+
+# ---------------------------------------------------------------- ANA SAYFA
+def build_home():
+    latest = news[:6]
+    pop = sorted(works, key=lambda w: -w["hits"])[:6]
+    recent_members = sorted(members, key=lambda m: (parse_date(m["added"]), m["id"]), reverse=True)[:8]
+    s = STATS
+    coord = "".join(f'<a class="coord reveal" href="{{ROOT}}etkinlikler.html#koordinasyon"><div class="no">{n:02d}</div><div class="city">{c}</div><div class="yr">{y} · Koordinasyon</div></a>' for n, c, y in COORD)
+    people = "".join(f'''<a class="card person reveal" href="{{ROOT}}{m["slug"]}">{avatar(m)}<div class="info"><div class="rank">{E(m["title"])}</div><h3>{E(m["name"])}</h3><div class="uni">{E(m["university"])}</div></div></a>''' for m in recent_members)
+    body = f'''
+<section class="hero">
+  {PATTERN}<div class="hero-glow"></div>
+  <div class="container hero-grid">
+    <div class="reveal">
+      <div class="eyebrow">İslam Mezhepleri Tarihi Anabilim Dalı</div>
+      <h1>Mezhepler tarihi çalışmalarının <em>ortak hafızası</em></h1>
+      <p class="hero-lead">Türkiye'deki İlahiyat ve İslami İlimler fakültelerinin İslam Mezhepleri Tarihi akademisyenlerini, tezlerini, kitaplarını ve makalelerini tek çatı altında, özetleriyle birlikte derliyoruz.</p>
+      <div class="hero-actions">
+        <a class="btn btn-primary" href="{{ROOT}}eserler.html">{ic("book")} Eserleri keşfet</a>
+        <button class="btn btn-ghost" type="button" data-open-search>{ic("search")} Sitede ara</button>
+      </div>
+    </div>
+    <div class="hero-card reveal">
+      <div class="arabic" lang="ar">المذاهب الإسلامية</div>
+      <p class="quote">“Gelişmesi ve zenginleşmesi için İslam Mezhepleri ile ilgilenen herkesin katkılarını bekliyoruz.”</p>
+      <div class="sig">Saygılarımızla, <strong>Ahmet İshak DEMİR</strong></div>
+      <div class="hero-stats">
+        <div class="stat"><b data-count="{s["members"]}">{s["members"]}</b><span>Akademisyen</span></div>
+        <div class="stat"><b data-count="{s["works"]}">{s["works"]}</b><span>Akademik eser</span></div>
+        <div class="stat"><b data-count="{s["theses"]}">{s["theses"]}</b><span>Tez</span></div>
+        <div class="stat"><b data-count="{s["universities"]}">{s["universities"]}</b><span>Üniversite</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section" style="padding-top:0">
+  <div class="container">
+    <div class="bento">
+      <a class="tile feature wide tall reveal" href="{{ROOT}}eserler.html">{BIG_STAR}<span class="ic">{ic("book")}</span><h3 style="font-size:1.8rem">Eser Veritabanı</h3><p>Yüksek lisans ve doktora tezleri, telif ve tercüme kitaplar, makaleler ve tebliğler — Türkçe özet ve İngilizce abstract'larıyla.</p><div class="num">{s["works"]}</div></a>
+      <a class="tile reveal" href="{{ROOT}}akademisyenler.html"><span class="ic">{ic("users")}</span><h3>Akademisyenler</h3><p>{s["members"]} öğretim elemanı, {s["universities"]} üniversite</p></a>
+      <a class="tile gold reveal" href="{{ROOT}}haberler.html"><span class="ic">{ic("news")}</span><h3>Haberler</h3><p>Yeni doktorlar, atamalar, unvanlar</p></a>
+      <a class="tile indigo reveal" href="{{ROOT}}etkinlikler.html"><span class="ic">{ic("calendar")}</span><h3>Etkinlikler</h3><p>{s["events"]} sempozyum ve toplantı</p></a>
+      <a class="tile rose reveal" href="{{ROOT}}galeri.html"><span class="ic">{ic("image")}</span><h3>Galeri</h3><p>{s["photos"]} fotoğraf, {len(albums)} albüm</p></a>
+    </div>
+  </div>
+</section>
+
+<section class="section alt">
+  <div class="container">
+    <div class="section-head reveal"><div><div class="eyebrow">Güncel</div><h2>Son haberler</h2><p>Bilim dalımızdan yeni doktorlar, unvan ve atamalar, vefat haberleri ve duyurular.</p></div><a class="link-arrow" href="{{ROOT}}haberler.html">Tüm haberler {ic("arrow")}</a></div>
+    <div class="grid grid-3">{"".join(news_card(t, "reveal") for t in latest)}</div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="container">
+    <div class="section-head reveal"><div><div class="eyebrow">Koordinasyon Toplantıları</div><h2>2007'den bugüne dokuz buluşma</h2><p>Anabilim dalının ülke çapındaki öğretim elemanlarını bir araya getiren geleneksel koordinasyon toplantıları.</p></div><a class="link-arrow" href="{{ROOT}}etkinlikler.html">Tüm etkinlikler {ic("arrow")}</a></div>
+    <div class="coord-strip">{coord}</div>
+  </div>
+</section>
+
+<section class="section alt">
+  <div class="container">
+    <div class="section-head reveal"><div><div class="eyebrow">En çok okunanlar</div><h2>Öne çıkan eserler</h2></div><a class="link-arrow" href="{{ROOT}}eserler.html">Tüm eserler {ic("arrow")}</a></div>
+    <div class="feed reveal">{"".join(work_item(w) for w in pop)}</div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="container">
+    <div class="section-head reveal"><div><div class="eyebrow">Aramıza katılanlar</div><h2>Yeni eklenen akademisyenler</h2></div><a class="link-arrow" href="{{ROOT}}akademisyenler.html">Tüm akademisyenler {ic("arrow")}</a></div>
+    <div class="grid grid-4">{people}</div>
+  </div>
+</section>
+
+<section class="section" style="padding-top:0">
+  <div class="container">
+    <div class="cta reveal">{BIG_STAR}
+      <div><h2>Katkılarınızı bekliyoruz</h2><p>Sitemizin temel amacı Mezhepler Tarihi çalışmalarını eksiksiz ve özetleriyle birlikte derlemek. Öncelikle kendi çalışmalarınız olmak üzere tashih ve eklemelerinizi bize iletin.</p></div>
+      <div class="actions"><a class="btn btn-primary" href="{{ROOT}}hakkinda.html#iletisim">{ic("mail")} Bize ulaşın</a><a class="btn btn-ghost" href="https://www.facebook.com/Mezhep.Org/" target="_blank" rel="noopener">{ic("fb")} Facebook</a></div>
+    </div>
+  </div>
+</section>'''
+    layout("index.html", SITE, body, active="index.html")
+
+
+# ---------------------------------------------------------------- AKADEMİSYENLER
+def build_members():
+    order = RANK_ORDER + ["Üniversite Dışı", "Emekli", "Rahmetle Andıklarımız", "Diğer"]
+    cnt = Counter(m["filter"] for m in members)
+    chips = '<button class="chip" data-filter="tur" data-value="" aria-pressed="true">Tümü <span class="n">%d</span></button>' % len(members)
+    chips += "".join('<button class="chip" data-filter="tur" data-value="%s" aria-pressed="false">%s <span class="n">%d</span></button>' % (E(k), E(k), cnt[k]) for k in order if cnt[k])
+    unis = sorted({m["university"] for m in members if m["university"]}, key=fold)
+    opts = '<option value="">Tüm üniversiteler</option>' + "".join('<option>%s</option>' % E(u) for u in unis)
+    data = [dict(id=m["id"], n=m["name"], t=m["title"], u=m["university"], c=m["city"], f=m["filter"], s=m["slug"], w=len(by_member_works[m["id"]]), p=m.get("photo", "")) for m in members]
+    body = page_hero("Akademisyenler", "İslam Mezhepleri Tarihi alanındaki öğretim elemanları, araştırmacılar ve rahmetle andığımız hocalarımız. Tashih ve eklemelerinizi bekliyoruz.", [("index.html", "Ana Sayfa"), ("", "Akademisyenler")], "%d kişi · %d üniversite" % (len(members), len(unis)))
+    body += f'''
+<div class="toolbar"><div class="container">
+  <div class="row"><label class="input">{ic("search")}<input type="search" data-q placeholder="İsim, üniversite veya şehir ara…" aria-label="Akademisyen ara"></label>
+  <select class="select" data-filter-select="uni" aria-label="Üniversite">{opts}</select></div>
+  <div class="chips">{chips}</div>
+</div></div>
+<div class="container" style="padding-bottom:80px"><p class="result-info" data-info></p><div class="grid grid-4" data-list="members"></div><div class="load-more"><button class="btn btn-ghost" data-more hidden>Daha fazla göster</button></div></div>'''
+    layout("akademisyenler.html", "Akademisyenler", body, "İslam Mezhepleri Tarihi akademisyenleri listesi", "akademisyenler.html", data)
+
+    for m in members:
+        ws = by_member_works[m["id"]]
+        rel = [t for t in news if m["key"] and m["key"] in fold(t["title"] + " " + t.get("summary", ""))][:6]
+        wl = "".join('<div class="feed-item" style="padding:0;border:0;margin-bottom:6px"></div>' for _ in [])
+        works_html = ""
+        if ws:
+            works_html = '<div class="panel"><h2>Eserleri ve danışmanlıkları</h2><div class="feed" style="margin-top:16px">' + "".join(
+                work_item(w).replace('<span class="badge', '<span class="badge b-gold" style="margin-right:6px">%s</span><span class="badge' % E(role), 1) for w, role in ws) + "</div></div>"
+        news_html = ""
+        if rel:
+            news_html = '<div class="panel"><h2>İlgili haberler</h2><div class="feed" style="margin-top:16px">' + "".join(feed_topic(t) for t in rel) + "</div></div>"
+        bio = m["bio"] or ""
+        info = "".join(f"<dt>{k}</dt><dd>{v}</dd>" for k, v in [
+            ("Unvan", E(m["title"])), ("Grup", E(GROUP_LABEL.get(m["group"], m["group"]))), ("Üniversite", E(m["university"])),
+            ("Şehir", E(m["city"])), ("Web", '<a href="%s" target="_blank" rel="noopener">Kişisel sayfa</a>' % E(m["web"]) if m["web"] else ""),
+            ("E-posta", '<a href="mailto:%s">%s</a>' % (E(m["email"]), E(m["email"])) if m["email"] else ""),
+            ("Eklenme", tr_date(m["added"]))] if v)
+        body = page_hero(m["name"], "", [("index.html", "Ana Sayfa"), ("akademisyenler.html", "Akademisyenler"), ("", m["name"])], m["title"])
+        body += f'''<div class="container detail">
+  <div>
+    <div class="panel" style="display:flex;gap:22px;align-items:center;flex-wrap:wrap">{avatar(m, "lg")}<div><div class="badge b-brand">{E(m["filter"])}</div><h2 style="margin:10px 0 4px">{E(m["display"])}</h2><div style="color:var(--muted)">{ic("pin").replace('class=""', 'style="width:16px;height:16px;vertical-align:-3px"')} {E(m["university"])}{(" · " + E(m["city"])) if m["city"] else ""}</div></div></div>
+    {('<div class="panel"><h2>Özgeçmiş</h2><div class="prose">%s</div></div>' % bio) if bio else ""}
+    {works_html}
+    {news_html}
+    {"" if (bio or ws or rel) else '<div class="panel empty">Bu akademisyen için henüz özgeçmiş veya eser bilgisi eklenmemiş. Katkıda bulunmak için <a href="{ROOT}hakkinda.html#iletisim">bize ulaşın</a>.</div>'}
+  </div>
+  <aside><div class="panel"><h3>Bilgiler</h3><dl class="dl">{info}</dl></div><a class="btn btn-ghost" href="{{ROOT}}akademisyenler.html">{ic("left")} Tüm akademisyenler</a></aside>
+</div>'''
+        layout(m["slug"], m["name"], body, "%s — %s" % (m["display"], m["university"]), "akademisyenler.html")
+
+
+# ---------------------------------------------------------------- ESERLER
+def cite(w):
+    parts = [w["author"] + "."]
+    if w["year"]: parts.append("(%d)." % w["year"])
+    parts.append(w["title"] + ".")
+    if w["category"] == "Tezler":
+        parts.append("%s tezi." % w["kind"])
+    if w["institution"]: parts.append(w["institution"] + ".")
+    if w["place"]: parts.append(w["place"] + ".")
+    return " ".join(parts)
+
+
+def build_works():
+    order = ["Doktora", "Yüksek Lisans", "Doçentlik", "Kitap", "Makale", "Tebliğ"]
+    cnt = Counter(w["kind"] for w in works)
+    chips = '<button class="chip" data-filter="tur" data-value="" aria-pressed="true">Tümü <span class="n">%d</span></button>' % len(works)
+    chips += "".join('<button class="chip" data-filter="tur" data-value="%s" aria-pressed="false">%s <span class="n">%d</span></button>' % (E(k), E(k), cnt[k]) for k in order if cnt[k])
+    decades = sorted({(w["year"] // 10) * 10 for w in works if w["year"]}, reverse=True)
+    dopts = '<option value="">Tüm yıllar</option>' + "".join('<option value="%d">%d’ler</option>' % (d, d) for d in decades)
+    sopts = '<option value="new">En yeni</option><option value="old">En eski</option><option value="az">Başlık (A–Z)</option><option value="pop">En çok okunan</option>'
+    data = [dict(id=w["id"], t=w["title"], a=w["author"], k=w["kind"], y=w["year"], i=w["institution"], p=w["place"], h=w["hits"], s=w["slug"],
+                 d=w["contributor"], x=1 if (w["ozet"] or w["abstract"]) else 0) for w in works]
+    body = page_hero("Eserler", "İslam Mezhepleri ile ilgili akademik çalışmalar: tezler, kitaplar, makaleler ve tebliğler. Amacımız Mezhepler Tarihi çalışmalarını eksiksiz ve özetleriyle birlikte derlemek.", [("index.html", "Ana Sayfa"), ("", "Eserler")], "%d eser · %d tez" % (len(works), STATS["theses"]))
+    body += f'''
+<div class="toolbar"><div class="container">
+  <div class="row"><label class="input">{ic("search")}<input type="search" data-q placeholder="Başlık, yazar, danışman veya kurum ara…" aria-label="Eser ara"></label>
+  <select class="select" data-filter-select="decade" aria-label="Dönem">{dopts}</select><select class="select" data-sort aria-label="Sıralama">{sopts}</select></div>
+  <div class="chips">{chips}</div>
+</div></div>
+<div class="container" style="padding-bottom:80px"><p class="result-info" data-info></p><div class="feed" data-list="works"></div><div class="load-more"><button class="btn btn-ghost" data-more hidden>Daha fazla göster</button></div></div>'''
+    layout("eserler.html", "Eserler", body, "İslam Mezhepleri Tarihi tezleri, kitapları, makaleleri ve tebliğleri", "eserler.html", data)
+
+    mbyname = {m["key"]: m for m in members}
+    for w in works:
+        am = mbyname.get(w["key"])
+        ck = fold(re.sub(r"^.*?(Dr\.|Gör\.)\s*", "", w["contributor"]))
+        cm = mbyname.get(ck)
+        author = '<a href="{ROOT}%s">%s</a>' % (am["slug"], E(w["author"])) if am else E(w["author"])
+        contrib = ('<a href="{ROOT}%s">%s</a>' % (cm["slug"], E(w["contributor"])) if cm else E(w["contributor"])) if w["contributor"] else ""
+        info = "".join(f"<dt>{k}</dt><dd>{v}</dd>" for k, v in [
+            ("Tür", E(w["kind"])), ("Yazar", author), (("Danışman" if "Dan" in w["contribType"] else "Emeği geçen"), contrib),
+            ("Kurum", E(w["institution"])), ("Basım yeri", E(w["place"])), ("Yıl", w["year"] or ""), ("Sayfa", E(w["pages"])),
+            ("Okunma", "{:,}".format(w["hits"]).replace(",", ".") if w["hits"] else ""), ("Eklenme", tr_date(w["added"]))] if v)
+        tabs = ""
+        if w["ozet"] and w["abstract"]:
+            tabs = f'''<div class="abstract-tabs" role="tablist"><button role="tab" aria-selected="true" data-tab="oz">Özet</button><button role="tab" aria-selected="false" data-tab="ab">Abstract</button></div>
+<div class="prose" data-pane="oz">{w["ozet"]}</div><div class="prose" data-pane="ab" lang="en" hidden>{w["abstract"]}</div>'''
+        elif w["ozet"] or w["abstract"]:
+            tabs = '<h2>%s</h2><div class="prose"%s>%s</div>' % ("Özet" if w["ozet"] else "Abstract", "" if w["ozet"] else ' lang="en"', w["ozet"] or w["abstract"])
+        else:
+            tabs = '<div class="empty">Bu eser için henüz özet eklenmemiş.</div>'
+        similar = [x for x in works if x["kind"] == w["kind"] and x["id"] != w["id"]]
+        random.Random(w["id"]).shuffle(similar)
+        btn = '<a class="btn btn-primary" href="%s" target="_blank" rel="noopener">%s Tam metne git</a>' % (E(w["url"]), ic("ext")) if w["url"] else ""
+        body = page_hero(w["title"], E(w["author"]) + ((" · %d" % w["year"]) if w["year"] else ""), [("index.html", "Ana Sayfa"), ("eserler.html", "Eserler"), ("eserler.html#tur=" + w["kind"], w["kind"])], w["kind"])
+        body += f'''<div class="container detail">
+  <div>
+    <div class="panel">{tabs}</div>
+    <div class="panel"><h3>Kaynak gösterimi</h3><p style="margin:0 0 14px;color:var(--ink-2)" data-cite>{E(cite(w))}</p><button class="btn btn-ghost btn-sm" type="button" data-copy>{ic("copy")} Kopyala</button></div>
+    <div class="panel"><h3>Benzer eserler</h3><div class="feed" style="margin-top:14px">{"".join(work_item(x) for x in similar[:4])}</div></div>
+  </div>
+  <aside><div class="panel"><h3>Künye</h3><dl class="dl">{info}</dl></div>{btn}<a class="btn btn-ghost" href="{{ROOT}}eserler.html">{ic("left")} Tüm eserler</a></aside>
+</div>'''
+        layout(w["slug"], w["title"], body, strip_tags(w["ozet"] or w["abstract"])[:160] or "%s — %s" % (w["title"], w["author"]), "eserler.html")
+
+
+# ---------------------------------------------------------------- HABERLER & KONULAR
+def build_news():
+    order = ["Yeni Doktor", "Doçentlik", "Profesörlük", "Atama", "Vefat", "Etkinlik", "Yayın", "Duyuru"]
+    cnt = Counter(t["tag"] for t in news)
+    chips = '<button class="chip" data-filter="tur" data-value="" aria-pressed="true">Tümü <span class="n">%d</span></button>' % len(news)
+    chips += "".join('<button class="chip" data-filter="tur" data-value="%s" aria-pressed="false">%s <span class="n">%d</span></button>' % (E(k), E(k), cnt[k]) for k in order if cnt[k])
+    years = sorted({t["sort"][0] for t in news if t["sort"][0]}, reverse=True)
+    yopts = '<option value="">Tüm yıllar</option>' + "".join("<option>%d</option>" % y for y in years)
+    data = [dict(id=t["id"], t=t["title"], g=t["tag"], d=t.get("date", ""), y=t["sort"][0], m=t.get("summary", "")[:200], s=t["slug"], i=(t.get("image") or "").replace("{ROOT}", "")) for t in news]
+    body = page_hero("Haberler", "Bilim dalımızdan yeni doktorlar, doçentlik ve profesörlük unvanları, atamalar, vefat haberleri ve duyurular.", [("index.html", "Ana Sayfa"), ("", "Haberler")], "%d haber" % len(news))
+    body += f'''
+<div class="toolbar"><div class="container">
+  <div class="row"><label class="input">{ic("search")}<input type="search" data-q placeholder="Haberlerde ara…" aria-label="Haber ara"></label><select class="select" data-filter-select="year" aria-label="Yıl">{yopts}</select></div>
+  <div class="chips">{chips}</div>
+</div></div>
+<div class="container" style="padding-bottom:80px"><p class="result-info" data-info></p><div class="grid grid-3" data-list="news"></div><div class="load-more"><button class="btn btn-ghost" data-more hidden>Daha fazla göster</button></div></div>'''
+    layout("haberler.html", "Haberler", body, "İslam Mezhepleri Tarihi haberleri", "haberler.html", data)
+
+    section = {"haber": ("haberler.html", "Haberler"), "etkinlik": ("etkinlikler.html", "Etkinlikler"), "kitap": ("kaynaklar.html", "Kaynaklar"),
+               "sss": ("hakkinda.html", "Hakkında"), "anket": ("hakkinda.html", "Hakkında")}
+    pool = {"haber": news, "etkinlik": events}
+    for t in topics:
+        href, label = section.get(t["forum"], ("kaynaklar.html", "Kaynaklar"))
+        posts = ""
+        for i, p in enumerate(t["posts"]):
+            head = "" if i == 0 else f'<div class="post-head"><span class="avatar">{initials(p["author"])}</span><div><strong>{E(p["author"])}</strong><br>{tr_date(p["date"])} · {E(p["time"])}</div></div>'
+            posts += f'<div class="{"post" if i else ""}">{head}<div class="prose">{p["html"]}</div></div>'
+        lst = pool.get(t["forum"], others)
+        idx = next((i for i, x in enumerate(lst) if x["id"] == t["id"]), 0)
+        prev_t = lst[idx + 1] if idx + 1 < len(lst) else None
+        next_t = lst[idx - 1] if idx > 0 else None
+        nav = ""
+        for x, lbl in ((next_t, "Daha yeni"), (prev_t, "Daha eski")):
+            if x: nav += f'<a class="card hover" href="{{ROOT}}{x["slug"]}"><div class="meta">{lbl}</div><h3 class="clamp-2" style="font-size:1rem">{E(x["title"])}</h3></a>'
+        more = [x for x in lst if x["id"] != t["id"]][:5]
+        info = "".join(f"<dt>{k}</dt><dd>{v}</dd>" for k, v in [("Kategori", E(t["tag"])), ("Tarih", tr_date(t.get("date"))), ("Yazan", E(t.get("author"))), ("Mesaj", len(t["posts"]) if len(t["posts"]) > 1 else "")] if v)
+        body = page_hero(t["title"], "", [("index.html", "Ana Sayfa"), (href, label), ("", t["tag"])], tr_date(t.get("date")))
+        body += f'''<div class="container detail">
+  <div><article class="panel">{posts}</article>{('<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(240px,1fr));margin-top:18px">%s</div>' % nav) if nav else ""}</div>
+  <aside><div class="panel"><h3>Ayrıntılar</h3><dl class="dl">{info}</dl></div><div class="panel"><h3>Diğer {label.lower()}</h3><div class="feed" style="margin-top:12px">{"".join(feed_topic(x) for x in more)}</div></div><a class="btn btn-ghost" href="{{ROOT}}{href}">{ic("left")} {label}</a></aside>
+</div>'''
+        layout(t["slug"], t["title"], body, t.get("summary", "")[:160], href)
+
+
+# ---------------------------------------------------------------- ETKİNLİKLER
+def build_events():
+    coord_cards = ""
+    for n, c, y in COORD:
+        alb = next((a for a in albums if a["event"].startswith("Koordinasyon-%02d" % n)), None)
+        ev = next((e for e in events if str(y) in e["title"] and ("koordinasyon" in fold(e["title"]) or "istisare" in fold(e["title"]) or "calistay" in fold(e["title"]))), None)
+        links_ = ""
+        if ev: links_ += f'<a class="link-arrow" href="{{ROOT}}{ev["slug"]}">Duyuru {ic("arrow")}</a>'
+        if alb: links_ += f'<a class="link-arrow" href="{{ROOT}}{alb["slug"]}">Fotoğraflar {ic("arrow")}</a>'
+        coord_cards += f'<div class="coord reveal"><div class="no">{n:02d}</div><div class="city">{c}</div><div class="yr">{y}</div><div style="display:flex;flex-direction:column;gap:4px;margin-top:10px;font-size:.85rem">{links_}</div></div>'
+    by_year = defaultdict(list)
+    for e in events: by_year[e["sort"][0]].append(e)
+    tl = ""
+    for y in sorted(by_year, reverse=True):
+        tl += '<div class="year-label">%s</div>' % (y or "Tarihsiz")
+        for e in by_year[y]:
+            tl += f'<div class="tl-item reveal"><a class="card hover" href="{{ROOT}}{e["slug"]}"><div class="meta"><span>{tr_date(e.get("date"))}</span>{("<span class=dot></span><span>%d mesaj</span>" % len(e["posts"])) if len(e["posts"]) > 1 else ""}</div><h3>{E(e["title"])}</h3><p class="clamp-2">{E(e.get("summary", ""))}</p></a></div>'
+    body = page_hero("Etkinlikler", "Sempozyumlar, çalıştaylar, paneller ve İslam Mezhepleri Tarihi koordinasyon / istişare toplantıları.", [("index.html", "Ana Sayfa"), ("", "Etkinlikler")], "%d duyuru" % len(events))
+    body += f'''<section class="section" id="koordinasyon"><div class="container"><div class="section-head"><div><div class="eyebrow">Gelenek</div><h2>Koordinasyon toplantıları</h2><p>Anabilim dalı öğretim elemanlarının düzenli olarak bir araya geldiği ulusal buluşmalar.</p></div></div><div class="coord-strip">{coord_cards}</div></div></section>
+<section class="section alt"><div class="container" style="max-width:900px"><div class="section-head"><div><div class="eyebrow">Arşiv</div><h2>Sempozyum ve toplantı duyuruları</h2></div></div><div class="timeline">{tl}</div></div></section>'''
+    layout("etkinlikler.html", "Etkinlikler", body, "İslam Mezhepleri Tarihi sempozyumları ve koordinasyon toplantıları", "etkinlikler.html")
+
+
+# ---------------------------------------------------------------- GALERİ
+def build_gallery():
+    sec = ""
+    for ev, als in album_groups.items():
+        cards = ""
+        for a in als:
+            ph = a["photos"][:3]
+            cover = "".join('<img src="{ROOT}%s" alt="" loading="lazy">' % E(p["thumb"]) for p in ph)
+            cards += f'<a class="card album-card reveal" href="{{ROOT}}{a["slug"]}"><div class="cover{" single" if len(ph) < 3 else ""}">{cover}</div><div class="txt"><h3>{E(a["name"])}</h3><div class="meta">{len(a["photos"])} fotoğraf</div></div></a>'
+        sec += f'<div class="section-head" style="margin:44px 0 18px"><h2 style="font-size:1.6rem">{E(ev)}</h2></div><div class="grid grid-4">{cards}</div>'
+    body = page_hero("Fotoğraf Galerisi", "Koordinasyon toplantıları, sempozyumlar, jüriler ve sosyal programlardan kareler.", [("index.html", "Ana Sayfa"), ("", "Galeri")], "%d fotoğraf · %d albüm" % (n_photos, len(albums)))
+    body += f'<div class="container" style="padding-bottom:80px">{sec}</div>'
+    layout("galeri.html", "Galeri", body, "Mezhep.Org fotoğraf galerisi", "galeri.html")
+    for a in albums:
+        figs = "".join(f'<figure data-full="{{ROOT}}{E(p["src"])}" data-cap="{E(p["title"])}"><img src="{{ROOT}}{E(p["src"])}" alt="{E(p["title"])}" loading="lazy"><figcaption>{E(p["title"])}</figcaption></figure>' for p in a["photos"])
+        others_ = "".join(f'<a class="chip" href="{{ROOT}}{x["slug"]}">{E(x["name"])}</a>' for x in album_groups[a["event"]] if x is not a)
+        body = page_hero("%s — %s" % (a["event"], a["name"]), "%d fotoğraf" % len(a["photos"]), [("index.html", "Ana Sayfa"), ("galeri.html", "Galeri"), ("", a["event"])])
+        body += f'''<div class="container" style="padding:32px 24px 80px">{('<div class="chips" style="margin:0 0 24px">%s</div>' % others_) if others_ else ""}<div class="masonry" data-gallery>{figs}</div></div>
+<div class="lightbox" aria-hidden="true"><img alt=""><div class="cap"></div><button class="lb-close" aria-label="Kapat">{ic("x")}</button><button class="lb-prev" aria-label="Önceki">{ic("left")}</button><button class="lb-next" aria-label="Sonraki">{ic("chev")}</button></div>'''
+        layout(a["slug"], "%s — %s" % (a["event"], a["name"]), body, "", "galeri.html")
+
+
+# ---------------------------------------------------------------- KAYNAKLAR
+KNOWN_URLS = {"e-Makalat": "https://dergipark.org.tr/tr/pub/emakalat", "KADER": "https://dergipark.org.tr/tr/pub/kader",
+              "Kelam.Org": "http://www.kelam.org", "TDV İSAM Devam Eden İlahiyat Tezleri": "https://ktp.isam.org.tr"}
+
+
+def build_resources():
+    groups = defaultdict(list)
+    for l in links:
+        groups[l["category"]].append(l)
+    lk = ""
+    for cat, ls in groups.items():
+        items = ""
+        for l in ls:
+            url = KNOWN_URLS.get(l["name"])
+            tag = "a" if url else "div"
+            attr = ' href="%s" target="_blank" rel="noopener"' % url if url else ""
+            foot = '<div class="foot"><span class="link-arrow">Siteye git %s</span></div>' % ic("ext") if url else ""
+            items += f'<{tag} class="card{" hover" if url else ""}"{attr}><div class="meta"><span class="badge">{E(l["sub"])}</span></div><h3>{E(l["name"])}</h3><p>{E(l["desc"])}</p>{foot}</{tag}>'
+        lk += f'<h3 style="margin:28px 0 14px">{E(cat)}</h3><div class="grid grid-3">{items}</div>'
+    fl = "".join(f'<div class="card"><span class="ic" style="width:44px;height:44px;border-radius:12px;display:grid;place-items:center;background:var(--gold-soft);color:var(--gold)">{ic("file")}</span><h3>{E(f["name"])}</h3><p>{E(f["desc"])}</p><div class="foot"><span>{E(f["category"])}</span><span>{tr_date(f["date"])}</span></div></div>' for f in files)
+    bk = sorted([t for t in others if t["forum"] in ("kitap", "eser-tr", "eser-ar", "eser-en")], key=lambda t: t["sort"], reverse=True)
+    lab = {"kitap": "Yeni Kitap", "eser-tr": "Türkçe Eser", "eser-ar": "Arapça Eser", "eser-en": "Yabancı Dilde Eser"}
+    for t in bk: t["tag"] = lab[t["forum"]]
+    body = page_hero("Kaynaklar", "Mezhepler tarihçisinin bilmesi gereken siteler, dergiler, yeni kitap tanıtımları ve indirilebilir araçlar.", [("index.html", "Ana Sayfa"), ("", "Kaynaklar")])
+    body += f'''<section class="section"><div class="container"><div class="section-head"><div><div class="eyebrow">Bağlantılar</div><h2>Önerilen siteler ve dergiler</h2><p>“Mezhepler tarihçisi bunu görmeli!” dediğiniz siteleri bize iletin.</p></div></div>{lk}</div></section>
+<section class="section alt"><div class="container"><div class="section-head"><div><div class="eyebrow">Yayınlar</div><h2>Kitap haberleri ve eser tanıtımları</h2></div></div><div class="feed">{"".join(feed_topic(t) for t in bk)}</div></div></section>
+<section class="section"><div class="container"><div class="section-head"><div><div class="eyebrow">Araçlar</div><h2>İndirilebilir dosyalar</h2><p>Transkripsiyon yazı tipleri ve yardımcı belgeler. Dosyaların kendisi için lütfen site yöneticisiyle iletişime geçin.</p></div></div><div class="grid grid-3">{fl}</div></div></section>'''
+    layout("kaynaklar.html", "Kaynaklar", body, "Mezhepler tarihi kaynakları, bağlantılar ve dosyalar", "kaynaklar.html")
+
+
+# ---------------------------------------------------------------- HAKKINDA
+def build_about():
+    sss = [t for t in others if t["forum"] == "sss"]
+    faq = "".join(f'<details class="panel"><summary style="cursor:pointer;font-weight:600;font-family:var(--serif);font-size:1.1rem">{E(t["title"])}</summary><div class="prose" style="margin-top:14px">{t["posts"][0]["html"]}</div></details>' for t in sss)
+    body = page_hero("Hakkında", "www.mezhep.org, İlahiyat ve İslami İlimler Fakülteleri İslam Mezhepleri Tarihi Anabilim Dalı Koordinasyon Sitesi olarak hizmet vermektedir.", [("index.html", "Ana Sayfa"), ("", "Hakkında")], "2006'dan beri")
+    body += f'''<div class="container detail">
+  <div>
+    <div class="panel prose"><h2 style="margin-top:0">Amacımız</h2>
+      <p>Mezhep.Org, Türkiye'deki ilahiyat fakültelerinde İslam Mezhepleri Tarihi alanında çalışan akademisyenleri, bu alanda hazırlanan tezleri, kitapları, makaleleri ve tebliğleri tek bir çatı altında toplamak amacıyla kurulmuştur.</p>
+      <p>Sitemizin en temel amacı; <strong>Mezhepler Tarihi çalışmalarını eksiksiz ve özetleriyle birlikte derlemektir.</strong> Gelişmesi ve zenginleşmesi için İslam Mezhepleri ile ilgilenen herkesin katkılarını beklemekteyiz. Üyelerimizden, öncelikle kendi çalışmaları olmak üzere, tashih ve eklemeler bekliyoruz.</p>
+      <p>Site ayrıca bilim dalına dair güncel haberleri (yeni doktorlar, unvan ve atamalar, vefatlar), sempozyum ve koordinasyon toplantısı duyurularını ve bu etkinliklerden fotoğrafları arşivlemektedir.</p>
+      <blockquote>Saygılarımızla, Mezhep.Org adına Ahmet İshak DEMİR</blockquote>
+    </div>
+    <div class="bento" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr));margin-top:18px">
+      <div class="tile"><span class="ic">{ic("users")}</span><div class="num" style="font-size:2.2rem">{STATS["members"]}</div><p>Akademisyen</p></div>
+      <div class="tile gold"><span class="ic">{ic("book")}</span><div class="num" style="font-size:2.2rem">{STATS["works"]}</div><p>Eser</p></div>
+      <div class="tile indigo"><span class="ic">{ic("news")}</span><div class="num" style="font-size:2.2rem">{STATS["news"]}</div><p>Haber</p></div>
+      <div class="tile rose"><span class="ic">{ic("image")}</span><div class="num" style="font-size:2.2rem">{STATS["photos"]}</div><p>Fotoğraf</p></div>
+    </div>
+    <h2 id="sss" style="margin:48px 0 18px">Sık sorulan sorular</h2>
+    <div style="display:flex;flex-direction:column;gap:12px">{faq}</div>
+    <h2 id="kosullar" style="margin:48px 0 18px">Kullanım koşulları</h2>
+    <div class="panel prose">{pages["policy"]}</div>
+  </div>
+  <aside id="iletisim">
+    <div class="panel"><h3>İletişim</h3><p style="color:var(--ink-2);margin:0 0 16px">Tashih, ekleme ve önerileriniz için site yöneticisine ulaşabilirsiniz.</p>
+      <dl class="dl"><dt>Yönetici</dt><dd>Prof. Dr. Ahmet İshak DEMİR</dd><dt>Kurum</dt><dd>Recep Tayyip Erdoğan Üniversitesi İlahiyat Fakültesi</dd></dl></div>
+    <a class="btn btn-primary" href="https://www.facebook.com/Mezhep.Org/" target="_blank" rel="noopener">{ic("fb")} Facebook sayfamız</a>
+    <a class="btn btn-ghost" href="{{ROOT}}akademisyen/10.html">{ic("users")} Yönetici profili</a>
+  </aside>
+</div>'''
+    layout("hakkinda.html", "Hakkında", body, "Mezhep.Org hakkında", "hakkinda.html")
+
+
+# ---------------------------------------------------------------- ARAMA DİZİNİ
+def build_index():
+    idx = [["a", m["name"], "%s · %s" % (m["title"], m["university"]), m["slug"]] for m in members]
+    idx += [["e", w["title"], "%s · %s%s" % (w["kind"], w["author"], (" · %d" % w["year"]) if w["year"] else ""), w["slug"]] for w in works]
+    idx += [["h", t["title"], "%s · %s" % (t["tag"], tr_date(t.get("date"))), t["slug"]] for t in sorted(topics, key=lambda t: t["sort"], reverse=True)]
+    idx += [["g", "%s — %s" % (a["event"], a["name"]), "%d fotoğraf" % len(a["photos"]), a["slug"]] for a in albums]
+    with open(os.path.join(ROOT, "assets", "js", "search-index.js"), "w", encoding="utf-8") as f:
+        f.write("window.MZ_INDEX=" + json.dumps(idx, ensure_ascii=False, separators=(",", ":")) + ";")
+
+
+build_home(); build_members(); build_works(); build_news(); build_events(); build_gallery(); build_resources(); build_about(); build_index()
+print("Tamam:", STATS)

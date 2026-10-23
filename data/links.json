@@ -1,0 +1,58 @@
+[
+ {
+  "id": 1,
+  "name": "TDV İSAM Devam Eden İlahiyat Tezleri",
+  "desc": "Devam etmekte olan ilahiyat sahası tezleri veri tabanı",
+  "category": "Kaynaklar",
+  "sub": "Tezler"
+ },
+ {
+  "id": 7,
+  "name": "Prof. Dr. Mehmet Saffet SARIKAYA",
+  "desc": "SDÜ İlahiyat Fak.",
+  "category": "Kişisel Siteler",
+  "sub": "Mezhepler Tarihçileri"
+ },
+ {
+  "id": 6,
+  "name": "Yrd. Doç. Dr. Ahmet İshak DEMİR",
+  "desc": "Rize Ün. İlahiyat Fak.",
+  "category": "Kişisel Siteler",
+  "sub": "Mezhepler Tarihçileri"
+ },
+ {
+  "id": 5,
+  "name": "Prof. Dr. Sönmez KUTLU",
+  "desc": "Ankara İlahiyat",
+  "category": "Kişisel Siteler",
+  "sub": "Mezhepler Tarihçileri"
+ },
+ {
+  "id": 4,
+  "name": "Prof. Dr. Hasan ONAT",
+  "desc": "Ankara İlahiyat",
+  "category": "Kişisel Siteler",
+  "sub": "Mezhepler Tarihçileri"
+ },
+ {
+  "id": 8,
+  "name": "e-Makalat",
+  "desc": "Mezhep Araştırmaları Dergisi",
+  "category": "Dergiler",
+  "sub": "Yurt İçi Hakemli Dergiler"
+ },
+ {
+  "id": 3,
+  "name": "KADER",
+  "desc": "Kelam Araştırmaları Dergisi",
+  "category": "Dergiler",
+  "sub": "Yurt İçi Hakemli Dergiler"
+ },
+ {
+  "id": 2,
+  "name": "Kelam.Org",
+  "desc": "Kelam Anabilim Dalı Koordinasyon Sitesi",
+  "category": "İlahiyat Sahası",
+  "sub": "Bilimdalı Siteleri"
+ }
+]
