@@ -12,6 +12,7 @@
 import { spawnSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const args = process.argv.slice(2);
 const opt = (name) => { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : null; };
@@ -35,7 +36,7 @@ if (dirty) { console.error("✖ İşlenmemiş değişiklikler var. Önce commit 
 
 // 1b) --env-yukle: yereldeki deploy/.env (git dışı) sunucuya /opt/mezhep/.env olarak kopyalanır (izin 600)
 if (flag("--env-yukle")) {
-  const envFile = path.join(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1")), ".env");
+  const envFile = path.join(path.dirname(fileURLToPath(import.meta.url)), ".env");
   if (!fs.existsSync(envFile)) { console.error("✖ deploy/.env bulunamadı."); process.exit(1); }
   const env = fs.readFileSync(envFile, "utf8");
   for (const k of ["ALAN_ADI", "MZ_ADMIN_EMAIL"]) {
