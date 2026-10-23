@@ -38,7 +38,8 @@ if (dirty) { console.error("✖ İşlenmemiş değişiklikler var. Önce commit 
 if (flag("--env-yukle")) {
   const envFile = path.join(path.dirname(fileURLToPath(import.meta.url)), ".env");
   if (!fs.existsSync(envFile)) { console.error("✖ deploy/.env bulunamadı."); process.exit(1); }
-  const env = fs.readFileSync(envFile, "utf8");
+  // Windows satır sonları (CRLF) sunucuda değerlerin sonuna \r ekleyip ayarları bozmasın
+  const env = fs.readFileSync(envFile, "utf8").split("\r").join("");
   for (const k of ["ALAN_ADI", "MZ_ADMIN_EMAIL"]) {
     if (!new RegExp(`^${k}=\\S+`, "m").test(env)) { console.error(`✖ deploy/.env içinde ${k} boş.`); process.exit(1); }
   }
