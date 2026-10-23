@@ -11,6 +11,7 @@ from datetime import date
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA = os.path.join(ROOT, "data")
 SITE = "Mezhep.Org"
+SITE_URL = os.environ.get("MZ_SITE_URL", "https://mezhep.ihyadijital.com/")
 TODAY = date.today()
 
 
@@ -128,8 +129,10 @@ def layout(path, title, body, desc="", active="", data=None):
 <meta name="description" content="{E(desc or 'İlahiyat ve İslami İlimler Fakülteleri İslam Mezhepleri Tarihi Anabilim Dalı Koordinasyon Sitesi: akademisyenler, tezler, kitaplar, makaleler, haberler ve etkinlikler.')}">
 <meta property="og:title" content="{E(title)}">
 <meta property="og:site_name" content="{SITE}">
-<meta name="theme-color" content="#0f5c4d">
-<link rel="icon" href="{r}assets/img/favicon.svg" type="image/svg+xml">
+<meta property="og:image" content="{SITE_URL}assets/img/og.jpg">
+<meta name="theme-color" content="#2a4862">
+<link rel="icon" href="{r}assets/img/favicon.png" type="image/png">
+<link rel="apple-touch-icon" href="{r}assets/img/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=Fraunces:ital,opsz,wght@0,9..144,400..700;1,9..144,400..600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -140,7 +143,7 @@ def layout(path, title, body, desc="", active="", data=None):
 <a class="skip" href="#main">İçeriğe geç</a>
 <header class="site-header">
   <div class="container">
-    <a class="brand" href="{r}index.html" aria-label="{SITE} ana sayfa"><span class="brand-mark">{STAR}</span><span>Mezhep.Org<small>İslam Mezhepleri Tarihi</small></span></a>
+    <a class="brand" href="{r}index.html" aria-label="{SITE} ana sayfa"><img class="brand-logo" src="{r}assets/img/logo.jpg" alt="" width="59" height="40"><span>Mezhep.Org<small>İslam Mezhepleri Tarihi</small></span></a>
     <nav class="nav" aria-label="Ana menü">{nav}</nav>
     <div class="header-actions">
       <button class="search-trigger" data-open-search type="button" aria-label="Sitede ara">{ic("search")}<span>Sitede ara…</span><kbd>Ctrl K</kbd></button>
@@ -156,7 +159,7 @@ def layout(path, title, body, desc="", active="", data=None):
   <div class="container">
     <div class="footer-grid">
       <div>
-        <a class="brand" href="{r}index.html"><span class="brand-mark">{STAR}</span><span>Mezhep.Org<small>İslam Mezhepleri Tarihi</small></span></a>
+        <a class="brand" href="{r}index.html"><img class="brand-logo" src="{r}assets/img/logo.jpg" alt="Mezhep.Org logosu" width="59" height="40"><span>Mezhep.Org<small>İslam Mezhepleri Tarihi</small></span></a>
         <p>İlahiyat ve İslami İlimler Fakülteleri İslam Mezhepleri Tarihi Anabilim Dalı Koordinasyon Sitesi. 2006'dan beri alanın akademik hafızası.</p>
         <div class="socials"><a class="icon-btn" href="https://www.facebook.com/Mezhep.Org/" target="_blank" rel="noopener" aria-label="Facebook">{ic("fb")}</a></div>
       </div>
@@ -323,6 +326,7 @@ def build_home():
       </div>
     </div>
     <div class="hero-card reveal">
+      <img class="hero-logo" src="{{ROOT}}assets/img/logo.jpg" alt="Mezhep.Org logosu" width="100" height="68">
       <div class="arabic" lang="ar">المذاهب الإسلامية</div>
       <p class="quote">“Gelişmesi ve zenginleşmesi için İslam Mezhepleri ile ilgilenen herkesin katkılarını bekliyoruz.”</p>
       <div class="sig">Saygılarımızla, <strong>Ahmet İshak DEMİR</strong></div>
