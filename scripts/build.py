@@ -24,7 +24,7 @@ FILE_ROOTS = {"media/": os.environ.get("MZ_MEDIA_DIR") or os.path.join(ROOT, "me
 # Sayfalardaki tek satır içi betik; sunucu CSP'si bunun özetine izin verir (server/src/index.js THEME_SCRIPT).
 THEME_SCRIPT = 'document.documentElement.className="js";try{var t=localStorage.getItem("mz-theme");if(t)document.documentElement.dataset.theme=t}catch(e){}'
 SITE = "Mezhep.Org"
-SITE_URL = os.environ.get("MZ_SITE_URL", "https://mezhep.ihyadijital.com/")
+SITE_URL = os.environ.get("MZ_SITE_URL", "https://mezhep.net/")
 TODAY = date.today()
 
 

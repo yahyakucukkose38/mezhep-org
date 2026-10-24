@@ -68,7 +68,9 @@ chmod 600 .env
 set -a; . ./.env; set +a
 rm -rf src.old; [ -d src ] && mv src src.old; mv src.new src
 mkdir -p kaynaklar vebides-nginx/site letsencrypt yedekler
-sed -e "s/__ALAN_ADI__/$ALAN_ADI/g" -e "s/__WEB_PORT__/\${WEB_PORT:-3400}/g" src/deploy/vebides-nginx/mezhep.conf.template > vebides-nginx/site/mezhep.conf
+YON="\${YONLENDIRILEN_ALANLAR:-}"
+sed -e "s/__ALAN_ADI__/$ALAN_ADI/g" -e "s/__YONLENDIRILEN__/$YON/g" -e "s/__WEB_PORT__/\${WEB_PORT:-3400}/g" src/deploy/vebides-nginx/mezhep.conf.template |
+  { if [ -n "$YON" ]; then cat; else sed '/^# >>> yönlendirme/,/^# <<< yönlendirme/d'; fi; } > vebides-nginx/site/mezhep.conf
 install -m 755 src/deploy/vebides-nginx/46-mezhep.sh vebides-nginx/46-mezhep.sh
 docker compose -f src/deploy/docker-compose.yml --env-file .env up -d --build
 for i in $(seq 1 45); do
@@ -117,7 +119,7 @@ console.log("→ Sertifika ve nginx…");
 ssh(`
 set -uo pipefail
 if docker exec vebides-nginx-1 test -x /docker-entrypoint.d/46-mezhep.sh 2>/dev/null; then
-  bash /opt/mezhep/src/deploy/sertifika.sh --yeniden-yukle || echo "UYARI: Sertifika alınamadı. DNS kaydı (CNAME → vebides.ihyadijital.com) yayıldıktan sonra komutu yeniden çalıştırın."
+  bash /opt/mezhep/src/deploy/sertifika.sh --yeniden-yukle || echo "UYARI: Sertifika alınamadı. Alan adlarının DNS kaydı bu sunucuyu (185.23.17.212) gösterdikten sonra komutu yeniden çalıştırın."
 else
   echo "UYARI: vebides nginx'ine bağlantı yok. İlk kurulumda --vebides-nginx-bagla ile çalıştırın."
 fi

@@ -4,12 +4,28 @@
 
 server {
     listen 80;
-    server_name __ALAN_ADI__;
+    server_name __ALAN_ADI__ __YONLENDIRILEN__;
     server_tokens off;
 
     location /.well-known/acme-challenge/ { root /var/www/certbot; }
-    location / { return 301 https://$host$request_uri; }
+    location / { return 301 https://__ALAN_ADI__$request_uri; }
 }
+
+# >>> yönlendirme: www ve eski alan adları kalıcı olarak (301) ana adrese, sayfa yolu korunarak
+# (YONLENDIRILEN_ALANLAR boşsa yayinla.mjs bu bloğu çıkarır; sertifika ana adresle aynı, SAN olarak)
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name __YONLENDIRILEN__;
+    server_tokens off;
+    ssl_certificate     /etc/nginx/mezhep-letsencrypt/live/__ALAN_ADI__/fullchain.pem;
+    ssl_certificate_key /etc/nginx/mezhep-letsencrypt/live/__ALAN_ADI__/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    add_header Strict-Transport-Security "max-age=31536000" always;
+    location /.well-known/acme-challenge/ { root /var/www/certbot; }
+    location / { return 301 https://__ALAN_ADI__$request_uri; }
+}
+# <<< yönlendirme
 
 server {
     listen 443 ssl;

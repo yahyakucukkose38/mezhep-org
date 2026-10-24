@@ -18,11 +18,21 @@ certbot() {
     certbot/certbot:latest "$@" --deploy-hook "touch /etc/letsencrypt/mezhep-yenilendi"
 }
 
-if [ -s "$SERTIFIKA_DIZINI/live/$ALAN_ADI/fullchain.pem" ]; then
+# Sertifika ana adresi ve yönlendirilen adları (www, eski alan adı) birlikte kapsar.
+alanlar="$ALAN_ADI ${YONLENDIRILEN_ALANLAR:-}"
+pem="$SERTIFIKA_DIZINI/live/$ALAN_ADI/fullchain.pem"
+eksik=""
+if [ -s "$pem" ]; then
+  kapsam=$(openssl x509 -in "$pem" -noout -ext subjectAltName 2>/dev/null || true)
+  for a in $alanlar; do echo "$kapsam" | grep -qw "DNS:$a" || eksik="$eksik $a"; done
+fi
+if [ -s "$pem" ] && [ -z "$eksik" ]; then
   certbot renew --quiet --cert-name "$ALAN_ADI"
 else
-  certbot certonly --webroot -w /var/www/certbot -d "$ALAN_ADI" --cert-name "$ALAN_ADI" \
-    --agree-tos --register-unsafely-without-email --non-interactive
+  [ -n "$eksik" ] && echo "Sertifikaya eklenecek alan adları:$eksik"
+  # shellcheck disable=SC2046
+  certbot certonly --webroot -w /var/www/certbot $(for a in $alanlar; do printf -- '-d %s ' "$a"; done) --cert-name "$ALAN_ADI" \
+    --expand --agree-tos --register-unsafely-without-email --non-interactive
 fi
 
 [ -f "$isaret" ] || exit 0
