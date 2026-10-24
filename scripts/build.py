@@ -128,6 +128,23 @@ NAV = [("index.html", "Ana Sayfa"), ("akademisyenler.html", "Akademisyenler"), (
        ("kaynaklar.html", "Kaynaklar"), ("hakkinda.html", "Hakkında")]
 
 
+WRITTEN = set()
+
+
+def remove_stale():
+    """Silinen kayıtların eski detay sayfalarını kaldırır (ör. birleştirilen ya da panelden silinen eserler)."""
+    removed = 0
+    for d in ("akademisyen", "eser", "haber", "galeri"):
+        folder = os.path.join(ROOT, d)
+        if not os.path.isdir(folder):
+            continue
+        for f in os.listdir(folder):
+            if f.endswith(".html") and f"{d}/{f}" not in WRITTEN:
+                os.remove(os.path.join(folder, f))
+                removed += 1
+    return removed
+
+
 def layout(path, title, body, desc="", active="", data=None):
     depth = path.count("/")
     r = "../" * depth
@@ -164,7 +181,7 @@ def layout(path, title, body, desc="", active="", data=None):
     <div class="header-actions">
       <button class="search-trigger" data-open-search type="button" aria-label="Sitede ara">{ic("search")}<span>Sitede ara…</span><kbd>Ctrl K</kbd></button>
       <button class="icon-btn theme-toggle" type="button" aria-label="Temayı değiştir">{ic("moon", "moon")}{ic("sun", "sun")}</button>
-      {'<div class="account" data-account><a class="btn btn-primary btn-sm" href="/panel/#/giris">Giriş</a></div>' if DYNAMIC else ""}
+      {'<div class="account" data-account><a class="btn btn-primary btn-sm acc-login" href="/panel/#/giris" aria-label="Giriş yap / Üye ol">' + ic("users") + '<span>Giriş</span></a></div>' if DYNAMIC else ""}
       <button class="icon-btn menu-btn" type="button" aria-label="Menüyü aç" aria-expanded="false">{ic("menu")}</button>
     </div>
   </div>
@@ -200,6 +217,7 @@ def layout(path, title, body, desc="", active="", data=None):
 </body>
 </html>'''
     doc = doc.replace("{ROOT}", r)
+    WRITTEN.add(path)
     out = os.path.join(ROOT, path)
     os.makedirs(os.path.dirname(out), exist_ok=True)
     with open(out, "w", encoding="utf-8") as f:
@@ -474,15 +492,43 @@ def build_members():
 
 
 # ---------------------------------------------------------------- ESERLER
+TITLE_WORDS = r"(Prof\.|Doç\.|Dr\.|Yrd\.|Arş\.|Gör\.|Öğr\.|Üyesi|Grv\.)\s*"
+
+
+def apa_author(name):
+    """'Yrd. Doç. Dr. Nisa Gecekuşu Demirbaş' → 'Demirbaş, N. G.' (APA 7). Birden çok yazar ';' ya da ' ve ' ile ayrılır."""
+    out = []
+    for one in re.split(r"\s*;\s*|\s+ve\s+", name or ""):
+        one = re.sub(TITLE_WORDS, "", one).strip(" ,.")
+        parts = one.split()
+        if len(parts) < 2:
+            if one: out.append(one)
+            continue
+        last, given = parts[-1], parts[:-1]
+        initials = " ".join(p[0].upper() + "." for p in given if p[0].isalpha())
+        out.append(f"{last[0].upper() + last[1:]}, {initials}")
+    if len(out) > 1:
+        return ", ".join(out[:-1]) + " ve " + out[-1]
+    return out[0] if out else ""
+
+
 def cite(w):
-    parts = [w["author"] + "."]
-    if w["year"]: parts.append("(%d)." % w["year"])
-    parts.append(w["title"] + ".")
+    """APA 7 biçiminde kaynak gösterimi (tez, kitap, makale, tebliğ)."""
+    who = apa_author(w["author"])
+    year = "(%d)." % w["year"] if w["year"] else "(t.y.)."
+    tidy = lambda s: re.sub(r"\s+", " ", (s or "").strip().rstrip(" ,;:"))
+    dot = lambda s: s if s.endswith(".") else s + "."      # kısaltma noktası ("Bonn Ü.") korunur
+    title, inst, place, pages = tidy(w["title"]), tidy(w["institution"]), tidy(w["place"]), tidy(w["pages"]).rstrip(".")
     if w["category"] == "Tezler":
-        parts.append("%s tezi." % w["kind"])
-    if w["institution"]: parts.append(w["institution"] + ".")
-    if w["place"]: parts.append(w["place"] + ".")
-    return " ".join(parts)
+        kind = {"Yüksek Lisans": "Yüksek lisans tezi", "Doktora": "Doktora tezi", "Doçentlik": "Doçentlik tezi"}.get(w["kind"], "Tez")
+        tail = f"{title} [{kind}" + (f", {inst}" if inst else "") + "]."
+    elif w["category"] == "Kitaplar":
+        tail = dot(title) + (" " + dot(inst) if inst else (" " + dot(place) if place else ""))
+    elif w["category"] == "Makaleler":
+        tail = dot(title) + (" " + dot(inst + (f", {pages}" if pages else "")) if inst else "")
+    else:
+        tail = f"{title} [Bildiri]." + (" " + dot(inst) if inst else "")
+    return f"{who} {year} {tail}".strip()
 
 
 def build_works():
@@ -532,7 +578,7 @@ def build_works():
         body += f'''<div class="container detail">
   <div>
     <div class="panel">{tabs}</div>
-    <div class="panel"><h3>Kaynak gösterimi</h3><p style="margin:0 0 14px;color:var(--ink-2)" data-cite>{E(cite(w))}</p><button class="btn btn-ghost btn-sm" type="button" data-copy>{ic("copy")} Kopyala</button></div>
+    <div class="panel"><h3>Kaynak gösterimi <span class="badge" style="vertical-align:3px">APA 7</span></h3><p style="margin:0 0 14px;color:var(--ink-2)" data-cite>{E(cite(w))}</p><button class="btn btn-ghost btn-sm" type="button" data-copy>{ic("copy")} Kopyala</button></div>
     {comments_block("work:%d" % w["id"])}
     <div class="panel"><h3>Benzer eserler</h3><div class="feed" style="margin-top:14px">{"".join(work_item(x) for x in similar[:4])}</div></div>
   </div>
@@ -722,4 +768,7 @@ def build_404():
 
 
 build_home(); build_members(); build_works(); build_news(); build_events(); build_gallery(); build_resources(); build_about(); build_index(); build_404()
+_stale = remove_stale()
+if _stale:
+    print("Eski sayfa silindi:", _stale)
 print("Tamam:", STATS)

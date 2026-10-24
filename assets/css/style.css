@@ -122,7 +122,7 @@ h3 { font-size: 1.25rem; }
   .nav a { padding: 8px 10px; }
   .site-header .container { gap: 14px; }
 }
-@media (max-width: 1360px) and (min-width: 981px) {
+@media (max-width: 1360px) and (min-width: 1101px) {
   body:has([data-account]) .search-trigger { min-width: 0; width: 40px; padding: 0; justify-content: center; }
   body:has([data-account]) .search-trigger span, body:has([data-account]) .search-trigger kbd { display: none; }
 }
@@ -131,7 +131,7 @@ h3 { font-size: 1.25rem; }
   .search-trigger span, .search-trigger kbd { display: none; }
   .search-trigger { width: 40px; padding: 0; justify-content: center; }
 }
-@media (max-width: 980px) {
+@media (max-width: 1100px) {
   .menu-btn { display: grid; }
   .nav {
     position: fixed; inset: var(--header-h) 0 auto 0; flex-direction: column; align-items: stretch; gap: 4px;
@@ -401,7 +401,21 @@ a.feed-item:hover { background: var(--surface-2); }
 .acc-head span { color: var(--muted); font-size: .8rem; overflow: hidden; text-overflow: ellipsis; }
 .acc-pop a, .acc-pop button { display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 10px 12px; border-radius: 10px; font: inherit; font-size: .92rem; color: var(--ink); background: none; border: 0; cursor: pointer; text-align: left; }
 .acc-pop a:hover, .acc-pop button:hover { background: var(--bg-2); }
-@media (max-width: 560px) { .acc-signup { display: none; } }
+.acc-login svg { width: 16px; height: 16px; }
+@media (max-width: 1440px) and (min-width: 1101px) {
+  body:has([data-account]) .site-header .brand small { display: none; }
+  .acc-login { width: 40px; height: 40px; padding: 0; justify-content: center; border-radius: 12px; }
+  .acc-login span { display: none; }
+}
+@media (max-width: 560px) {
+  .acc-login { width: 40px; height: 40px; padding: 0; justify-content: center; border-radius: 12px; }
+  .acc-login span { display: none; }
+  .header-actions { gap: 6px; }
+  .header-actions .icon-btn, .search-trigger, .acc-login { width: 38px; height: 38px; }
+  .site-header .container { gap: 8px; }
+  .site-header .brand { gap: 8px; font-size: 1.05rem; }
+  .site-header .brand-logo { height: 34px; }
+}
 .muted { color: var(--muted); font-size: .9rem; }
 .comments { margin-top: 18px; }
 .comment { padding: 16px 0; border-top: 1px solid var(--line); }
@@ -486,4 +500,9 @@ a.feed-item:hover { background: var(--surface-2); }
   .site-header, .site-footer, .toolbar, .to-top, aside, .cmdk { display: none !important; }
   .detail { grid-template-columns: 1fr; }
   body { background: #fff; }
+}
+
+/* en küçük telefonlar: marka yazısı gizlenir, yalnızca logo kalır */
+@media (max-width: 380px) {
+  .site-header .brand > span { display: none; }
 }

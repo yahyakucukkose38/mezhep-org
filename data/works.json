@@ -343,7 +343,7 @@
  },
  {
   "id": 353,
-  "title": "İbnu'l- Mutahher el- Hilli'ye Göre İmamet",
+  "title": "İbnu'l-Mutahher el-Hilli'ye Göre İmamet",
   "author": "Ahmet İshak Demir",
   "category": "Makaleler",
   "type": "Telif",
@@ -397,7 +397,7 @@
  },
  {
   "id": 356,
-  "title": "Akidetu Ebu Mansur el- Matüridi İsimli Eserin Edisyon Kritiği ve Görüşlerinin Değerlendirilmesi",
+  "title": "Akidetu Ebu Mansur el-Matüridi İsimli Eserin Edisyon Kritiği ve Görüşlerinin Değerlendirilmesi",
   "author": "Ahmet Süzen",
   "category": "Tezler",
   "type": "Yüksek Lisans",
@@ -469,7 +469,7 @@
  },
  {
   "id": 360,
-  "title": "Horasan- Maveraünnehir Bölgesinde Haricilik",
+  "title": "Horasan-Maveraünnehir Bölgesinde Haricilik",
   "author": "Ahmet Yönem",
   "category": "Tezler",
   "type": "Doktora",
@@ -483,7 +483,7 @@
   "ozet": "",
   "abstract": "",
   "added": "3.04.2006",
-  "hits": 3153
+  "hits": 6508
  },
  {
   "id": 361,
@@ -502,24 +502,6 @@
   "abstract": "",
   "added": "3.04.2006",
   "hits": 3157
- },
- {
-  "id": 362,
-  "title": "Horasan- Maveraünnehir Bölgesinde Haricilik",
-  "author": "Ahmet Yönem",
-  "category": "Tezler",
-  "type": "Doktora",
-  "place": "Ankara",
-  "year": null,
-  "institution": "Ankara Ü. SBE.",
-  "pages": "",
-  "contributor": "Prof. Dr. Hasan Onat",
-  "contribType": "",
-  "url": "",
-  "ozet": "",
-  "abstract": "",
-  "added": "3.04.2006",
-  "hits": 3355
  },
  {
   "id": 363,
@@ -757,7 +739,7 @@
  },
  {
   "id": 376,
-  "title": "İbn Sellam el- İbadî ve İtikadî Görüşleri",
+  "title": "İbn Sellam el-İbadî ve İtikadî Görüşleri",
   "author": "Cemaleddin Erdemci",
   "category": "Tezler",
   "type": "Yüksek Lisans",
@@ -865,7 +847,7 @@
  },
  {
   "id": 382,
-  "title": "Sahl b. Abdullah et- Tusterî und Die Salimiya Ubersetzung und .../ Sehl b. Abdullah Tusteri ve Salimiyye Mektebi ile Kitabu'l- Mu'araza'nın Tercüme ve Yorumu",
+  "title": "Sahl b. Abdullah et-Tusterî und Die Salimiya Ubersetzung und .../ Sehl b. Abdullah Tusteri ve Salimiyye Mektebi ile Kitabu'l-Mu'araza'nın Tercüme ve Yorumu",
   "author": "Cihat Tunç",
   "category": "Tezler",
   "type": "Doktora",
@@ -880,24 +862,6 @@
   "abstract": "",
   "added": "3.04.2006",
   "hits": 3193
- },
- {
-  "id": 383,
-  "title": "deneme",
-  "author": "deneme",
-  "category": "Tebliğler",
-  "type": "Uluslararası",
-  "place": "",
-  "year": null,
-  "institution": "",
-  "pages": "",
-  "contributor": "",
-  "contribType": "",
-  "url": "",
-  "ozet": "",
-  "abstract": "",
-  "added": "26.04.2006",
-  "hits": 2886
  },
  {
   "id": 384,
@@ -1171,7 +1135,7 @@
  },
  {
   "id": 399,
-  "title": "\"Emeviler Döneminde Ve Abbasilerin İlk Dönemlerinde İran, Horasan Ve Mâverâünnehir’;deki Mezhebi Ve Milliyetçi Hareketler\"",
+  "title": "Emeviler Döneminde ve Abbasilerin İlk Dönemlerinde İran, Horasan ve Mâverâünnehir’deki Mezhebi ve Milliyetçi Hareketler",
   "author": "Farhad DAFTARY",
   "category": "Makaleler",
   "type": "Tercüme",
@@ -1225,7 +1189,7 @@
  },
  {
   "id": 402,
-  "title": "Mu'tezile'de İman- Amel Münasebeti",
+  "title": "Mu'tezile'de İman-Amel Münasebeti",
   "author": "Firdevs Bilir",
   "category": "Tezler",
   "type": "Doktora",
@@ -1315,7 +1279,7 @@
  },
  {
   "id": 407,
-  "title": "İseviyye Mezhebi ve Hz. Muhammed’in Risâletinin Evrenselliği Tartışmalarının Başlaması”,",
+  "title": "İseviyye Mezhebi ve Hz. Muhammed’in Risâletinin Evrenselliği Tartışmalarının Başlaması”",
   "author": "Halil İbrahim Bulut",
   "category": "Makaleler",
   "type": "Telif",
@@ -1423,7 +1387,7 @@
  },
  {
   "id": 413,
-  "title": "İlk Dönem İmâmiyye Kaynaklarında Gaybet Anlayışı,",
+  "title": "İlk Dönem İmâmiyye Kaynaklarında Gaybet Anlayışı",
   "author": "Halil İbrahim Bulut",
   "category": "Makaleler",
   "type": "Telif",
@@ -1459,7 +1423,7 @@
  },
  {
   "id": 415,
-  "title": "“Şeyh Müfid ve İmamiyye Ekolünde Gaybet İnancının Aklîleşmesi”,",
+  "title": "Şeyh Müfid ve İmamiyye Ekolünde Gaybet İnancının Aklîleşmesi",
   "author": "Halil İbrahim Bulut,",
   "category": "Makaleler",
   "type": "Telif",
@@ -1665,7 +1629,7 @@
   "year": 1999,
   "institution": "Pınar Yayınları",
   "pages": "496",
-  "contributor": "vy, Ethem Ruhi Fığlalı; Sabri Hizmetli",
+  "contributor": "Ethem Ruhi Fığlalı; Sabri Hizmetli",
   "contribType": "Tercüme",
   "url": "",
   "ozet": "<p>Eser Özeti</p>",
@@ -1675,7 +1639,7 @@
  },
  {
   "id": 427,
-  "title": "Mu'tezile'ye Göre Hayr- Şer Problemi",
+  "title": "Mu'tezile'ye Göre Hayr-Şer Problemi",
   "author": "Hulusi Arslan",
   "category": "Tezler",
   "type": "Doktora",
@@ -1989,7 +1953,7 @@
   "year": 1981,
   "institution": "Marifet Yayınları",
   "pages": "343",
-  "contributor": "vy, M. Saim Yeprem",
+  "contributor": "M. Saim Yeprem",
   "contribType": "Tercüme",
   "url": "",
   "ozet": "<p>Eser Özeti</p>",
@@ -2107,7 +2071,7 @@
  },
  {
   "id": 451,
-  "title": "\"Sufilerin Manevi Atası Cafer es-Sadık\"",
+  "title": "Sufilerin Manevi Atası Cafer es-Sadık",
   "author": "John Boer Taylor",
   "category": "Makaleler",
   "type": "Telif",
@@ -2161,7 +2125,7 @@
  },
  {
   "id": 454,
-  "title": "\"Selçuklular ve Osmanlılar Yönetiminde Türkiye’;de Şiîlik\"",
+  "title": "Selçuklular ve Osmanlılar Yönetiminde Türkiye’de Şiîlik",
   "author": "Kamil Mustafa Al-Shaibi",
   "category": "Makaleler",
   "type": "Tercüme",
@@ -2377,7 +2341,7 @@
  },
  {
   "id": 466,
-  "title": "Hadis Tenkidi Yönünden el- Kafi Üzerine Bir Deneme",
+  "title": "Hadis Tenkidi Yönünden el-Kafi Üzerine Bir Deneme",
   "author": "M. Cemal Sofuoğlu",
   "category": "Tezler",
   "type": "Doktora",
@@ -2827,7 +2791,7 @@
  },
  {
   "id": 491,
-  "title": "\"Şîa’da Cifr İlminin Yeri\"",
+  "title": "Şîa’da Cifr İlminin Yeri",
   "author": "Mehmet Atalan",
   "category": "Makaleler",
   "type": "Telif",
@@ -2863,7 +2827,7 @@
  },
  {
   "id": 493,
-  "title": "\"Hz. Muhammed’;in Vefatından Sonraki Hilafet Tartışmaları\"",
+  "title": "Hz. Muhammed’in Vefatından Sonraki Hilafet Tartışmaları",
   "author": "Mehmet Atalan",
   "category": "Makaleler",
   "type": "Telif",
@@ -2881,7 +2845,7 @@
  },
  {
   "id": 494,
-  "title": "\"Abbasî Daveti Sürecinde Ammâr b. Yezid\"",
+  "title": "Abbasî Daveti Sürecinde Ammâr b. Yezid",
   "author": "Mehmet Atalan",
   "category": "Makaleler",
   "type": "Telif",
@@ -2899,7 +2863,7 @@
  },
  {
   "id": 495,
-  "title": "\"Abbasi Daveti Sürecinde er-Rızâ Min Âl-İ Muhammed Söylemi\",",
+  "title": "Abbasi Daveti Sürecinde er-Rızâ Min Âl-İ Muhammed Söylemi",
   "author": "Mehmet Atalan",
   "category": "Makaleler",
   "type": "Telif",
@@ -2917,7 +2881,7 @@
  },
  {
   "id": 496,
-  "title": "\"Şiî Kaynaklarda Ali B. Ebî Tâlib ve Fatıma Mushafı\"",
+  "title": "Şiî Kaynaklarda Ali b. Ebî Tâlib ve Fatıma Mushafı",
   "author": "Mehmet Atalan",
   "category": "Makaleler",
   "type": "Telif",
@@ -2935,7 +2899,7 @@
  },
  {
   "id": 497,
-  "title": "\"Bir Muhalefet İttifakı:Abdullah b. Muaviye(129/746-7) Hareketi\",",
+  "title": "Bir Muhalefet İttifakı: Abdullah b. Muaviye (129/746-7) Hareketi",
   "author": "Mehmet Atalan",
   "category": "Makaleler",
   "type": "Telif",
@@ -2953,7 +2917,7 @@
  },
  {
   "id": 498,
-  "title": "\"Hz.Muhammed’in Beşer Oluşu\"",
+  "title": "Hz. Muhammed’in Beşer Oluşu",
   "author": "Mehmet Atalan",
   "category": "Makaleler",
   "type": "Telif",
@@ -2971,7 +2935,7 @@
  },
  {
   "id": 499,
-  "title": "\"Ebû Hanife ve Ali Oğulları\"",
+  "title": "Ebû Hanife ve Ali Oğulları",
   "author": "Mehmet Atalan",
   "category": "Makaleler",
   "type": "Telif",
@@ -2988,26 +2952,8 @@
   "hits": 2872
  },
  {
-  "id": 500,
-  "title": "\"Şii Kaynaklarda Muhammed b. Hasan el-Mehdi’nin Tarihi ve Menkabevi Kişiliği\"",
-  "author": "Mehmet Atalan",
-  "category": "Makaleler",
-  "type": "Telif",
-  "place": "VII (2002)",
-  "year": null,
-  "institution": "Fırat Üniversitesi İlahiyat Fakültesi Dergisi",
-  "pages": "",
-  "contributor": "",
-  "contribType": "",
-  "url": "",
-  "ozet": "<p>On ikinci imam Muhammed b. Hasan 255/868’de doğmuştur. Mehdi'nin dönüşünü bekleyen Şii teologları, Mehdiliği bir inanç esası olarak görmüşlerdir. Muhammed b. Hasan’ın tarihi ve menkabevi hayatı geniş ölçüde ortaya konmaya çalışıldı. On birinci imamın oğlunun esrarengiz kaderi, ilk dönem Şii ailesini birçok fırkaya ayırdı. Muhammed b. Hasan doğduğunda, Hasan el-Askeri hizmetçisinin babasını çağırarak ona birçok kurban kesmesini söylediği rivayet edilir. Şia’ya göre Peygamber yüzlerce yıl önce onun isminin kendi ismiyle aynı olacağını bildirmiştir. Babasının ölümüne yakın bir zamanda Muhammed b. Hasan diye bilinen çocuğun imam olarak atandığı söylenir.</p>",
-  "abstract": "",
-  "added": "19.06.2007",
-  "hits": 2680
- },
- {
   "id": 501,
-  "title": "\"Cafer es-Sadık’da Tanrı, Bilgi, İnsan ve Alem Anlayışı\"",
+  "title": "Cafer es-Sadık’da Tanrı, Bilgi, İnsan ve Alem Anlayışı",
   "author": "Mehmet Atalan",
   "category": "Makaleler",
   "type": "Telif",
@@ -3015,7 +2961,7 @@
   "year": null,
   "institution": "Fırat Üniversitesi İlahiyat Fakültesi Dergisi",
   "pages": "621-631",
-  "contributor": "Dr. vy",
+  "contributor": "",
   "contribType": "",
   "url": "",
   "ozet": "<p>Hz. Peygamber ve onun getirdiği dine nispetle şeref sahibi olan Hz. Ali ve soyu, adeta Peygamberin önüne konulmuştur. Cafer es-Sadık’ın tarihi gerçekliğini yeter görmeyen ve onu insanüstü görmek isteyenlerin nerede nasıl ve ne zaman oluştuğunu ve ortaya atıldığını bilemediğimiz menkabevi haberler sırf onu yüceltmek için söylenilmiş masalımsı şeylerdir. Cafer es-Sadık’ın Tanrı, Bilgi, İnsan ve Varlık görüşü sahih rivayetlere dayanılarak verilmiştir.</p>",
@@ -3033,7 +2979,7 @@
   "year": 2005,
   "institution": "Araştırma Yayınları",
   "pages": "",
-  "contributor": "Dr. vy",
+  "contributor": "",
   "contribType": "",
   "url": "",
   "ozet": "<p>Şiilik, bazı Müslümanların din anlayışlarında etkili olan ve günümüze kadr varlığını sürdürebilen mezheplerden birisidir. Şiî İmamiyye'nin on iki imamdan birisi sayılan, fikri ve tarihi gelişiminde önemli bir yere sahip olan Ca'fer s-Sadık, hem yaşadığı dönemdeki Şiîliğin ve Şiî fikirlerin tespiti açısından, hem de o zaman diliminin genel fikri yapısının iyi anlaşılması bakımından oldukça önemli bir şahsiyettir.</p>",
@@ -3061,7 +3007,7 @@
  },
  {
   "id": 504,
-  "title": "Şii Kaynaklarda Muhammed b. Hasan El-Mehdi’nin Tarihi Ve Menkabevi Kişiliği",
+  "title": "Şii Kaynaklarda Muhammed b. Hasan el-Mehdi’nin Tarihi ve Menkabevi Kişiliği",
   "author": "Mehmet Atalan",
   "category": "Makaleler",
   "type": "Telif",
@@ -3072,10 +3018,10 @@
   "contributor": "",
   "contribType": "",
   "url": "http://www.firat.edu.tr/akademik/fakulteler/ilahiyat/Dergiler/2002/arsgorok/Atalan.pdf",
-  "ozet": "",
+  "ozet": "<p>On ikinci imam Muhammed b. Hasan 255/868’de doğmuştur. Mehdi'nin dönüşünü bekleyen Şii teologları, Mehdiliği bir inanç esası olarak görmüşlerdir. Muhammed b. Hasan’ın tarihi ve menkabevi hayatı geniş ölçüde ortaya konmaya çalışıldı. On birinci imamın oğlunun esrarengiz kaderi, ilk dönem Şii ailesini birçok fırkaya ayırdı. Muhammed b. Hasan doğduğunda, Hasan el-Askeri hizmetçisinin babasını çağırarak ona birçok kurban kesmesini söylediği rivayet edilir. Şia’ya göre Peygamber yüzlerce yıl önce onun isminin kendi ismiyle aynı olacağını bildirmiştir. Babasının ölümüne yakın bir zamanda Muhammed b. Hasan diye bilinen çocuğun imam olarak atandığı söylenir.</p>",
   "abstract": "",
   "added": "3.04.2006",
-  "hits": 2783
+  "hits": 5463
  },
  {
   "id": 505,
@@ -3123,7 +3069,7 @@
   "year": null,
   "institution": "İlahiyat Yayınları",
   "pages": "",
-  "contributor": "Dr. vy",
+  "contributor": "",
   "contribType": "",
   "url": "",
   "ozet": "<p>Hz. Hasan ve Hz. Hüseyin’den sonra Hz. Ali’nin en fazla ilgi gören çocuğu olan Muhammed b. el-Hanefiyye, çevresinde cenknâmelerin teşekkül ettiği bir kahraman olması münasebetiyle hakkında çokça bilgilerin verildiği önemli şahsiyetlerden biridir.</p>",
@@ -3151,7 +3097,7 @@
  },
  {
   "id": 509,
-  "title": "\"Cafer es-Sadık’ın Eserleri\"",
+  "title": "Cafer es-Sadık’ın Eserleri",
   "author": "Mehmet Atalan",
   "category": "Makaleler",
   "type": "Telif",
@@ -3673,7 +3619,7 @@
  },
  {
   "id": 538,
-  "title": "İbn Teymiyye'nin Mecmu'ul- Feteva'sında Ehl-i Bid'at Fırkalarına Bakışı",
+  "title": "İbn Teymiyye'nin Mecmu'ul-Feteva'sında Ehl-i Bid'at Fırkalarına Bakışı",
   "author": "Muhammed Yazıcı",
   "category": "Tezler",
   "type": "Doktora",
@@ -3763,7 +3709,7 @@
  },
  {
   "id": 543,
-  "title": "Siyasi- İtikadi mezheplerin Doğuşunda Kabile Asabiyetinin Rolü",
+  "title": "Siyasi-İtikadi mezheplerin Doğuşunda Kabile Asabiyetinin Rolü",
   "author": "Murat Ergin",
   "category": "Tezler",
   "type": "Doktora",
@@ -4357,7 +4303,7 @@
  },
  {
   "id": 576,
-  "title": "\"İlk Dönem Şiî Gulatı\"",
+  "title": "İlk Dönem Şiî Gulatı",
   "author": "R. B. Buckley",
   "category": "Makaleler",
   "type": "Telif",
@@ -4375,7 +4321,7 @@
  },
  {
   "id": 577,
-  "title": "\"Ca’fer es-Sâdık’a Nisbet Edilen Hemeroloji Üzerine Bir İnceleme\"",
+  "title": "Ca’fer es-Sâdık’a Nisbet Edilen Hemeroloji Üzerine Bir İnceleme",
   "author": "R.Y. Ebied and M. J.L. Young",
   "category": "Makaleler",
   "type": "Telif",
@@ -5427,11 +5373,11 @@
   "year": 2009,
   "institution": "",
   "pages": "",
-  "contributor": "Prof.Dr.Hasan Onat, vy",
+  "contributor": "Prof. Dr. Hasan Onat",
   "contribType": "",
   "url": "",
   "ozet": "<p>Metin Bozan Hoca'nın doktora tezi olan bu eser İmamiyye Şia'sının inanç yapısını ve geçirdiği evreleri ortaya koyuyor.İmamiyye'yi geniş boyutlarda ve anlaşılır biçimde bilgimize sunuyor.</p>",
-  "abstract": "<p>vy</p>",
+  "abstract": "",
   "added": "6.12.2010",
   "hits": 3358
  },
@@ -5509,7 +5455,7 @@
  },
  {
   "id": 644,
-  "title": "Hz. Ali’nin, Hz. Osman Döneminde Halife İle İlişkileri",
+  "title": "Hz. Ali’nin, Hz. Osman Döneminde Halife ile İlişkileri",
   "author": "Fatih Topaloğlu",
   "category": "Tebliğler",
   "type": "Ulusal",
@@ -5571,7 +5517,7 @@
   "year": 2010,
   "institution": "Diyanet Vakfı Yayınları",
   "pages": "",
-  "contributor": "Prof.Dr. Hasan Onat",
+  "contributor": "Prof. Dr. Hasan Onat",
   "contribType": "Danışman",
   "url": "",
   "ozet": "<p>Özeti yazınız veya yapıştırınız</p>",
@@ -5617,7 +5563,7 @@
  },
  {
   "id": 650,
-  "title": "İSLAMOFOBİNİN İSLÂM ARAŞTIRMALARI ÜZERİNDEKİ ETKİSİ",
+  "title": "İslamofobinin İslâm Araştırmaları Üzerindeki Etkisi",
   "author": "Cemil Hakyemez",
   "category": "Tebliğler",
   "type": "Uluslararası",

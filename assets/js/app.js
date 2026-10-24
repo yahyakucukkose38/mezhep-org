@@ -247,7 +247,9 @@
     var renderAccount = function () {
       if (!acc) return;
       if (!me) {
-        acc.innerHTML = '<a class="btn btn-ghost btn-sm acc-signup" href="/panel/#/kayit">Üye ol</a><a class="btn btn-primary btn-sm" href="/panel/#/giris">Giriş</a>';
+        // Tek düğme: dar ekranlarda menü satırı taşmasın (kayıt bağlantısı giriş sayfasında var)
+        acc.innerHTML = '<a class="btn btn-primary btn-sm acc-login" href="/panel/#/giris" aria-label="Giriş yap / Üye ol">' +
+          '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1"/></svg><span>Giriş</span></a>';
         return;
       }
       var n = pending ? pending.submissions + pending.users + pending.comments : 0;

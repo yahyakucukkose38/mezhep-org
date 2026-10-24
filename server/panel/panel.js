@@ -501,7 +501,7 @@
     main.innerHTML = '<h1 class="page-title">Onay kuyruğu</h1><p class="page-lead">Üyelerin eklemeleri ve düzeltme önerileri. Onaylamadan önce düzenleyebilirsiniz.</p>' + tabs + '<div data-q><p class="muted">Yükleniyor…</p></div>';
     Promise.all([api("GET", "/admin/submissions?status=" + status), getSchema()]).then(function (r) {
       var items = r[0].items, schema = r[1].schemas, box = $("[data-q]", main);
-      if (!items.length) { box.innerHTML = '<div class="empty">' + (status === "pending" ? "Onay bekleyen gönderi yok. 🎉" : "Kayıt yok.") + "</div>"; return; }
+      if (!items.length) { box.innerHTML = '<div class="empty">' + (status === "pending" ? "Onay bekleyen gönderi yok." : "Kayıt yok.") + "</div>"; return; }
       box.innerHTML = items.map(function (s) {
         var title = s.kind === "claim" ? esc(s.user_name) + " → " + esc(s.target_label || "?") : esc(s.data.title || s.data.name || s.target_label || "(başlıksız)");
         var what = s.kind === "claim" ? "Profil sahipliği talebi" : KIND_LABEL[s.kind] + " · " + (s.target_id ? "düzeltme: " + esc(s.target_label || "#" + s.target_id) : "yeni kayıt");
