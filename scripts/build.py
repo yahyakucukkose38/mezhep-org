@@ -13,6 +13,7 @@ Sunucu (server/) aynı betiği ortam değişkenleriyle çağırır:
 import json, os, re, html, random, unicodedata
 from collections import Counter, defaultdict
 from datetime import date
+from urllib.parse import quote
 
 PROJECT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ROOT = os.environ.get("MZ_OUT") or PROJECT
@@ -131,6 +132,7 @@ I = {
     "pin": '<path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/>',
     "edit": '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
     "copy": '<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
+    "share": '<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.6 13.5 6.8 4M15.4 6.5l-6.8 4"/>',
     "mail": '<rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 5L2 7"/>',
     "yt": '<rect x="2" y="5" width="20" height="14" rx="4"/><path d="m10 9 5 3-5 3z" fill="currentColor"/>',
     "play": '<path d="M8 5.5v13l11-6.5z" fill="currentColor" stroke="none"/>',
@@ -173,7 +175,96 @@ def remove_stale():
     return removed
 
 
-def layout(path, title, body, desc="", active="", data=None):
+def abs_url(path):
+    """Site içi yolu (ör. "{ROOT}uploads/a.jpg", "haber/5.html") mutlak HTTPS adrese çevirir; Türkçe karakterler kodlanır."""
+    p = (path or "").replace("{ROOT}", "").strip()
+    if not p:
+        return ""
+    if re.match(r"https?://", p):
+        return p if p.startswith("https://") else ""
+    return SITE_URL + quote(p.lstrip("/"), safe="/")
+
+
+def iso_date(d):
+    m = re.match(r"(\d{1,2})\.(\d{1,2})\.(\d{4})", d or "")
+    return "%s-%02d-%02d" % (m.group(3), int(m.group(2)), int(m.group(1))) if m else ""
+
+
+def x_handle():
+    m = re.search(r"(?:x|twitter)\.com/([A-Za-z0-9_]{1,15})", ST.get("x_url") or "")
+    return "@" + m.group(1) if m else ""
+
+
+def meta_tags(path, title, desc, share):
+    """Sosyal medya botlarının okuduğu önizleme etiketleri (HTML çıktısında; JavaScript gerektirmez)."""
+    share = share or {}
+    canon = SITE_URL + ("" if path == "index.html" else quote(path, safe="/"))
+    img = share.get("image") or ""
+    default = not img
+    if default:
+        img = SITE_URL + "assets/img/og-%s.jpg" % share.get("og", "genel")
+    alt = share.get("alt") or title
+    tags = [
+        f'<link rel="canonical" href="{E(canon)}">',
+        f'<meta property="og:type" content="{"article" if share.get("article") else "website"}">',
+        f'<meta property="og:url" content="{E(canon)}">',
+        f'<meta property="og:title" content="{E(title)}">',
+        f'<meta property="og:description" content="{E(desc)}">',
+        f'<meta property="og:site_name" content="{E(SITE)}">',
+        '<meta property="og:locale" content="tr_TR">',
+        f'<meta property="og:image" content="{E(img)}">',
+        f'<meta property="og:image:alt" content="{E(alt)}">',
+    ]
+    if default:
+        tags += ['<meta property="og:image:width" content="1200">', '<meta property="og:image:height" content="630">', '<meta property="og:image:type" content="image/jpeg">']
+    if share.get("published"):
+        tags.append(f'<meta property="article:published_time" content="{share["published"]}">')
+    tags += ['<meta name="twitter:card" content="summary_large_image">']
+    if x_handle():
+        tags.append(f'<meta name="twitter:site" content="{x_handle()}">')
+    tags += [f'<meta name="twitter:title" content="{E(title)}">', f'<meta name="twitter:description" content="{E(desc)}">',
+             f'<meta name="twitter:image" content="{E(img)}">', f'<meta name="twitter:image:alt" content="{E(alt)}">']
+    return "\n".join(tags)
+
+
+# ---------------------------------------------------------------- paylaşım bileşeni (tüm ayrıntı sayfalarında ortak)
+SHARE_ICONS = {
+    "whatsapp": '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#25D366" d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 0 1 2.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0 0 12.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 0 0 5.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 0 0-3.48-8.413Z"/></svg>',
+    "telegram": '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#26A5E4" d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg>',
+    "linkedin": '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#0A66C2" d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>',
+    "pinterest": '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#BD081C" d="M12.017 0C5.396 0 .029 5.367.029 11.987c0 5.079 3.158 9.417 7.618 11.162-.105-.949-.199-2.403.041-3.439.219-.937 1.406-5.957 1.406-5.957s-.359-.72-.359-1.781c0-1.663.967-2.911 2.168-2.911 1.024 0 1.518.769 1.518 1.688 0 1.029-.653 2.567-.992 3.992-.285 1.193.6 2.165 1.775 2.165 2.128 0 3.768-2.245 3.768-5.487 0-2.861-2.063-4.869-5.008-4.869-3.41 0-5.409 2.562-5.409 5.199 0 1.033.394 2.143.889 2.741.099.12.112.225.085.345-.09.375-.293 1.199-.334 1.363-.053.225-.172.271-.401.165-1.495-.69-2.433-2.878-2.433-4.646 0-3.776 2.748-7.252 7.92-7.252 4.158 0 7.392 2.967 7.392 6.923 0 4.135-2.607 7.462-6.233 7.462-1.214 0-2.354-.629-2.758-1.379l-.749 2.848c-.269 1.045-1.004 2.352-1.498 3.146 1.123.345 2.306.535 3.55.535 6.607 0 11.985-5.365 11.985-11.987C23.97 5.39 18.592.026 11.985.026L12.017 0z"/></svg>',
+}
+
+
+def share_block(path, title, desc="", image="", target=""):
+    """Paylaş alanı: bağlantılar JavaScript olmadan da çalışır; kopyalama, mobil paylaşım menüsü ve
+    (sunucu sürümünde) tıklama sayımı app.js tarafından eklenir. Instagram web üzerinden gönderi paylaşımına
+    izin vermediği için yer almaz; mobilde sistemin paylaşım menüsü Instagram'ı da sunar."""
+    url = SITE_URL + quote(path, safe="/")
+    q = lambda v: quote(v, safe="")
+    t, u = q(title), q(url)
+    via = x_handle()[1:]
+    nets = [
+        ("whatsapp", "WhatsApp", "https://wa.me/?text=%s" % q(title + " " + url), SHARE_ICONS["whatsapp"]),
+        ("facebook", "Facebook", "https://www.facebook.com/sharer/sharer.php?u=%s" % u, BRAND["facebook"][1]),
+        ("x", "X", "https://x.com/intent/tweet?text=%s&url=%s%s" % (t, u, ("&via=" + via) if via else ""), BRAND["x"][1]),
+        ("telegram", "Telegram", "https://t.me/share/url?url=%s&text=%s" % (u, t), SHARE_ICONS["telegram"]),
+        ("linkedin", "LinkedIn", "https://www.linkedin.com/sharing/share-offsite/?url=%s" % u, SHARE_ICONS["linkedin"]),
+    ]
+    if image:
+        nets.append(("pinterest", "Pinterest", "https://www.pinterest.com/pin/create/button/?url=%s&media=%s&description=%s" % (u, q(image), t), SHARE_ICONS["pinterest"]))
+    links = "".join(
+        f'<a class="share-btn is-{k}" href="{E(h)}" target="_blank" rel="noopener" data-share="{k}" aria-label="{label} ile paylaş">{svg}<span>{label}</span></a>'
+        for k, label, h, svg in nets)
+    mail = "mailto:?subject=%s&body=%s" % (t, q((desc + "\n\n" if desc else "") + url))
+    return (f'<section class="share" data-share-box data-url="{E(url)}" data-title="{E(title)}" data-text="{E(desc)}" data-target="{E(target)}" aria-label="Bu sayfayı paylaşın">'
+            f'<div class="share-head"><span class="share-title">{ic("share")} Paylaş</span><span class="share-status" data-share-status role="status" aria-live="polite"></span></div>'
+            f'<div class="share-list"><button type="button" class="share-btn is-native" data-share-native hidden>{ic("share")}<span>Paylaş…</span></button>{links}'
+            f'<a class="share-btn is-email" href="{E(mail)}" data-share="eposta" aria-label="E-posta ile gönder">{ic("mail")}<span>E-posta</span></a>'
+            f'<button type="button" class="share-btn is-copy" data-share-copy data-share="kopyala" aria-label="Bağlantıyı kopyala">{ic("link")}<span>Bağlantıyı kopyala</span></button></div></section>')
+
+
+def layout(path, title, body, desc="", active="", data=None, share=None):
     depth = path.count("/")
     r = "../" * depth
     nav = "".join('<a href="%s%s"%s>%s</a>' % (r, h, ' aria-current="page"' if h == active else "", t) for h, t in NAV)
@@ -188,9 +279,7 @@ def layout(path, title, body, desc="", active="", data=None):
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{E(full_title)}</title>
 <meta name="description" content="{E(desc or ST["site_description"])}">
-<meta property="og:title" content="{E(title)}">
-<meta property="og:site_name" content="{SITE}">
-<meta property="og:image" content="{SITE_URL}assets/img/og.jpg">
+{meta_tags(path, title, desc or ST["site_description"], share) if path != "404.html" else '<meta name="robots" content="noindex">'}
 <meta name="theme-color" content="#2a4862">
 <link rel="icon" href="{r}assets/img/favicon.png" type="image/png">
 <link rel="apple-touch-icon" href="{r}assets/img/apple-touch-icon.png">
@@ -614,6 +703,7 @@ def build_members():
             ("Şehir", E(m["city"])), ("Web", '<a href="%s" target="_blank" rel="noopener">Kişisel sayfa</a>' % E(m["web"]) if m["web"] else ""),
             ("E-posta", '<a href="mailto:%s">%s</a>' % (E(m["email"]), E(m["email"])) if m["email"] else ""),
             ("Eklenme", tr_date(m["added"]))] if v)
+        m_desc = "%s — %s" % (m["display"], m["university"])
         body = page_hero(m["name"], "", [("index.html", "Ana Sayfa"), ("akademisyenler.html", "Akademisyenler"), ("", m["name"])], m["title"], own_button("member", m["id"]))
         body += f'''<div class="container detail">
   <div>
@@ -622,10 +712,12 @@ def build_members():
     {works_html}
     {news_html}
     {"" if (bio or ws or rel) else '<div class="panel empty">Bu akademisyen için henüz özgeçmiş veya eser bilgisi eklenmemiş. Katkıda bulunmak için <a href="{ROOT}hakkinda.html#iletisim">bize ulaşın</a>.</div>'}
+    {share_block(m["slug"], m["name"], m_desc, abs_url(m.get("photo")), "member:%d" % m["id"])}
   </div>
   <aside><div class="panel"><h3>Bilgiler</h3><dl class="dl">{info}</dl></div>{claim_button(m["id"])}<a class="btn btn-ghost" href="{{ROOT}}akademisyenler.html">{ic("left")} Tüm akademisyenler</a></aside>
 </div>'''
-        layout(m["slug"], m["name"], body, "%s — %s" % (m["display"], m["university"]), "akademisyenler.html")
+        layout(m["slug"], m["name"], body, m_desc, "akademisyenler.html",
+               share={"og": "akademisyen", "image": abs_url(m.get("photo")), "alt": m["display"]})
 
 
 # ---------------------------------------------------------------- ESERLER
@@ -711,17 +803,19 @@ def build_works():
         similar = [x for x in works if x["kind"] == w["kind"] and x["id"] != w["id"]]
         random.Random(w["id"]).shuffle(similar)
         btn = '<a class="btn btn-primary" href="%s" target="_blank" rel="noopener">%s Tam metne git</a>' % (E(w["url"]), ic("ext")) if w["url"] else ""
+        w_desc = strip_tags(w["ozet"] or w["abstract"])[:200] or "%s — %s%s" % (w["kind"], w["author"], (", %d" % w["year"]) if w["year"] else "")
         body = page_hero(w["title"], E(w["author"]) + ((" · %d" % w["year"]) if w["year"] else ""), [("index.html", "Ana Sayfa"), ("eserler.html", "Eserler"), ("eserler.html#tur=" + w["kind"], w["kind"])], w["kind"], own_button("work", w["id"]))
         body += f'''<div class="container detail">
   <div>
     <div class="panel">{tabs}</div>
     <div class="panel"><h3>Kaynak gösterimi <span class="badge" style="vertical-align:3px">APA 7</span></h3><p style="margin:0 0 14px;color:var(--ink-2)" data-cite>{E(cite(w))}</p><button class="btn btn-ghost btn-sm" type="button" data-copy>{ic("copy")} Kopyala</button></div>
+    {share_block(w["slug"], w["title"], w_desc, "", "work:%d" % w["id"])}
     {comments_block("work:%d" % w["id"])}
     <div class="panel"><h3>Benzer eserler</h3><div class="feed" style="margin-top:14px">{"".join(work_item(x) for x in similar[:4])}</div></div>
   </div>
   <aside><div class="panel"><h3>Künye</h3><dl class="dl">{info}</dl></div>{btn}<a class="btn btn-ghost" href="{{ROOT}}eserler.html">{ic("left")} Tüm eserler</a></aside>
 </div>'''
-        layout(w["slug"], w["title"], body, strip_tags(w["ozet"] or w["abstract"])[:160] or "%s — %s" % (w["title"], w["author"]), "eserler.html")
+        layout(w["slug"], w["title"], body, w_desc[:160], "eserler.html", share={"og": "eser", "article": True, "alt": w["title"]})
 
 
 # ---------------------------------------------------------------- HABERLER & KONULAR
@@ -763,10 +857,11 @@ def build_news():
         info = "".join(f"<dt>{k}</dt><dd>{v}</dd>" for k, v in [("Kategori", E(t["tag"])), ("Tarih", tr_date(t.get("date"))), ("Yazan", E(t.get("author"))), ("Mesaj", len(t["posts"]) if len(t["posts"]) > 1 else "")] if v)
         body = page_hero(t["title"], "", [("index.html", "Ana Sayfa"), (href, label), ("", t["tag"])], tr_date(t.get("date")), own_button("topic", t["id"]))
         body += f'''<div class="container detail">
-  <div><article class="panel">{posts}</article>{comments_block("topic:%d" % t["id"])}{('<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(240px,1fr));margin-top:18px">%s</div>' % nav) if nav else ""}</div>
+  <div><article class="panel">{posts}</article>{share_block(t["slug"], t["title"], t.get("summary", "")[:200], abs_url(t.get("image")), "topic:%d" % t["id"])}{comments_block("topic:%d" % t["id"])}{('<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(240px,1fr));margin-top:18px">%s</div>' % nav) if nav else ""}</div>
   <aside><div class="panel"><h3>Ayrıntılar</h3><dl class="dl">{info}</dl></div><div class="panel"><h3>Diğer {label.lower()}</h3><div class="feed" style="margin-top:12px">{"".join(feed_topic(x) for x in more)}</div></div><a class="btn btn-ghost" href="{{ROOT}}{href}">{ic("left")} {label}</a></aside>
 </div>'''
-        layout(t["slug"], t["title"], body, t.get("summary", "")[:160], href)
+        layout(t["slug"], t["title"], body, t.get("summary", "")[:160], href,
+               share={"og": "etkinlik" if t["forum"] == "etkinlik" else "haber", "article": True, "image": abs_url(t.get("image")), "published": iso_date(t.get("date"))})
 
 
 # ---------------------------------------------------------------- ETKİNLİKLER
@@ -809,9 +904,10 @@ def build_gallery():
         figs = "".join(f'<figure data-full="{{ROOT}}{E(p["src"])}" data-cap="{E(p["title"])}"><img src="{{ROOT}}{E(p["src"])}" alt="{E(p["title"])}" loading="lazy"><figcaption>{E(p["title"])}</figcaption></figure>' for p in a["photos"])
         others_ = "".join(f'<a class="chip" href="{{ROOT}}{x["slug"]}">{E(x["name"])}</a>' for x in album_groups[a["event"]] if x is not a)
         body = page_hero("%s — %s" % (a["event"], a["name"]), "%d fotoğraf" % len(a["photos"]), [("index.html", "Ana Sayfa"), ("galeri.html", "Galeri"), ("", a["event"])])
-        body += f'''<div class="container" style="padding:32px 24px 80px">{('<div class="chips" style="margin:0 0 24px">%s</div>' % others_) if others_ else ""}<div class="masonry" data-gallery>{figs}</div></div>
+        body += f'''<div class="container" style="padding:32px 24px 80px">{('<div class="chips" style="margin:0 0 24px">%s</div>' % others_) if others_ else ""}<div class="masonry" data-gallery>{figs}</div>{share_block(a["slug"], "%s — %s" % (a["event"], a["name"]), "%d fotoğraf" % len(a["photos"]), abs_url(a["photos"][0]["src"]) if a["photos"] else "", "album:" + a["slug"].split("/")[-1][:-5])}</div>
 <div class="lightbox" aria-hidden="true"><img alt=""><div class="cap"></div><button class="lb-close" aria-label="Kapat">{ic("x")}</button><button class="lb-prev" aria-label="Önceki">{ic("left")}</button><button class="lb-next" aria-label="Sonraki">{ic("chev")}</button></div>'''
-        layout(a["slug"], "%s — %s" % (a["event"], a["name"]), body, "", "galeri.html")
+        layout(a["slug"], "%s — %s" % (a["event"], a["name"]), body, "%s — %d fotoğraf" % (a["event"], len(a["photos"])), "galeri.html",
+               share={"og": "galeri", "image": abs_url(a["photos"][0]["src"]) if a["photos"] else ""})
 
 
 # ---------------------------------------------------------------- KAYNAKLAR

@@ -52,6 +52,30 @@ api.get("/lookup/members", (req, res) => {
   ok(res, { items: rows });
 });
 
+// ================================================================ paylaşım tıklamaları
+const SHARE_PLATFORMS = ["whatsapp", "facebook", "x", "telegram", "linkedin", "pinterest", "eposta", "kopyala", "sistem"];
+const SHARE_TARGET = /^(topic|work|member):(\d{1,9})$|^album:(\d{1,4})-(\d{1,4})$/;
+// Paylaşılan içerik: başlık ve sayfa adresi (rapor ve doğrulama için); yayında olmayan kayıtlar sayılmaz.
+function shareTarget(target) {
+  const m = SHARE_TARGET.exec(String(target || ""));
+  if (!m) return null;
+  if (m[1]) {
+    const it = C.getItem(m[1], +m[2]);
+    if (!it) return null;
+    const dir = { topic: "haber", work: "eser", member: "akademisyen" }[m[1]];
+    return { title: it.title || it.name, url: `/${dir}/${+m[2]}.html`, kind: m[1] };
+  }
+  const al = C.getItem("album", +m[3] * 1000 + +m[4]);
+  return al ? { title: [al.event, al.name].filter(Boolean).join(" — ") || "Albüm", url: `/galeri/${+m[3]}-${+m[4]}.html`, kind: "album" } : null;
+}
+api.post("/share", A.rateLimit({ windowMs: 10 * 60e3, max: 60 }), (req, res) => {
+  const target = String(req.body?.target || ""), platform = String(req.body?.platform || "");
+  if (!SHARE_PLATFORMS.includes(platform) || !shareTarget(target)) return A.fail(res, 400, "Geçersiz paylaşım kaydı.");
+  db.prepare(`INSERT INTO share_clicks (day, target, platform, n) VALUES (?, ?, ?, 1)
+              ON CONFLICT(day, target, platform) DO UPDATE SET n = n + 1`).run(ai.istanbulDay(), target, platform);
+  res.status(204).end();
+});
+
 // Site üretim durumu (yalnızca zaman ve sonuç; günlük metni yok): düzenleme ekranı "Sitede yayında" bildirimini buna göre verir.
 api.get("/site/build", (_req, res) => {
   const s = rebuild.state;
@@ -579,6 +603,27 @@ admin.put("/settings", need("site.ayar", "ai.ayar"), (req, res) => {
 });
 
 // ---- işlem kayıtları
+// Paylaşım tıklaması istatistikleri (işlem kayıtlarını görme yetkisiyle)
+admin.get("/shares", need("kayit.gor"), (req, res) => {
+  const days = Math.max(1, Math.min(366, int(req.query.days) || 30));
+  const from = ai.istanbulDay(new Date(Date.now() - (days - 1) * 864e5));
+  const all = (sql, ...a) => db.prepare(sql).all(...a).map(plain);
+  const top = all(`SELECT target, sum(n) AS n FROM share_clicks WHERE day >= ? GROUP BY target ORDER BY n DESC LIMIT 25`, from)
+    .map((r) => ({ ...r, ...(shareTarget(r.target) || { title: "(kaldırılmış içerik)", url: "", kind: r.target.split(":")[0] }) }));
+  const byTarget = all(`SELECT target, platform, sum(n) AS n FROM share_clicks WHERE day >= ? GROUP BY target, platform`, from);
+  for (const t of top) t.platforms = Object.fromEntries(byTarget.filter((x) => x.target === t.target).map((x) => [x.platform, x.n]));
+  ok(res, {
+    range: { from, to: ai.istanbulDay(), days },
+    total: db.prepare("SELECT coalesce(sum(n), 0) AS n FROM share_clicks WHERE day >= ?").get(from).n,
+    allTime: db.prepare("SELECT coalesce(sum(n), 0) AS n FROM share_clicks").get().n,
+    byPlatform: all(`SELECT platform, sum(n) AS n FROM share_clicks WHERE day >= ? GROUP BY platform ORDER BY n DESC`, from),
+    byKind: all(`SELECT substr(target, 1, instr(target, ':') - 1) AS kind, sum(n) AS n FROM share_clicks WHERE day >= ? GROUP BY kind ORDER BY n DESC`, from),
+    byDay: all(`SELECT day, sum(n) AS n FROM share_clicks WHERE day >= ? GROUP BY day ORDER BY day`, from),
+    byMonth: all(`SELECT substr(day, 1, 7) AS month, sum(n) AS n FROM share_clicks GROUP BY month ORDER BY month DESC LIMIT 12`),
+    top,
+  });
+});
+
 admin.get("/logs", need("kayit.gor"), (req, res) => {
   const where = [], args = [];
   if (req.query.action) { where.push("l.action = ?"); args.push(String(req.query.action)); }

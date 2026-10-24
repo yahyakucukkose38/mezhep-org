@@ -513,6 +513,7 @@
       if (can("icerik.sil")) html += link("#/yonetim/cop", "Geri dönüşüm kutusu");
       if (can("site.ayar") || can("ai.ayar")) html += link("#/yonetim/ayarlar", "Site ayarları");
       if (can("kayit.gor")) html += link("#/yonetim/kayitlar", "İşlem kayıtları");
+      if (can("kayit.gor")) html += link("#/yonetim/paylasimlar", "Paylaşım tıklamaları");
       html += link("#/yonetim/site", "Site yayını");
       if (can("ai.rapor")) html += link("#/yonetim/yapay-zeka", "Yapay zekâ kullanımı");
     }
@@ -1285,6 +1286,42 @@
   }
 
   // Doğrudan bağlantıyla yetkisiz bir yönetim ekranına gelindiğinde (sunucu da aynı isteği 403 ile reddeder)
+  // Paylaşım düğmesi tıklamaları: yalnızca içerik ve platform başına sayı (kişi bilgisi tutulmaz)
+  var SHARE_LABEL = { whatsapp: "WhatsApp", facebook: "Facebook", x: "X", telegram: "Telegram", linkedin: "LinkedIn", pinterest: "Pinterest",
+    eposta: "E-posta", kopyala: "Bağlantı kopyalama", sistem: "Mobil paylaşım menüsü" };
+  var SHARE_KIND = { topic: "Haber / etkinlik", work: "Eser", member: "Akademisyen", album: "Galeri" };
+  function viewShares(days) {
+    days = [7, 30, 90, 365].indexOf(+days) >= 0 ? +days : 30;
+    setTitle("Paylaşım tıklamaları");
+    main.innerHTML = '<h1 class="page-title">Paylaşım tıklamaları</h1><p class="page-lead">Ziyaretçilerin içerik sayfalarındaki paylaşım düğmelerine tıklama sayıları. ' +
+      "Bir tıklama, paylaşımın gerçekten tamamlandığı anlamına gelmez. Ziyaretçiye ait hiçbir bilgi (hesap, IP, tarayıcı) saklanmaz.</p><div data-sh><p class=\"muted\">Yükleniyor…</p></div>";
+    api("GET", "/admin/shares?days=" + days).then(function (r) {
+      var box = $("[data-sh]", main);
+      var tabs = '<nav class="tabs">' + [7, 30, 90, 365].map(function (d) { return '<a href="#/yonetim/paylasimlar/' + d + '"' + (d === days ? ' aria-current="page"' : "") + ">" + (d === 365 ? "Son 1 yıl" : "Son " + d + " gün") + "</a>"; }).join("") + "</nav>";
+      var table = function (head, rows) { return '<div class="p-table-wrap"><table class="p-table"><thead><tr>' + head.map(function (h) { return "<th>" + h + "</th>"; }).join("") + "</tr></thead><tbody>" + (rows.length ? rows.join("") : '<tr><td colspan="' + head.length + '" class="sub">Bu aralıkta paylaşım tıklaması yok.</td></tr>') + "</tbody></table></div>"; };
+      var max = Math.max.apply(null, r.byPlatform.map(function (x) { return x.n; }).concat([1]));
+      var bars = function (rows, label) { return rows.map(function (x) {
+        return "<tr><td>" + esc(label(x)) + '</td><td style="width:55%"><div class="meter"><span style="width:' + Math.max(2, x.n / max * 100).toFixed(1) + '%"></span></div></td><td>' + x.n + "</td></tr>"; }); };
+      var maxDay = Math.max.apply(null, r.byDay.map(function (d) { return d.n; }).concat([1]));
+      var chart = r.byDay.length ? '<div class="ai-chart" role="img" aria-label="Günlük paylaşım tıklamaları">' + r.byDay.map(function (d) {
+        return '<div class="col" title="' + esc(d.day) + ": " + d.n + ' tıklama"><span class="bar" style="height:' + Math.max(3, d.n / maxDay * 100).toFixed(1) + '%"></span><small>' + esc(d.day.slice(5)) + "</small></div>";
+      }).join("") + "</div>" : '<div class="empty">Bu aralıkta paylaşım tıklaması yok.</div>';
+      var top = r.byPlatform[0];
+      box.innerHTML = tabs + '<div class="p-grid">' +
+        '<div class="p-card p-stat"><b>' + r.total + '</b><span>Paylaşım tıklaması</span><span class="sub">' + esc(r.range.from) + " – " + esc(r.range.to) + "</span></div>" +
+        '<div class="p-card p-stat"><b>' + (top ? esc(SHARE_LABEL[top.platform] || top.platform) : "—") + '</b><span>En çok tercih edilen</span></div>' +
+        '<div class="p-card p-stat"><b>' + r.allTime + "</b><span>Tüm zamanlar</span></div></div>" +
+        '<div class="panel" style="margin-bottom:18px"><h3>Günlük</h3>' + chart + "</div>" +
+        "<h3>Platformlara göre</h3>" + table(["Platform", "", "Tıklama"], bars(r.byPlatform, function (x) { return SHARE_LABEL[x.platform] || x.platform; })) +
+        '<h3 style="margin-top:22px">En çok paylaşım düğmesine tıklanan içerikler</h3>' + table(["İçerik", "Tür", "Platformlar", "Tıklama"], r.top.map(function (t) {
+          var pl = Object.keys(t.platforms || {}).sort(function (a, b) { return t.platforms[b] - t.platforms[a]; }).map(function (k) { return esc(SHARE_LABEL[k] || k) + " " + t.platforms[k]; }).join(" · ");
+          return "<tr><td>" + (t.url ? '<a href="' + esc(t.url) + '" target="_blank" rel="noopener">' + esc(t.title) + "</a>" : esc(t.title)) + "</td><td>" + esc(SHARE_KIND[t.kind] || t.kind) + '</td><td class="sub">' + pl + "</td><td>" + t.n + "</td></tr>";
+        })) +
+        '<h3 style="margin-top:22px">İçerik türüne göre</h3>' + table(["Tür", "Tıklama"], r.byKind.map(function (x) { return "<tr><td>" + esc(SHARE_KIND[x.kind] || x.kind) + "</td><td>" + x.n + "</td></tr>"; })) +
+        '<h3 style="margin-top:22px">Aylık (son 12 ay)</h3>' + table(["Ay", "Tıklama"], r.byMonth.map(function (x) { return "<tr><td>" + esc(x.month) + "</td><td>" + x.n + "</td></tr>"; }));
+    }).catch(fail);
+  }
+
   function viewNoAccess() {
     setTitle("Yetkiniz yok");
     main.innerHTML = '<h1 class="page-title">Bu ekran için yetkiniz yok</h1><p class="page-lead">Bu içeriği düzenleme yetkisi hesabınıza tanımlı değil. Yetki gerektiğini düşünüyorsanız site yöneticisine başvurun.</p>' +
@@ -1332,6 +1369,7 @@
       if (path[1] === "roller" && can("yetki.yonet")) return viewRoles();
       if (path[1] === "ayarlar" && (can("site.ayar") || can("ai.ayar"))) return viewSettings(path[2]);
       if (path[1] === "kayitlar" && can("kayit.gor")) return viewLogs();
+      if (path[1] === "paylasimlar" && can("kayit.gor")) return viewShares(path[2]);
       if (path[1] === "cop" && can("icerik.sil")) return viewTrash();
       if (path[1] === "yorumlar") return viewComments(path[2]);
       if (path[1] === "site") return viewSite();

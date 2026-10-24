@@ -83,6 +83,15 @@ CREATE TABLE IF NOT EXISTS ai_usage (
 );
 CREATE INDEX IF NOT EXISTS ai_usage_user_day ON ai_usage(user_id, day);
 CREATE INDEX IF NOT EXISTS ai_usage_day ON ai_usage(day);
+-- Paylaşım düğmesi tıklamaları: gün + içerik + platform başına yalnızca sayı. Kişi, IP ya da tarayıcı bilgisi tutulmaz (KVKK).
+-- Bir tıklama, paylaşımın gerçekten tamamlandığı anlamına gelmez; raporda "paylaşım tıklaması" olarak gösterilir.
+CREATE TABLE IF NOT EXISTS share_clicks (
+  day      TEXT NOT NULL,             -- Europe/Istanbul takvim günü (YYYY-MM-DD)
+  target   TEXT NOT NULL,             -- topic:305 | work:12 | member:10 | album:8-37
+  platform TEXT NOT NULL,
+  n        INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (day, target, platform)
+);
 CREATE TABLE IF NOT EXISTS logs (
   id      INTEGER PRIMARY KEY,
   user_id INTEGER,

@@ -609,3 +609,30 @@ a.feed-item:hover { background: var(--surface-2); }
 .ai-style .linklike { border: 0; background: none; padding: 0; color: var(--brand); font: inherit; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
 .ai-bubble h4 { margin: 12px 0 4px; font-size: .95rem; font-family: var(--sans); color: var(--brand); }
 .ai-bubble h4:first-child { margin-top: 0; }
+
+/* ---- paylaş alanı (haber, eser, akademisyen, galeri) ---- */
+.share { margin: 18px 0; padding: 18px 20px; border: 1px solid var(--line); border-radius: var(--radius, 18px); background: var(--surface); }
+.share-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.share-title { display: inline-flex; align-items: center; gap: 8px; font-family: var(--serif); font-size: 1.1rem; font-weight: 600; color: var(--ink); }
+.share-title svg { width: 20px; height: 20px; color: var(--brand); }
+.share-status { font-size: .85rem; font-weight: 600; color: var(--brand); }
+.share-list { display: flex; flex-wrap: wrap; gap: 8px; }
+.share-btn { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2);
+  color: var(--ink); font: 600 .88rem var(--sans); text-decoration: none; cursor: pointer; transition: border-color .2s, transform .2s var(--ease), background .2s; }
+.share-btn svg { width: 19px; height: 19px; flex-shrink: 0; }
+.share-btn:hover { border-color: var(--line-2); background: var(--surface); transform: translateY(-1px); }
+.share-btn:focus-visible { outline: 3px solid color-mix(in oklab, var(--brand) 45%, transparent); outline-offset: 2px; }
+.share-btn.is-email svg, .share-btn.is-copy svg, .share-btn.is-native svg { color: var(--brand); }
+.share-btn.is-native { background: var(--brand); border-color: var(--brand); color: var(--brand-ink, #fff); }
+.share-btn.is-native svg { color: currentColor; }
+.share-btn.done { border-color: var(--brand); color: var(--brand); }
+.share.compact .share-btn:not(.is-native):not(.is-more) { display: none; }
+.share.compact.open .share-btn:not(.is-native):not(.is-more) { display: inline-flex; }
+.share-btn.is-more { background: none; }
+@media (max-width: 640px) {
+  .share { padding: 16px; }
+  .share-list { display: grid; grid-template-columns: 1fr 1fr; }
+  .share-btn { justify-content: flex-start; }
+  .share.compact .share-btn.is-native, .share.compact .share-btn.is-more { grid-column: span 1; justify-content: center; }
+}
+@media print { .share { display: none; } }

@@ -231,6 +231,63 @@
     });
   });
 
+  /* ---------- paylaş: bağlantılar JS olmadan da çalışır; burada kopyalama, mobil paylaşım menüsü ve sayım eklenir ---------- */
+  var shareTrack = null; // sunucu sürümünde atanır (yalnızca içerik + platform sayılır; kişi bilgisi tutulmaz)
+  var copyText = function (txt) {
+    if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(txt);
+    return new Promise(function (ok, no) {
+      var ta = document.createElement("textarea"); ta.value = txt; ta.setAttribute("readonly", ""); ta.style.position = "fixed"; ta.style.opacity = "0";
+      document.body.appendChild(ta); ta.select();
+      try { document.execCommand("copy") ? ok() : no(); } catch (e) { no(e); }
+      ta.remove();
+    });
+  };
+  var touch = window.matchMedia && matchMedia("(pointer: coarse)").matches;
+  $$("[data-share-box]").forEach(function (box) {
+    var url = box.getAttribute("data-url"), title = box.getAttribute("data-title"), text = box.getAttribute("data-text");
+    var status = $("[data-share-status]", box), timer;
+    var say = function (m) { status.textContent = m; clearTimeout(timer); timer = setTimeout(function () { status.textContent = ""; }, 3500); };
+    var track = function (platform) { if (shareTrack) shareTrack(box.getAttribute("data-target"), platform); };
+    // Mobilde sistemin paylaşım menüsü (Instagram, Mesajlar vb. dahil); diğer seçenekler tek düğme altında toplanır
+    var nat = $("[data-share-native]", box);
+    if (nat && navigator.share) {
+      nat.hidden = false;
+      nat.addEventListener("click", function () {
+        track("sistem");
+        navigator.share({ title: title, text: text, url: url }).catch(function () {});
+      });
+      if (touch) {
+        box.classList.add("compact");
+        var more = document.createElement("button");
+        more.type = "button"; more.className = "share-btn is-more"; more.setAttribute("aria-expanded", "false");
+        more.innerHTML = "<span>Diğer seçenekler</span>";
+        more.addEventListener("click", function () { var o = box.classList.toggle("open"); more.setAttribute("aria-expanded", o); more.firstChild.textContent = o ? "Daha az" : "Diğer seçenekler"; });
+        $(".share-list", box).appendChild(more);
+      }
+    }
+    $$("a[data-share]", box).forEach(function (a) {
+      a.addEventListener("click", function (e) {
+        var k = a.getAttribute("data-share");
+        track(k);
+        // masaüstünde paylaşım sayfaları küçük pencerede açılır; mobilde uygulamaya yönlendirmesi için normal bağlantı
+        if (!touch && /^(facebook|x|telegram|linkedin|pinterest)$/.test(k)) {
+          var w = window.open(a.href, "mz-paylas", "width=640,height=620,menubar=no,toolbar=no");
+          if (w) { e.preventDefault(); try { w.opener = null; } catch (er) {} }
+        }
+      });
+    });
+    var cp = $("[data-share-copy]", box);
+    cp && cp.addEventListener("click", function () {
+      track("kopyala");
+      var label = $("span", cp);
+      copyText(url).then(function () {
+        say("Bağlantı kopyalandı.");
+        label.textContent = "Kopyalandı ✓"; cp.classList.add("done");
+        setTimeout(function () { label.textContent = "Bağlantıyı kopyala"; cp.classList.remove("done"); }, 2200);
+      }, function () { say("Kopyalanamadı. Adres: " + url); });
+    });
+  });
+
   /* ---------- kaynak kopyala ---------- */
   $$("[data-copy]").forEach(function (b) {
     b.addEventListener("click", function () {
@@ -251,6 +308,13 @@
       }).then(function (r) { return r.json().then(function (j) { if (!r.ok) throw j; return j; }); });
     };
     var me = null, pending = null, siteSet = {};
+    shareTrack = function (target, platform) {
+      if (!target) return;
+      try {
+        fetch("/api/share", { method: "POST", keepalive: true, credentials: "same-origin",
+          headers: { "x-mz": "1", "Content-Type": "application/json" }, body: JSON.stringify({ target: target, platform: platform }) }).catch(function () {});
+      } catch (e) {}
+    };
     // Yönetim paneline giriş: "kendi.*" dışında en az bir yetki
     var isStaff = function (u) { return !!u && (u.perms || []).some(function (p) { return p.indexOf("kendi.") !== 0; }); };
     var can = function (p) { return !!me && (me.perms || []).indexOf(p) > -1; };
