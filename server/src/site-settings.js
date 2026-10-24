@@ -43,7 +43,7 @@ const GROUPS = [
     { key: "home_show_news", label: "Son haberler bölümünü göster", type: "bool", def: true },
     { key: "home_news_count", label: "Gösterilecek haber sayısı", type: "number", def: 6, min: 3, max: 12 },
     { key: "home_show_youtube", label: "YouTube kanalı bölümünü göster", type: "bool", def: true },
-    { key: "home_show_videos", label: "Video modülünü göster", type: "bool", def: true },
+    { key: "home_show_videos", label: "Video modülünü göster (Prof. Dr. Ahmet İshak Demir videoları)", type: "bool", def: false },
     { key: "videos_eyebrow", label: "Video modülü: üst etiket", type: "text", def: "Prof. Dr. Ahmet İshak Demir", max: 80 },
     { key: "videos_title", label: "Video modülü: başlık", type: "text", def: "Konuşmalar ve videolar", max: 100 },
     { key: "videos_playlists", label: "Video modülü: YouTube oynatma listesi kimlikleri (her satıra bir tane, PL… ile başlar; 6 saatte bir güncellenir)", type: "lines", max: 4,

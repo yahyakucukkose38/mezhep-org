@@ -51,7 +51,7 @@ ST = {
     "home_quote": "Gelişmesi ve zenginleşmesi için İslam Mezhepleri ile ilgilenen herkesin katkılarını bekliyoruz.",
     "home_quote_sign": "Ahmet İshak DEMİR", "home_show_news": True, "home_news_count": 6,
     "home_show_coord": True, "home_show_works": True, "home_show_members": True,
-    "home_show_youtube": True, "home_show_videos": True, "videos_eyebrow": "Prof. Dr. Ahmet İshak Demir",
+    "home_show_youtube": True, "home_show_videos": False, "videos_eyebrow": "Prof. Dr. Ahmet İshak Demir",
     "videos_title": "Konuşmalar ve videolar", "videos_more_url": "https://www.ahmetishak.com/galeri/videolar/",
     "videos_channel_url": "https://www.youtube.com/@mezheporg",
 }

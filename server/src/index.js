@@ -107,8 +107,8 @@ if (require.main === module) {
   setInterval(A.cleanupSessions, 6 * 3600e3).unref();
   // Sunucu her açılışta siteyi güncel veriyle (ve dinamik özelliklerle) yeniden üretir.
   rebuild.run();
-  // Video listelerini açılışta ve 6 saatte bir yenile; değiştiyse siteyi yeniden üret.
-  const refreshVideos = () => videos.refresh(SS.get("videos_playlists"))
+  // Video listelerini açılışta ve 6 saatte bir yenile; değiştiyse siteyi yeniden üret. Modül kapalıyken YouTube'a istek atılmaz.
+  const refreshVideos = () => !SS.get("home_show_videos") ? Promise.resolve() : videos.refresh(SS.get("videos_playlists"))
     .then((changed) => changed && rebuild.schedule("video listesi güncellendi"))
     .catch((e) => console.error("[video]", e.message));
   setTimeout(refreshVideos, 15000).unref();
