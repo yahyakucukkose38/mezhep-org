@@ -5,7 +5,8 @@ Uygulama (site + üye/yönetim paneli + API + Akaid Asistanı) tek bir Docker ka
 
 | | |
 |---|---|
-| Adres | https://mezhep.ihyadijital.com |
+| Adres | https://mezhep.net (`www.mezhep.net` ve eski `mezhep.ihyadijital.com` → 301 ile buraya) |
+| Alan adı ve DNS | Niobe Hosting cPanel (`https://luffy.trdns.com:2083`) → Zone Editor: `A mezhep.net → 185.23.17.212`, `CNAME www → mezhep.net`; e-posta Niobe'de kalır (`A mail → 77.245.149.76`, `MX → mail.mezhep.net`) |
 | Sunucuda | `/opt/mezhep` (kod: `src/`, ayarlar: `.env`, asistan kaynakları: `kaynaklar/`, yedekler: `yedekler/`) |
 | Compose projesi | `mezhep` (kapsayıcı `mezhep-app-1`, birim `mezhep_veri` → `/data`) |
 | Uygulama portu | yalnızca `127.0.0.1:3400` |
@@ -13,7 +14,8 @@ Uygulama (site + üye/yönetim paneli + API + Akaid Asistanı) tek bir Docker ka
 
 ## İlk kurulum
 
-1. **DNS (Turhost):** `mezhep` kaydını `vebides.ihyadijital.com`'a CNAME yapın (şu an GitHub Pages'e gidiyor).
+1. **DNS:** ana alan adının A kaydını sunucuya (`185.23.17.212`) yönlendirin; `.env` içinde `ALAN_ADI` ana adres,
+   `YONLENDIRILEN_ALANLAR` ise ana adrese 301 ile yönlenecek adlardır (www, eski alan adı). Sertifika hepsini kapsar.
 2. **Ayarlar:** sunucuda `/opt/mezhep/.env` dosyasını `deploy/.env.example`'dan oluşturun; `MZ_ADMIN_EMAIL` ve
    `OPENAI_API_KEY` alanlarını doldurun (`chmod 600 /opt/mezhep/.env`). Anahtar yalnızca bu dosyada durur.
 3. **Yükleme** (proje klasöründe, değişiklikler commit edilmiş olmalı):
