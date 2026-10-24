@@ -55,6 +55,12 @@ const GROUPS = [
     { key: "home_show_works", label: "Öne çıkan eserler bölümünü göster", type: "bool", def: true },
     { key: "home_show_members", label: "Yeni eklenen akademisyenler bölümünü göster", type: "bool", def: true },
   ] },
+  { key: "galeri", label: "Galeri", perm: "site.ayar", fields: [
+    { key: "gallery_show_videos", label: "Galeride Videolar sekmesini göster", type: "bool", def: true },
+    { key: "gallery_channel", label: "Videoların alınacağı YouTube kanal kimliği (UC… ile başlar; 6 saatte bir güncellenir)", type: "text", max: 40,
+      pattern: /^UC[\w-]{22}$/, patternMsg: "Kanal kimliği UC ile başlayan 24 karakter olmalı (YouTube kanal sayfası → Paylaş → Kanal kimliğini kopyala).",
+      def: "UCGFN07whsFRvjvB7TzK-bKg" },
+  ] },
   { key: "uyelik", label: "Üyelik ve katkılar", perm: "site.ayar", public: true, fields: [
     { key: "registration_open", label: "Yeni üye kaydı açık", type: "bool", def: true },
     { key: "submissions_open", label: "Üyeler eser, haber ve profil önerisi gönderebilir", type: "bool", def: true },
@@ -111,6 +117,7 @@ function clean(f, v) {
       if (f.max && s.length > f.max) throw `En fazla ${f.max} karakter olabilir.`;
       if (f.type === "url" && s && !/^https?:\/\/[^\s"'<>]+\.[^\s"'<>]+$/i.test(s)) throw "Adres http:// ya da https:// ile başlamalı.";
       if (f.type === "email" && s && !/^[^\s@<>"]+@[^\s@<>"]+\.[^\s@<>"]+$/.test(s)) throw "Geçerli bir e-posta girin.";
+      if (f.pattern && s && !f.pattern.test(s)) throw f.patternMsg;
       return f.type === "textarea" ? s : s.replace(/\s+/g, " ");
     }
   }

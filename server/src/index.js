@@ -101,6 +101,9 @@ if (require.main === module) {
   if (seedIfEmpty()) console.log("[kurulum] İçerik data/*.json dosyalarından veritabanına aktarıldı.");
   ensureAdmin();
   // Metne düz yazı olarak kaydedilmiş video gömme kodlarını (eski editör) oynatıcıya çevirir; yapılacak iş yoksa hiçbir şey yazmaz.
+  // Etkinlik bölümü üçe ayrıldı (Etkinlik / Sempozyum / Koordinasyon): mevcut kayıtlar bir kez taşınır.
+  const split = require("./db").runOnce("etkinlik-kategorileri-2026-10", () => require("./content").splitEventForums());
+  if (split && split.length) { log(null, "etkinlik-kategorileri", `${split.length} kayıt: ${split.join(", ")}`.slice(0, 500)); console.log(`[icerik] etkinlik kategorileri ayrıldı: ${split.length} kayıt`); }
   const fixed = require("./content").fixEmbedCodes();
   if (fixed.length) { log(null, "video-kodu-donustur", fixed.join(", ")); console.log(`[icerik] video kodu oynatıcıya çevrildi: ${fixed.join(", ")}`); }
   A.cleanupSessions();
@@ -108,7 +111,7 @@ if (require.main === module) {
   // Sunucu her açılışta siteyi güncel veriyle (ve dinamik özelliklerle) yeniden üretir.
   rebuild.run();
   // Video listelerini açılışta ve 6 saatte bir yenile; değiştiyse siteyi yeniden üret. Modül kapalıyken YouTube'a istek atılmaz.
-  const refreshVideos = () => !SS.get("home_show_videos") ? Promise.resolve() : videos.refresh(SS.get("videos_playlists"))
+  const refreshVideos = () => (!SS.get("home_show_videos") && !SS.get("gallery_show_videos")) ? Promise.resolve() : videos.refreshFromSettings(SS)
     .then((changed) => changed && rebuild.schedule("video listesi güncellendi"))
     .catch((e) => console.error("[video]", e.message));
   setTimeout(refreshVideos, 15000).unref();

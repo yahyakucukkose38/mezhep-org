@@ -636,3 +636,11 @@ a.feed-item:hover { background: var(--surface-2); }
   .share.compact .share-btn.is-native, .share.compact .share-btn.is-more { grid-column: span 1; justify-content: center; }
 }
 @media print { .share { display: none; } }
+
+/* ---- Etkinlikler: kategori menüsüyle süzme ---- */
+[data-ev-list] [hidden], section#koordinasyon[hidden] { display: none !important; }
+
+/* ---- Galeri: Fotoğraflar / Videolar ---- */
+[data-gal-panel][hidden] { display: none !important; }
+.gal-vids { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+[data-gal-tab] svg { width: 16px; height: 16px; margin-right: 2px; vertical-align: -3px; }

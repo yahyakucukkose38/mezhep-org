@@ -590,9 +590,9 @@ admin.put("/settings", need("site.ayar", "ai.ayar"), (req, res) => {
     const keys = Object.keys(changes);
     if (keys.length) {
       log(req.user.id, "ayar", keys.join(", "));
-      if (keys.includes("videos_playlists")) {
-        // liste değişti: videoları hemen çek, ardından siteyi üret
-        require("./videos").refresh(SS.get("videos_playlists")).catch(() => {}).then(() => rebuild.schedule("video listesi", 0));
+      if (keys.some((k) => ["videos_playlists", "home_show_videos", "gallery_show_videos", "gallery_channel"].includes(k))) {
+        // video kaynakları değişti: videoları hemen çek, ardından siteyi üret
+        require("./videos").refreshFromSettings(SS).catch(() => {}).then(() => rebuild.schedule("video listesi", 0));
       } else if (keys.some((k) => SS.FIELDS[k].group !== "asistan" && SS.FIELDS[k].group !== "uyelik")) rebuild.schedule("site ayarları", 500);
     }
     ok(res, { values: SS.all(), changed: keys });

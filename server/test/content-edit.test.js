@@ -164,3 +164,55 @@ test("site üretim durumu herkese açık ama yalnızca durum bilgisi verir; sayf
   }
   assert.match((await fetch(base + "/")).headers.get("content-security-policy"), /frame-src https:\/\/www\.youtube-nocookie\.com https:\/\/player\.vimeo\.com/);
 });
+
+test("etkinlik bölümü üçe ayrıldı: seçenekler, başlığa göre sınıflandırma ve bir kerelik taşıma", async () => {
+  const s = (await U.editor.call("GET", "/schema")).body;
+  const forum = s.schemas.topic.find((f) => f.key === "forum");
+  for (const k of ["etkinlik", "sempozyum", "koordinasyon"]) assert.ok(forum.options.includes(k) && forum.memberOptions.includes(k), k);
+  assert.equal(forum.labels.koordinasyon, "Koordinasyon");
+  assert.equal(C.eventKind("2023 Rize 8. Koordinasyon Toplantısı"), "koordinasyon");
+  assert.equal(C.eventKind("II. İstişare Toplantısı Elazığda Yapıldı"), "koordinasyon");
+  assert.equal(C.eventKind("12 Ekim Isparta Mezhepler Çalıştayı Program"), "koordinasyon");
+  assert.equal(C.eventKind("Uluslararası Maturidilik Sempozyumu"), "sempozyum");
+  assert.equal(C.eventKind("Büyük Türk Bilgini Mâtürîdî ve Mâtürîdîlik Semp."), "sempozyum");
+  assert.equal(C.eventKind("27-28 Eylül 2003 Metodoloji Problemi Toplantısı"), "etkinlik");
+  // eski kayıt "etkinlik" olarak durur; taşıma bir kez çalışır
+  const id = C.listItems("topic").find((t) => t.forum === "koordinasyon").id;
+  const it = C.getItem("topic", id); it.forum = "etkinlik"; C.saveItem("topic", id, it, null);
+  const { runOnce } = require("../src/db");
+  const first = runOnce("test-etkinlik", () => C.splitEventForums());
+  assert.ok(first.includes(`${id}→koordinasyon`));
+  assert.equal(C.getItem("topic", id).forum, "koordinasyon");
+  assert.equal(runOnce("test-etkinlik", () => C.splitEventForums()), null, "ikinci kez çalışmaz");
+  // yeni kategoriyle haber kaydedilebilir
+  const r = await U.editor.call("PUT", `/admin/items/topic/${id}`, { data: { forum: "sempozyum" } });
+  assert.equal(r.status, 200, r.text);
+  assert.equal(C.getItem("topic", id).forum, "sempozyum");
+});
+
+test("galeri videoları: kanal akışı eskilerle birleştirilir, kanal ayarı doğrulanır", async () => {
+  const bad = await U.super.call("PUT", "/admin/settings", { values: { gallery_channel: "javascript:alert(1)" } });
+  assert.equal(bad.status, 400);
+  assert.ok(bad.body.fields.gallery_channel);
+  const v = require("../src/videos");
+  const CH = "UCGFN07whsFRvjvB7TzK-bKg";
+  const entry = (id, t, d) => `<entry><yt:videoId>${id}</yt:videoId><title>${t}</title><published>${d}T10:00:00+00:00</published></entry>`;
+  let feed = `<feed><title>MezhepOrg</title>${entry("AAAAAAAAAA1", "Eski video", "2023-05-04")}</feed>`;
+  const orig = global.fetch, asked = [];
+  global.fetch = async (url) => { asked.push(String(url)); return { ok: true, text: async () => feed }; };
+  try {
+    assert.equal(await v.refresh([], CH), true);
+    feed = `<feed><title>MezhepOrg</title>${entry("AAAAAAAAAA2", "Yeni &amp; güzel", "2026-10-01")}</feed>`;
+    await v.refresh([], CH);
+    assert.ok(asked.every((u) => u.includes("channel_id=" + CH)));
+    let c = v.load().channel;
+    // tohum veride (data/videos.json) kanalın gerçek videoları da var; hepsi korunur, en yeni başta
+    assert.equal(c.videos[0].id, "AAAAAAAAAA2", "yeni video başa eklenir");
+    assert.ok(c.videos.some((x) => x.id === "AAAAAAAAAA1"), "önceki video kalır");
+    assert.equal(c.videos[0].title, "Yeni & güzel");
+    await v.refresh([]);
+    assert.equal(v.load().channel.videos.length, c.videos.length, "kanal verilmezse dokunulmaz");
+    await v.refresh([], "");
+    assert.equal(v.load().channel, null, "galeri videoları kapatılınca kanal kaldırılır");
+  } finally { global.fetch = orig; }
+});

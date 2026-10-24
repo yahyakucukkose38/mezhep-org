@@ -557,6 +557,50 @@
       });
   }
 
+  /* ---------- Etkinlikler: kategori menüsü (Etkinlik / Sempozyum / Koordinasyon); adres #tur=… ile paylaşılabilir ---------- */
+  var evChips = $$("[data-ev-filter]");
+  if (evChips.length) {
+    var evItems = $$("[data-ev-list] .tl-item"), evInfo = $("[data-ev-info]"), coordSec = $("#koordinasyon");
+    var TITLES = { "": "Etkinlik, sempozyum ve koordinasyon duyuruları", Etkinlik: "Etkinlik duyuruları", Sempozyum: "Sempozyumlar", Koordinasyon: "Koordinasyon toplantıları" };
+    var evShow = function (tur, push) {
+      if (!evChips.some(function (c) { return c.getAttribute("data-ev-filter") === tur; })) tur = "";
+      evChips.forEach(function (c) { c.setAttribute("aria-pressed", c.getAttribute("data-ev-filter") === tur); });
+      var n = 0;
+      evItems.forEach(function (it) { var on = !tur || it.getAttribute("data-tur") === tur; it.hidden = !on; if (on) { n++; it.classList.add("in"); } });
+      // boş kalan yıl başlıklarını gizle
+      $$("[data-ev-list] [data-year]").forEach(function (y) {
+        var el = y.nextElementSibling, any = false;
+        while (el && !el.hasAttribute("data-year")) { if (!el.hidden) any = true; el = el.nextElementSibling; }
+        y.hidden = !any;
+      });
+      if (coordSec) coordSec.hidden = !!tur && tur !== "Koordinasyon";
+      var h = $("[data-ev-title]"); if (h) h.textContent = TITLES[tur] || TITLES[""];
+      if (evInfo) evInfo.textContent = n + " kayıt";
+      if (push) history.replaceState(null, "", tur ? "#tur=" + encodeURIComponent(tur) : location.pathname);
+    };
+    evChips.forEach(function (c) { c.addEventListener("click", function () { evShow(c.getAttribute("data-ev-filter"), true); }); });
+    var fromHash = function () {
+      var m = /tur=([^&]+)/.exec(location.hash);
+      evShow(m ? decodeURIComponent(m[1]) : location.hash === "#koordinasyon" ? "Koordinasyon" : "", false);
+    };
+    window.addEventListener("hashchange", fromHash);
+    fromHash();
+  }
+
+  /* ---------- Galeri: Fotoğraflar / Videolar sekmeleri (#fotograflar, #videolar) ---------- */
+  var galTabs = $$("[data-gal-tab]");
+  if (galTabs.length) {
+    var galShow = function (k, push) {
+      if (!galTabs.some(function (t) { return t.getAttribute("data-gal-tab") === k; })) k = "fotograflar";
+      galTabs.forEach(function (t) { t.setAttribute("aria-selected", t.getAttribute("data-gal-tab") === k); });
+      $$("[data-gal-panel]").forEach(function (p) { p.hidden = p.getAttribute("data-gal-panel") !== k; });
+      if (push) history.replaceState(null, "", k === "fotograflar" ? location.pathname : "#" + k);
+    };
+    galTabs.forEach(function (t) { t.addEventListener("click", function () { galShow(t.getAttribute("data-gal-tab"), true); }); });
+    galShow(location.hash.slice(1), false);
+    window.addEventListener("hashchange", function () { galShow(location.hash.slice(1), false); });
+  }
+
   /* ---------- video modülü: sekmeler ve sayfa içi oynatıcı ---------- */
   var vidTabs = $$("[data-vid-tab]");
   vidTabs.forEach(function (t) {

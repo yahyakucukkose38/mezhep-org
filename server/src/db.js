@@ -92,6 +92,8 @@ CREATE TABLE IF NOT EXISTS share_clicks (
   n        INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (day, target, platform)
 );
+-- Bir kez çalışması gereken veri taşımaları (ad + zaman)
+CREATE TABLE IF NOT EXISTS migrations (name TEXT PRIMARY KEY, at TEXT NOT NULL DEFAULT (datetime('now')));
 CREATE TABLE IF NOT EXISTS logs (
   id      INTEGER PRIMARY KEY,
   user_id INTEGER,
@@ -137,6 +139,14 @@ function seedIfEmpty() {
   return true;
 }
 
+// Adlandırılmış veri taşımasını yalnızca bir kez çalıştırır; sonucu döndürür (daha önce çalıştıysa null).
+function runOnce(name, fn) {
+  if (db.prepare("SELECT 1 FROM migrations WHERE name = ?").get(name)) return null;
+  const out = fn();
+  db.prepare("INSERT INTO migrations (name) VALUES (?)").run(name);
+  return out;
+}
+
 function log(userId, action, detail = "") {
   db.prepare("INSERT INTO logs (user_id, action, detail) VALUES (?, ?, ?)").run(userId ?? null, action, String(detail).slice(0, 500));
 }
@@ -144,4 +154,4 @@ function log(userId, action, detail = "") {
 // node:sqlite satırları null-prototype nesnedir; JSON'a ve yayılıma uygun düz nesneye çevirir.
 const plain = (row) => (row ? { ...row } : row);
 
-module.exports = { db, seedIfEmpty, log, plain, SEED_FILES };
+module.exports = { db, seedIfEmpty, log, plain, runOnce, SEED_FILES };

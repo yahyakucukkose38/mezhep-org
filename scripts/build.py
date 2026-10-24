@@ -54,12 +54,16 @@ ST = {
     "home_show_youtube": True, "home_show_videos": False, "videos_eyebrow": "Prof. Dr. Ahmet İshak Demir",
     "videos_title": "Konuşmalar ve videolar", "videos_more_url": "https://www.ahmetishak.com/galeri/videolar/",
     "videos_channel_url": "https://www.youtube.com/@mezheporg",
+    "gallery_show_videos": True, "gallery_channel": "UCGFN07whsFRvjvB7TzK-bKg",
 }
 if os.path.exists(os.path.join(DATA, "settings.json")):
     ST.update({k: v for k, v in load("settings").items() if v is not None})
 SITE = ST["site_name"] or "Mezhep.Org"
 # Ana sayfa video modülü (scripts/videolar.py ya da sunucu üretir)
-VIDEOS = load("videos")["playlists"] if os.path.exists(os.path.join(DATA, "videos.json")) else []
+_V = load("videos") if os.path.exists(os.path.join(DATA, "videos.json")) else {}
+VIDEOS = _V.get("playlists") or []
+# Galerinin Videolar sekmesi: Mezhep.Org YouTube kanalı (server/src/videos.js ya da scripts/videolar.py doldurur)
+CHANNEL_VIDEOS = ((_V.get("channel") or {}).get("videos") or []) if ST.get("gallery_show_videos") else []
 E = lambda s: html.escape(str(s or ""), quote=True)
 def exists(p):
     for prefix, base in FILE_ROOTS.items():
@@ -316,7 +320,7 @@ def layout(path, title, body, desc="", active="", data=None, share=None):
         <div class="socials">{social_links()}</div>
       </div>
       <div><h4>Keşfet</h4><ul><li><a href="{r}akademisyenler.html">Akademisyenler</a></li><li><a href="{r}eserler.html">Eserler</a></li><li><a href="{r}eserler.html#tur=Doktora">Doktora Tezleri</a></li><li><a href="{r}eserler.html#tur=Yüksek Lisans">Yüksek Lisans Tezleri</a></li></ul></div>
-      <div><h4>Güncel</h4><ul><li><a href="{r}haberler.html">Haberler</a></li><li><a href="{r}etkinlikler.html">Etkinlikler</a></li><li><a href="{r}galeri.html">Fotoğraf Galerisi</a></li><li><a href="{r}kaynaklar.html">Kaynaklar</a></li></ul></div>
+      <div><h4>Güncel</h4><ul><li><a href="{r}haberler.html">Haberler</a></li><li><a href="{r}etkinlikler.html">Etkinlikler</a></li><li><a href="{r}etkinlikler.html#tur=Sempozyum">Sempozyumlar</a></li><li><a href="{r}etkinlikler.html#tur=Koordinasyon">Koordinasyon toplantıları</a></li><li><a href="{r}galeri.html">Fotoğraf Galerisi</a></li><li><a href="{r}kaynaklar.html">Kaynaklar</a></li></ul></div>
       <div><h4>Site</h4><ul><li><a href="{r}hakkinda.html">Hakkında</a></li><li><a href="{r}hakkinda.html#sss">Sık Sorulanlar</a></li><li><a href="{r}hakkinda.html#kosullar">Kullanım Koşulları</a></li><li><a href="{r}hakkinda.html#iletisim">İletişim</a></li>{'<li><a href="/panel/#/kayit">Üye ol</a></li><li><a href="/panel/">Üye paneli</a></li>' if DYNAMIC else ""}</ul></div>
     </div>
     <div class="footer-bottom"><span>© 2006–{TODAY.year} {E(SITE)} · Tüm hakları saklıdır.</span><span>{E(ST["footer_note"])}</span></div>
@@ -373,6 +377,13 @@ def tr_short_date(iso):
     return "%d %s %s" % (int(m.group(3)), AY_KISA[int(m.group(2)) - 1], m.group(1)) if m else ""
 
 
+def vid_card(v):
+    """Video kartı: tıklanınca sayfa içinde oynatılır (app.js); JavaScript yoksa YouTube'da açılır."""
+    return (f'<a class="vid-card" href="https://www.youtube.com/watch?v={E(v["id"])}" target="_blank" rel="noopener" data-yt="{E(v["id"])}" data-title="{E(v["title"])}">'
+            f'<span class="vid-thumb"><img src="https://i.ytimg.com/vi/{E(v["id"])}/hqdefault.jpg" alt="" loading="lazy"><span class="vid-play">{ic("play")}</span></span>'
+            f'<span class="vid-title">{E(v["title"])}</span><span class="vid-date">{tr_short_date(v.get("published"))}</span></a>')
+
+
 def video_module():
     """Video modülü: oynatma listeleri sekme sekme; karta tıklayınca sayfada oynatılır (JS yoksa YouTube'a gider)."""
     lists = [l for l in VIDEOS if l.get("videos")]
@@ -383,11 +394,7 @@ def video_module():
                    % ("true" if i == 0 else "false", i, E(label(l["title"])), len(l["videos"])) for i, l in enumerate(lists))
     panels = ""
     for i, l in enumerate(lists):
-        cards = "".join(
-            f'<a class="vid-card" href="https://www.youtube.com/watch?v={E(v["id"])}" target="_blank" rel="noopener" data-yt="{E(v["id"])}" data-title="{E(v["title"])}">'
-            f'<span class="vid-thumb"><img src="https://i.ytimg.com/vi/{E(v["id"])}/hqdefault.jpg" alt="" loading="lazy"><span class="vid-play">{ic("play")}</span></span>'
-            f'<span class="vid-title">{E(v["title"])}</span><span class="vid-date">{tr_short_date(v.get("published"))}</span></a>'
-            for v in l["videos"][:8])
+        cards = "".join(vid_card(v) for v in l["videos"][:8])
         panels += f'<div class="vid-grid" role="tabpanel" data-vid-panel="{i}"{"" if i == 0 else " hidden"}>{cards}</div>'
     more = ('<a class="link-arrow" href="%s" target="_blank" rel="noopener">Tüm videolar %s</a>' % (E(ST["videos_more_url"]), ic("arrow"))) if ST["videos_more_url"] else ""
     sub = ('<a class="btn btn-ghost btn-sm" href="%s" target="_blank" rel="noopener">%s Kanala abone olun</a>'
@@ -506,8 +513,12 @@ for w in works:
     if ck in mkeys: by_member_works[mkeys[ck]["id"]].append((w, "Danışman" if "Dan" in w["contribType"] else (w["contribType"] or "Katkı")))
 
 
+# Etkinlik bölümünün alt kategorileri (panelde "Bölüm" seçimi; Etkinlikler sayfasında menü)
+EVENT_FORUMS = {"etkinlik": "Etkinlik", "sempozyum": "Sempozyum", "koordinasyon": "Koordinasyon"}
+
+
 def topic_tag(t):
-    if t["forum"] == "etkinlik": return "Etkinlik"
+    if t["forum"] in EVENT_FORUMS: return EVENT_FORUMS[t["forum"]]
     if t["forum"] == "kitap": return "Kitap"
     m = re.match(r"^\s*([^:]{3,28}):", t["title"])
     if m:
@@ -525,7 +536,8 @@ def topic_tag(t):
     return "Duyuru"
 
 
-TAG_BADGE = {"Yeni Doktor": "b-brand", "Doçentlik": "b-gold", "Profesörlük": "b-gold", "Atama": "b-indigo", "Vefat": "b-rose", "Etkinlik": "b-brand", "Yayın": "b-indigo", "Kitap": "b-gold"}
+TAG_BADGE = {"Yeni Doktor": "b-brand", "Doçentlik": "b-gold", "Profesörlük": "b-gold", "Atama": "b-indigo", "Vefat": "b-rose", "Etkinlik": "b-brand", "Yayın": "b-indigo", "Kitap": "b-gold",
+             "Sempozyum": "b-indigo", "Koordinasyon": "b-gold"}
 for t in topics:
     t["tag"] = topic_tag(t)
     t["slug"] = "haber/%d.html" % t["id"]
@@ -535,8 +547,8 @@ for t in topics:
     t["image"] = img if img.startswith(("media/", "uploads/")) and exists(img) else ""
     t["sort"] = parse_date(t.get("date", ""))
 news = sorted([t for t in topics if t["forum"] == "haber"], key=lambda t: (t["sort"], t["id"]), reverse=True)
-events = sorted([t for t in topics if t["forum"] == "etkinlik"], key=lambda t: (t["sort"], t["id"]), reverse=True)
-others = [t for t in topics if t["forum"] not in ("haber", "etkinlik")]
+events = sorted([t for t in topics if t["forum"] in EVENT_FORUMS], key=lambda t: (t["sort"], t["id"]), reverse=True)
+others = [t for t in topics if t["forum"] != "haber" and t["forum"] not in EVENT_FORUMS]
 
 COORD = [(1, "Ankara", 2007), (2, "Elazığ", 2010), (3, "Isparta", 2012), (4, "Çorum", 2013), (5, "Sivas", 2014),
          (6, "Konya", 2015), (7, "Antalya", 2019), (8, "Rize", 2023), (9, "İstanbul", 2025)]
@@ -580,7 +592,7 @@ def build_home():
     pop = sorted(works, key=lambda w: -w["hits"])[:6]
     recent_members = sorted(members, key=lambda m: (parse_date(m["added"]), m["id"]), reverse=True)[:8]
     s = STATS
-    coord = "".join(f'<a class="coord reveal" href="{{ROOT}}etkinlikler.html#koordinasyon"><div class="no">{n:02d}</div><div class="city">{c}</div><div class="yr">{y} · Koordinasyon</div></a>' for n, c, y in COORD)
+    coord = "".join(f'<a class="coord reveal" href="{{ROOT}}etkinlikler.html#tur=Koordinasyon"><div class="no">{n:02d}</div><div class="city">{c}</div><div class="yr">{y} · Koordinasyon</div></a>' for n, c, y in COORD)
     people = "".join(f'''<a class="card person reveal" href="{{ROOT}}{m["slug"]}">{avatar(m)}<div class="info"><div class="rank">{E(m["title"])}</div><h3>{E(m["name"])}</h3><div class="uni">{E(m["university"])}</div></div></a>''' for m in recent_members)
     optional = [
         (ST['home_show_news'], f'''<section class="section{{ALT}}">
@@ -837,9 +849,9 @@ def build_news():
 <div class="container" style="padding-bottom:80px"><p class="result-info" data-info></p><div class="grid grid-3" data-list="news"></div><div class="load-more"><button class="btn btn-ghost" data-more hidden>Daha fazla göster</button></div></div>'''
     layout("haberler.html", "Haberler", body, "İslam Mezhepleri Tarihi haberleri", "haberler.html", data)
 
-    section = {"haber": ("haberler.html", "Haberler"), "etkinlik": ("etkinlikler.html", "Etkinlikler"), "kitap": ("kaynaklar.html", "Kaynaklar"),
+    section = {"haber": ("haberler.html", "Haberler"), **{f: ("etkinlikler.html", "Etkinlikler") for f in EVENT_FORUMS}, "kitap": ("kaynaklar.html", "Kaynaklar"),
                "sss": ("hakkinda.html", "Hakkında"), "anket": ("hakkinda.html", "Hakkında")}
-    pool = {"haber": news, "etkinlik": events}
+    pool = {"haber": news, **{f: events for f in EVENT_FORUMS}}
     for t in topics:
         href, label = section.get(t["forum"], ("kaynaklar.html", "Kaynaklar"))
         posts = ""
@@ -861,7 +873,7 @@ def build_news():
   <aside><div class="panel"><h3>Ayrıntılar</h3><dl class="dl">{info}</dl></div><div class="panel"><h3>Diğer {label.lower()}</h3><div class="feed" style="margin-top:12px">{"".join(feed_topic(x) for x in more)}</div></div><a class="btn btn-ghost" href="{{ROOT}}{href}">{ic("left")} {label}</a></aside>
 </div>'''
         layout(t["slug"], t["title"], body, t.get("summary", "")[:160], href,
-               share={"og": "etkinlik" if t["forum"] == "etkinlik" else "haber", "article": True, "image": abs_url(t.get("image")), "published": iso_date(t.get("date"))})
+               share={"og": "etkinlik" if t["forum"] in EVENT_FORUMS else "haber", "article": True, "image": abs_url(t.get("image")), "published": iso_date(t.get("date"))})
 
 
 # ---------------------------------------------------------------- ETKİNLİKLER
@@ -878,12 +890,17 @@ def build_events():
     for e in events: by_year[e["sort"][0]].append(e)
     tl = ""
     for y in sorted(by_year, reverse=True):
-        tl += '<div class="year-label">%s</div>' % (y or "Tarihsiz")
+        tl += '<div class="year-label" data-year>%s</div>' % (y or "Tarihsiz")
         for e in by_year[y]:
-            tl += f'<div class="tl-item reveal"><a class="card hover" href="{{ROOT}}{e["slug"]}"><div class="meta"><span>{tr_date(e.get("date"))}</span>{("<span class=dot></span><span>%d mesaj</span>" % len(e["posts"])) if len(e["posts"]) > 1 else ""}</div><h3>{E(e["title"])}</h3><p class="clamp-2">{E(e.get("summary", ""))}</p></a></div>'
+            tl += f'<div class="tl-item reveal" data-tur="{E(e["tag"])}"><a class="card hover" href="{{ROOT}}{e["slug"]}"><div class="meta"><span class="badge {TAG_BADGE.get(e["tag"], "")}">{E(e["tag"])}</span><span>{tr_date(e.get("date"))}</span>{("<span class=dot></span><span>%d mesaj</span>" % len(e["posts"])) if len(e["posts"]) > 1 else ""}</div><h3>{E(e["title"])}</h3><p class="clamp-2">{E(e.get("summary", ""))}</p></a></div>'
     body = page_hero("Etkinlikler", "Sempozyumlar, çalıştaylar, paneller ve İslam Mezhepleri Tarihi koordinasyon / istişare toplantıları.", [("index.html", "Ana Sayfa"), ("", "Etkinlikler")], "%d duyuru" % len(events))
+    cnt = Counter(e["tag"] for e in events)
+    menu = '<button class="chip" type="button" data-ev-filter="" aria-pressed="true">Tümü <span class="n">%d</span></button>' % len(events)
+    menu += "".join('<button class="chip" type="button" data-ev-filter="%s" aria-pressed="false">%s <span class="n">%d</span></button>' % (E(l), E(l), cnt[l])
+                    for l in EVENT_FORUMS.values() if cnt[l])
+    body += f'<div class="toolbar"><div class="container"><nav class="chips" aria-label="Etkinlik kategorileri">{menu}</nav></div></div>'
     body += f'''<section class="section" id="koordinasyon"><div class="container"><div class="section-head"><div><div class="eyebrow">Gelenek</div><h2>Koordinasyon toplantıları</h2><p>Anabilim dalı öğretim elemanlarının düzenli olarak bir araya geldiği ulusal buluşmalar.</p></div></div><div class="coord-strip">{coord_cards}</div></div></section>
-<section class="section alt"><div class="container" style="max-width:900px"><div class="section-head"><div><div class="eyebrow">Arşiv</div><h2>Sempozyum ve toplantı duyuruları</h2></div></div><div class="timeline">{tl}</div></div></section>'''
+<section class="section alt"><div class="container" style="max-width:900px"><div class="section-head"><div><div class="eyebrow">Arşiv</div><h2 data-ev-title>Etkinlik, sempozyum ve koordinasyon duyuruları</h2></div></div><p class="result-info" data-ev-info></p><div class="timeline" data-ev-list>{tl}</div></div></section>'''
     layout("etkinlikler.html", "Etkinlikler", body, "İslam Mezhepleri Tarihi sempozyumları ve koordinasyon toplantıları", "etkinlikler.html")
 
 
@@ -897,9 +914,24 @@ def build_gallery():
             cover = "".join('<img src="{ROOT}%s" alt="" loading="lazy">' % E(p["thumb"]) for p in ph)
             cards += f'<a class="card album-card reveal" href="{{ROOT}}{a["slug"]}"><div class="cover{" single" if len(ph) < 3 else ""}">{cover}</div><div class="txt"><h3>{E(a["name"])}</h3><div class="meta">{len(a["photos"])} fotoğraf</div></div></a>'
         sec += f'<div class="section-head" style="margin:44px 0 18px"><h2 style="font-size:1.6rem">{E(ev)}</h2></div><div class="grid grid-4">{cards}</div>'
-    body = page_hero("Fotoğraf Galerisi", "Koordinasyon toplantıları, sempozyumlar, jüriler ve sosyal programlardan kareler.", [("index.html", "Ana Sayfa"), ("", "Galeri")], "%d fotoğraf · %d albüm" % (n_photos, len(albums)))
-    body += f'<div class="container" style="padding-bottom:80px">{sec}</div>'
-    layout("galeri.html", "Galeri", body, "Mezhep.Org fotoğraf galerisi", "galeri.html")
+    vids = CHANNEL_VIDEOS
+    meta = "%d fotoğraf · %d albüm" % (n_photos, len(albums)) + (" · %d video" % len(vids) if vids else "")
+    body = page_hero("Galeri", "Koordinasyon toplantıları, sempozyumlar ve anma programlarından fotoğraflar ve videolar.", [("index.html", "Ana Sayfa"), ("", "Galeri")], meta)
+    if vids:
+        # Sekmeler: JavaScript yoksa iki bölüm alt alta görünür; varsa #fotograflar / #videolar ile seçilir
+        yt = ST["youtube_url"]
+        sub = ('<a class="btn btn-ghost btn-sm" href="%s" target="_blank" rel="noopener">%s Kanala abone olun</a>'
+               % (E(yt + ("&" if "?" in yt else "?") + "sub_confirmation=1"), ic("yt"))) if yt else ""
+        tabs = (f'<div class="toolbar"><div class="container"><nav class="chips" role="tablist" aria-label="Galeri">'
+                f'<button class="chip" type="button" role="tab" data-gal-tab="fotograflar" aria-selected="true">{ic("image")} Fotoğraflar <span class="n">{n_photos}</span></button>'
+                f'<button class="chip" type="button" role="tab" data-gal-tab="videolar" aria-selected="false">{ic("play")} Videolar <span class="n">{len(vids)}</span></button></nav></div></div>')
+        body += tabs + f'<div class="container" style="padding-bottom:80px" data-gal-panel="fotograflar" id="fotograflar">{sec}</div>'
+        body += (f'<div class="container" style="padding:44px 24px 80px" data-gal-panel="videolar" id="videolar"><div class="section-head"><div><div class="eyebrow">Mezhep.Org YouTube kanalı</div>'
+                 f'<h2 style="font-size:1.6rem">Videolar</h2><p>Koordinasyon toplantıları, paneller ve anma programlarının kayıtları. Videoya tıklayınca burada oynar.</p></div>{sub}</div>'
+                 f'<div class="vid-grid gal-vids">{"".join(vid_card(v) for v in vids)}</div></div>')
+    else:
+        body += f'<div class="container" style="padding-bottom:80px">{sec}</div>'
+    layout("galeri.html", "Galeri", body, "Mezhep.Org fotoğraf ve video galerisi", "galeri.html", share={"og": "galeri"})
     for a in albums:
         figs = "".join(f'<figure data-full="{{ROOT}}{E(p["src"])}" data-cap="{E(p["title"])}"><img src="{{ROOT}}{E(p["src"])}" alt="{E(p["title"])}" loading="lazy"><figcaption>{E(p["title"])}</figcaption></figure>' for p in a["photos"])
         others_ = "".join(f'<a class="chip" href="{{ROOT}}{x["slug"]}">{E(x["name"])}</a>' for x in album_groups[a["event"]] if x is not a)

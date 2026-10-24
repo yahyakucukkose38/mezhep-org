@@ -12,7 +12,7 @@ const WORK_TYPES = {
   Makaleler: ["Telif", "Tercüme"],
   Tebliğler: ["Ulusal", "Uluslararası"],
 };
-const FORUMS = { haber: "Haber", etkinlik: "Etkinlik / Sempozyum", kitap: "Kitap Haberi" };
+const FORUMS = { haber: "Haber", etkinlik: "Etkinlik", sempozyum: "Sempozyum", koordinasyon: "Koordinasyon", kitap: "Kitap Haberi" };
 // Yalnızca yöneticinin seçebildiği eski forum bölümleri
 const ADMIN_FORUMS = { ...FORUMS, "eser-tr": "Türkçe Eser Tanıtımı", "eser-ar": "Arapça Eser Tanıtımı", "eser-en": "Yabancı Dilde Eser Tanıtımı", sss: "Sık Sorulan Soru", anket: "Anket" };
 
@@ -247,6 +247,26 @@ function fixEmbedCodes() {
   return done;
 }
 
+// Eski "Etkinlik / Sempozyum" bölümündeki kayıtları başlığa göre Sempozyum ve Koordinasyon'a ayırır (bir kez çalışır).
+const foldTr = (s) => String(s || "").replace(/İ/g, "i").replace(/I/g, "ı").toLocaleLowerCase("tr").replace(/ı/g, "i").normalize("NFKD").replace(/[\u0300-\u036f]/g, "");
+function eventKind(title) {
+  const t = foldTr(title);
+  if (/koordinasyon|istisare|calistay|sivas toplantisi/.test(t)) return "koordinasyon";
+  if (/sempoz|\bsemp\b|symposium|kongre/.test(t)) return "sempozyum";
+  return "etkinlik";
+}
+function splitEventForums() {
+  const done = [];
+  for (const r of db.prepare("SELECT id, data FROM items WHERE kind = 'topic' AND json_extract(data, '$.forum') = 'etkinlik'").all()) {
+    const item = JSON.parse(r.data), k = eventKind(item.title);
+    if (k === "etkinlik") continue;
+    item.forum = k;
+    db.prepare("UPDATE items SET data = ? WHERE kind = 'topic' AND id = ?").run(JSON.stringify(item), r.id);
+    done.push(`${r.id}→${k}`);
+  }
+  return done;
+}
+
 function listItems(kind) {
   return db.prepare("SELECT data FROM items WHERE kind = ? AND deleted = 0").all(kind).map((r) => JSON.parse(r.data));
 }
@@ -377,5 +397,5 @@ function exportAll(dir) {
 
 module.exports = {
   SCHEMAS, KINDS, RANKS, GROUPS, WORK_TYPES, FORUMS, ValidationError, normalize, cleanHtml, htmlText,
-  getItem, itemVersion, listItems, applyFields, parseVideo, videoFigure, fixEmbedCodes, saveItem, deleteItem, ownsItem, ownItems, formValues, exportAll, trDate, plain,
+  getItem, itemVersion, listItems, applyFields, parseVideo, videoFigure, fixEmbedCodes, splitEventForums, eventKind, saveItem, deleteItem, ownsItem, ownItems, formValues, exportAll, trDate, plain,
 };
