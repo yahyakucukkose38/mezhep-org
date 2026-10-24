@@ -981,7 +981,7 @@
   function viewAiUsage(days) {
     days = [7, 30, 90].indexOf(+days) >= 0 ? +days : 30;
     setTitle("Yapay zekâ kullanımı");
-    main.innerHTML = '<h1 class="page-title">Yapay zekâ kullanımı</h1><p class="page-lead">Akaid Asistanı token tüketimi ve tahmini maliyet. Soru ve yanıt metinleri saklanmaz.</p><div data-ai><p class="muted">Yükleniyor…</p></div>';
+    main.innerHTML = '<h1 class="page-title">Yapay zekâ kullanımı</h1><p class="page-lead">Akaid ve Hanefî Fıkhı asistanlarının token tüketimi ve tahmini maliyeti. Soru ve yanıt metinleri saklanmaz.</p><div data-ai><p class="muted">Yükleniyor…</p></div>';
     api("GET", "/admin/ai/usage?days=" + days).then(function (r) {
       var c = r.config, t = r.totals, b = r.budget, box = $("[data-ai]", main);
       var tabs = '<nav class="tabs">' + [7, 30, 90].map(function (d) { return '<a href="#/yonetim/yapay-zeka/' + d + '"' + (d === days ? ' aria-current="page"' : "") + ">Son " + d + " gün</a>"; }).join("") + "</nav>";
@@ -1003,20 +1003,28 @@
 
       box.innerHTML =
         (!c.keyConfigured ? '<div class="notice warn"><strong>OPENAI_API_KEY tanımlı değil.</strong> Asistan kapalı. Anahtarı sunucudaki .env dosyasına ekleyip uygulamayı yeniden başlatın.</div>' : "") +
-        (!c.index.ready ? '<div class="notice warn"><strong>Kaynak indeksi yok.</strong> Kaynak klasörünü sunucuya yükleyip <code>npm run kaynak</code> komutunu çalıştırın.</div>' : "") +
+        (c.assistants || []).filter(function (a) { return !a.index.ready; }).map(function (a) {
+          return '<div class="notice warn"><strong>' + esc(a.name) + ': kaynak indeksi yok.</strong> Kaynak klasörünü sunucuya yükleyip <code>npm run ' + (a.key === "hanefi" ? "kaynak-hanefi" : "kaynak") + "</code> komutunu çalıştırın.</div>";
+        }).join("") +
         '<div class="p-grid wide">' +
         '<div class="p-card"><h3>Yapılandırma</h3><dl class="dl"><dt>Durum</dt><dd>' + (c.enabled ? badge("active").replace("Etkin", "Açık") : '<span class="badge b-rose">Kapalı</span>') + "</dd><dt>Model</dt><dd>" + esc(c.model) +
-        "</dd><dt>API anahtarı</dt><dd>" + (c.keyConfigured ? "Tanımlı (sunucuda)" : "Yok") + "</dd><dt>Kaynak</dt><dd>" + (c.index.ready ? nf(c.index.files) + " dosya · " + when(c.index.built) : "İndeks yok") + "</dd></dl></div>" +
+        "</dd><dt>API anahtarı</dt><dd>" + (c.keyConfigured ? "Tanımlı (sunucuda)" : "Yok") + "</dd>" + (c.assistants || []).map(function (a) {
+          return "<dt>" + esc(a.name.replace(" Asistanı", "")) + "</dt><dd>" + (a.on ? badge("active").replace("Etkin", "Açık") : '<span class="badge b-rose">' + (a.switchedOn ? "Hazır değil" : "Kapalı") + "</span>") +
+            ' <span class="sub">' + (a.index.ready ? nf(a.index.works || a.index.files) + (a.index.works ? " eser" : " dosya") + " · " + when(a.index.built) : "indeks yok") + "</span></dd>";
+        }).join("") + "</dl></div>" +
         '<div class="p-card"><h3>Bütçe</h3><dl class="dl"><dt>' + esc(b.month) + "</dt><dd>" + bar(b.monthSpent, b.monthlyBudget) + "</dd><dt>Toplam</dt><dd>" + bar(b.totalSpent, b.totalBudget) + "</dd></dl></div>" +
         '<div class="p-card"><h3>Sınırlar</h3><dl class="dl"><dt>Kişi/gün</dt><dd>' + nf(c.limits.dailyRequestsPerUser) + " soru · " + nf(c.limits.dailyTokensPerUser) + " token</dd><dt>Hız</dt><dd>" + nf(c.limits.ratePerMinute) +
         " soru/dk</dd><dt>Girdi</dt><dd>" + nf(c.limits.maxInputChars) + " karakter</dd><dt>Eşzamanlı</dt><dd>" + nf(c.limits.maxConcurrent) + " genel · " + nf(c.limits.maxConcurrentPerUser) + " kişi başı</dd></dl></div>" +
-        '<div class="p-card"><h3>Görev profilleri</h3><dl class="dl">' + Object.keys(c.tasks).map(function (k) { var x = c.tasks[k]; return "<dt>" + (k === "kisa" ? "Basit" : "Gerekçeli") + "</dt><dd>effort " + esc(x.effort) + " · en çok " + nf(x.maxOutput) + " çıktı token</dd>"; }).join("") +
+        '<div class="p-card"><h3>Görev profilleri</h3><dl class="dl">' + Object.keys(c.tasks).map(function (k) { var x = c.tasks[k]; return "<dt>" + ({ kisa: "Basit", soru: "Gerekçeli", terimler: "Arapça terim" })[k] + "</dt><dd>effort " + esc(x.effort) + " · en çok " + nf(x.maxOutput) + " çıktı token</dd>"; }).join("") +
         "<dt>Fiyat</dt><dd>1M token: girdi " + usd(c.price.input) + " · önbellek " + usd(c.price.cachedInput) + " · çıktı " + usd(c.price.output) + "</dd></dl></div></div>" +
         tabs + '<div class="p-grid">' + stat(nf(t.requests), "İstek", nf(t.ok) + " başarılı · " + nf(t.errors) + " hata · " + nf(t.blocked) + " engellenen") +
         stat(nf(t.input_tokens), "Girdi token", nf(t.cached_tokens) + " önbellekten") + stat(nf(t.output_tokens), "Çıktı token", nf(t.reasoning_tokens) + " akıl yürütme") +
         stat(usd(t.cost_usd), "Tahmini maliyet", "ort. yanıt " + (t.avg_latency_ms / 1000).toFixed(1) + " sn") + "</div>" +
         '<div class="panel" style="margin-bottom:18px"><h3>Günlük kullanım</h3>' + chart + "</div>" +
-        "<h3>Kullanıcılara göre</h3>" + table(["Üye", "İstek", "Token (girdi / çıktı)", "Maliyet"], r.byUser.map(function (u) {
+        "<h3>Asistanlara göre</h3>" + table(["Asistan", "İstek", "Token (girdi / çıktı)", "Maliyet"], (r.byAssistant || []).map(function (x) {
+          return "<tr><td>" + esc(x.name) + "</td><td>" + nf(x.requests) + (x.blocked ? ' <span class="sub">(' + nf(x.blocked) + " engellendi)</span>" : "") + "</td><td>" + tokCell(x) + "</td><td>" + usd(x.cost_usd) + "</td></tr>";
+        })) +
+        '<h3 style="margin-top:22px">Kullanıcılara göre</h3>' + table(["Üye", "İstek", "Token (girdi / çıktı)", "Maliyet"], r.byUser.map(function (u) {
           return "<tr><td><strong>" + esc(u.name || "(silinmiş üye)") + '</strong><div class="sub">' + esc(u.email || "") + "</div></td><td>" + nf(u.requests) + (u.blocked ? ' <span class="sub">(' + nf(u.blocked) + " engellendi)</span>" : "") + "</td><td>" + tokCell(u) + "</td><td>" + usd(u.cost_usd) + "</td></tr>";
         })) +
         '<h3 style="margin-top:22px">Görev türüne göre</h3>' + table(["Görev", "Effort", "İstek", "Token (girdi / çıktı)", "Maliyet"], r.byTask.map(function (x) {

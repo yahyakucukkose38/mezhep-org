@@ -6,6 +6,7 @@
 //   node deploy/yayinla.mjs --host root@185.23.17.212 --kaynak "E:/…/ehli-sunnet-itikad-kaynaklari"
 //   node deploy/yayinla.mjs --host root@185.23.17.212 --anahtar ~/.ssh/mezhep_deploy_ed25519 …
 //   node deploy/yayinla.mjs --host root@185.23.17.212 --env-yukle     (yereldeki deploy/.env → /opt/mezhep/.env)
+//   node deploy/yayinla.mjs --host root@185.23.17.212 --hanefi-indeks .yerel/hanefi.db   (Hanefî Fıkhı Asistanı)
 //
 // Yalnızca depoya işlenmiş (commit) dosyalar gönderilir; .env ve kaynak metinler depoda yoktur.
 // Sunucuda önce /opt/mezhep/.env oluşturulmalıdır (deploy/.env.example).
@@ -135,6 +136,26 @@ if (kaynak) {
     up.on("close", (c) => (c === 0 ? resolve() : reject(new Error("kaynak yüklenemedi"))));
   });
   ssh(`docker exec mezhep-app-1 node --disable-warning=ExperimentalWarning server/src/ai/corpus.js /kaynaklar && docker restart mezhep-app-1 >/dev/null && echo "✔ Kaynak indeksi hazır"`);
+}
+
+// 7) Hanefî Fıkhı Asistanı indeksi (isteğe bağlı): yerelde üretilmiş hanefi.db sıkıştırılarak gönderilir.
+//    Üretmek için: cd server && npm run kaynak-hanefi -- "<HANEFİ FIKHI klasörü>"  (→ .yerel/hanefi.db)
+const hanefiDb = opt("--hanefi-indeks");
+if (hanefiDb) {
+  if (!fs.existsSync(hanefiDb)) { console.error("✖ İndeks dosyası bulunamadı: " + hanefiDb); process.exit(1); }
+  console.log(`→ Hanefî indeksi gönderiliyor (${(fs.statSync(hanefiDb).size / 1e6).toFixed(0)} MB, sıkıştırılarak)…`);
+  const zlib = await import("node:zlib");
+  await new Promise((resolve, reject) => {
+    const up = spawn("ssh", [...SSH_OPTS, host, "set -e; umask 022; gunzip -c > /opt/mezhep/hanefi.db.yeni"], { stdio: ["pipe", "inherit", "inherit"] });
+    fs.createReadStream(hanefiDb).pipe(zlib.createGzip({ level: 6 })).pipe(up.stdin);
+    up.on("close", (c) => (c === 0 ? resolve() : reject(new Error("indeks yüklenemedi"))));
+  });
+  ssh(`set -e
+docker cp /opt/mezhep/hanefi.db.yeni mezhep-app-1:/data/hanefi.db.yeni
+docker exec -u root mezhep-app-1 sh -c 'chown node:node /data/hanefi.db.yeni && mv -f /data/hanefi.db.yeni /data/hanefi.db'
+rm -f /opt/mezhep/hanefi.db.yeni
+docker restart mezhep-app-1 >/dev/null
+echo "✔ Hanefî indeksi hazır"`);
 }
 
 console.log("\n✔ Yayın tamamlandı.");

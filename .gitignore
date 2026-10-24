@@ -3,3 +3,8 @@
 server/node_modules/
 deploy/.env
 *.log
+
+# Asistan kaynak metinleri: depoya girmez (depo herkese açık); sunucuya ayrıca yüklenir
+HANEF*/
+*FIKHI*/
+kaynaklar/

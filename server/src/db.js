@@ -97,6 +97,9 @@ CREATE TABLE IF NOT EXISTS logs (
   const cols = db.prepare("PRAGMA table_info(items)").all().map((c) => c.name);
   // created_by: kaydı ekleyen kullanıcı (sahiplik kuralı için; eski siteden gelenlerde boş)
   if (!cols.includes("created_by")) db.exec("ALTER TABLE items ADD COLUMN created_by INTEGER");
+  // assistant: kaydın ait olduğu asistan (akaid | hanefi); eski kayıtlar Akaid Asistanı'na aittir
+  const aiCols = db.prepare("PRAGMA table_info(ai_usage)").all().map((c) => c.name);
+  if (!aiCols.includes("assistant")) db.exec("ALTER TABLE ai_usage ADD COLUMN assistant TEXT NOT NULL DEFAULT 'akaid'");
 }
 
 const SEED_FILES = { member: "members", work: "works", topic: "topics", album: "albums", link: "links", file: "files" };

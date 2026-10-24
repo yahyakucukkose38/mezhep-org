@@ -9,6 +9,8 @@ const A = require("./auth"); // rol tabloları (perms.js) da buradan yüklenir
 require("./site-settings");
 const rebuild = require("./rebuild");
 const { api } = require("./api");
+const videos = require("./videos");
+const SS = require("./site-settings");
 
 // Site sayfalarındaki tek satır içi betik (tema seçimi; scripts/build.py THEME_SCRIPT ile aynı olmalı).
 const THEME_SCRIPT = 'document.documentElement.className="js";try{var t=localStorage.getItem("mz-theme");if(t)document.documentElement.dataset.theme=t}catch(e){}';
@@ -21,6 +23,8 @@ const CSP = [
   "font-src 'self' https://fonts.gstatic.com",
   "img-src 'self' data: https:",
   "connect-src 'self'",
+  // ana sayfa video modülü: YouTube'un çerezsiz oynatıcısı
+  "frame-src https://www.youtube-nocookie.com",
   "frame-ancestors 'self'",
   "base-uri 'self'",
   "form-action 'self'",
@@ -97,6 +101,12 @@ if (require.main === module) {
   setInterval(A.cleanupSessions, 6 * 3600e3).unref();
   // Sunucu her açılışta siteyi güncel veriyle (ve dinamik özelliklerle) yeniden üretir.
   rebuild.run();
+  // Video listelerini açılışta ve 6 saatte bir yenile; değiştiyse siteyi yeniden üret.
+  const refreshVideos = () => videos.refresh(SS.get("videos_playlists"))
+    .then((changed) => changed && rebuild.schedule("video listesi güncellendi"))
+    .catch((e) => console.error("[video]", e.message));
+  setTimeout(refreshVideos, 15000).unref();
+  setInterval(refreshVideos, 6 * 3600e3).unref();
   createApp().listen(cfg.PORT, () => console.log(`[sunucu] http://localhost:${cfg.PORT} (veri: ${cfg.DATA_DIR})`));
 }
 

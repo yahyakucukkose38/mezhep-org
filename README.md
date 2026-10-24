@@ -52,7 +52,8 @@ python scripts/build.py
 
 `server/` klasörü sitenin dinamik sürümüdür: üyelik (kayıt, giriş, yönetici onayı), üyelerin eser ekleme /
 düzeltme önerisi / haber gönderme / profil sahiplenme / yorum yazma akışları, yönetici onay kuyruğu, içerik
-düzenleme, üye yönetimi ve sağ alttaki **Akaid Asistanı** (OpenAI `gpt-6-luna`, Ehl-i Sünnet itikad kaynakları).
+düzenleme, üye yönetimi ve sağ alttaki asistanlar (OpenAI `gpt-6-luna`): **Akaid Asistanı** (Ehl-i Sünnet itikad
+kaynakları) ve **Hanefî Fıkhı Asistanı** (klasik Arapça Hanefî metinleri; cilt/sayfa göstererek Türkçe yanıt).
 Onaylanan her değişiklikten sonra site `scripts/build.py` ile birkaç saniyede yeniden üretilir.
 
 Yerelde çalıştırma:
@@ -61,8 +62,9 @@ Yerelde çalıştırma:
 cd server
 npm install
 MZ_ADMIN_EMAIL=siz@ornek.com npm start          # http://localhost:3000, panel: /panel/
-npm run kaynak -- "<akaid markdown klasörü>"    # asistan kaynak indeksi (isteğe bağlı)
-npm test                                        # 31 uçtan uca test
+npm run kaynak -- "<akaid markdown klasörü>"    # Akaid asistanı kaynak indeksi (isteğe bağlı)
+npm run kaynak-hanefi -- "../HANEFİ FIKHI"      # Hanefî asistanı indeksi (isteğe bağlı)
+npm test                                        # 50 uçtan uca test
 ```
 
 Asistan için `OPENAI_API_KEY` ortam değişkeni gerekir (yalnızca sunucuda; bkz. `deploy/.env.example`).

@@ -305,6 +305,7 @@ function exportAll(dir) {
   }
   write("pages", getItem("page", 1) || { welcome: "", policy: "" });
   write("settings", require("./site-settings").all()); // site üreteci için panel ayarları
+  write("videos", require("./videos").load()); // ana sayfa video modülü
 }
 
 module.exports = {

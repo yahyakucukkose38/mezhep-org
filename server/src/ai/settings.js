@@ -9,7 +9,9 @@ const num = (name, def) => {
 function settings() {
   const ss = require("../site-settings").all();
   return {
-    enabled: process.env.AI_ENABLED !== "false" && !!process.env.OPENAI_API_KEY && ss.ai_enabled !== false,
+    // Genel anahtar (ortam + API anahtarı); asistanlar ayrıca panelden tek tek açılıp kapatılır.
+    enabled: process.env.AI_ENABLED !== "false" && !!process.env.OPENAI_API_KEY,
+    assistants: { akaid: ss.ai_enabled !== false, hanefi: process.env.AI_HANEFI_ENABLED !== "false" && ss.ai_hanefi_enabled !== false },
     keyConfigured: !!process.env.OPENAI_API_KEY,
     baseUrl: (process.env.OPENAI_BASE_URL || "https://api.openai.com/v1").replace(/\/$/, ""),
     model: process.env.OPENAI_MODEL || "gpt-6-luna",
@@ -35,6 +37,8 @@ function settings() {
     tasks: {
       kisa: { effort: process.env.AI_EFFORT_SIMPLE || "none", maxOutput: num("AI_MAX_OUTPUT_SIMPLE", 400), contextChars: 5000, sources: 4 },
       soru: { effort: process.env.AI_EFFORT_REASONED || "low", maxOutput: num("AI_MAX_OUTPUT_REASONED", 1200), contextChars: 9000, sources: 6 },
+      // Hanefî asistanı: Türkçe soruyu Arapça arama terimlerine çeviren kısa ön çağrı (yanıtla aynı kayda yazılır).
+      terimler: { effort: "none", maxOutput: num("AI_MAX_OUTPUT_TERMS", 200) },
     },
   };
 }

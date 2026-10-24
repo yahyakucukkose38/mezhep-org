@@ -23,6 +23,7 @@ const GROUPS = [
     { key: "contact_institution", label: "İletişim: kurum", type: "text", def: "Recep Tayyip Erdoğan Üniversitesi İlahiyat Fakültesi", max: 160 },
     { key: "contact_email", label: "İletişim: e-posta (sitede görünür)", type: "email", def: "", max: 160 },
     { key: "facebook_url", label: "Facebook adresi", type: "url", def: "https://www.facebook.com/Mezhep.Org/", max: 300 },
+    { key: "youtube_url", label: "YouTube kanalı adresi", type: "url", def: "https://www.youtube.com/@mezheporg", max: 300 },
   ] },
   { key: "duyuru", label: "Duyuru şeridi", perm: "site.ayar", fields: [
     { key: "banner_enabled", label: "Sitenin üstünde duyuru şeridi göster", type: "bool", def: false },
@@ -40,6 +41,15 @@ const GROUPS = [
     { key: "home_quote_sign", label: "Alıntı imzası", type: "text", def: "Ahmet İshak DEMİR", max: 120 },
     { key: "home_show_news", label: "Son haberler bölümünü göster", type: "bool", def: true },
     { key: "home_news_count", label: "Gösterilecek haber sayısı", type: "number", def: 6, min: 3, max: 12 },
+    { key: "home_show_youtube", label: "YouTube kanalı bölümünü göster", type: "bool", def: true },
+    { key: "home_show_videos", label: "Video modülünü göster", type: "bool", def: true },
+    { key: "videos_eyebrow", label: "Video modülü: üst etiket", type: "text", def: "Prof. Dr. Ahmet İshak Demir", max: 80 },
+    { key: "videos_title", label: "Video modülü: başlık", type: "text", def: "Konuşmalar ve videolar", max: 100 },
+    { key: "videos_playlists", label: "Video modülü: YouTube oynatma listesi kimlikleri (her satıra bir tane, PL… ile başlar; 6 saatte bir güncellenir)", type: "lines", max: 4,
+      pattern: /^PL[\w-]{10,40}$/, patternMsg: "Her satır PL ile başlayan bir YouTube oynatma listesi kimliği olmalı.",
+      def: ["PL2dGbrxqbayq3xI8tzCdfaF2SmIYw-sut", "PL2dGbrxqbayr22qpI3k0MAjPYjHV6NRHX"] },
+    { key: "videos_more_url", label: "Video modülü: \"Tüm videolar\" bağlantısı", type: "url", def: "https://www.ahmetishak.com/galeri/videolar/", max: 300 },
+    { key: "videos_channel_url", label: "Video modülü: abone olunacak kanal", type: "url", def: "https://www.youtube.com/@AhmetishakDemir", max: 300 },
     { key: "home_show_coord", label: "Koordinasyon toplantıları bölümünü göster", type: "bool", def: true },
     { key: "home_show_works", label: "Öne çıkan eserler bölümünü göster", type: "bool", def: true },
     { key: "home_show_members", label: "Yeni eklenen akademisyenler bölümünü göster", type: "bool", def: true },
@@ -50,12 +60,17 @@ const GROUPS = [
     { key: "comments_enabled", label: "Yorumlar açık", type: "bool", def: true },
     { key: "comments_require_approval", label: "Yorumlar yönetici onayından sonra yayınlansın", type: "bool", def: true },
   ] },
-  { key: "asistan", label: "Akaid Asistanı", perm: "ai.ayar", public: true, fields: [
-    { key: "ai_enabled", label: "Asistan açık", type: "bool", def: true },
+  { key: "asistan", label: "Asistanlar", perm: "ai.ayar", public: true, fields: [
+    { key: "ai_enabled", label: "Akaid Asistanı açık", type: "bool", def: true },
     { key: "ai_welcome", label: "Karşılama metni", type: "textarea", max: 600,
       def: "Selâmün aleyküm! Ehl-i Sünnet (Mâtürîdî ve Eş'arî) itikadına dair sorularınızı arşivdeki kaynaklara dayanarak yanıtlıyorum." },
     { key: "ai_suggestions", label: "Önerilen sorular (her satıra bir soru)", type: "lines", max: 6,
       def: ["Hudûs delili nedir?", "Mâtürîdî ile Eş'arî arasındaki farklar nelerdir?", "Kesb nazariyesi nedir?", "Allah'ın varlığının delilleri nelerdir?"] },
+    { key: "ai_hanefi_enabled", label: "Hanefî Fıkhı Asistanı açık", type: "bool", def: true },
+    { key: "ai_hanefi_welcome", label: "Hanefî asistanı karşılama metni", type: "textarea", max: 600,
+      def: "Selâmün aleyküm! Hanefî fıkhına dair sorularınızı Hidâye, Bedâi', el-Mebsût, Reddü'l-muhtâr gibi klasik kaynaklara dayanarak, cilt ve sayfa göstererek yanıtlıyorum." },
+    { key: "ai_hanefi_suggestions", label: "Hanefî asistanı önerilen sorular (her satıra bir soru)", type: "lines", max: 6,
+      def: ["Mest üzerine mesh süresi ne kadardır?", "Abdesti bozan şeyler nelerdir?", "Kadın ziynet altınına zekât düşer mi?", "Yolculukta namaz nasıl kısaltılır?"] },
     { key: "ai_daily_requests", label: "Kişi başı günlük soru sınırı (boş: sunucu varsayılanı)", type: "number", def: null, min: 0, max: 1000, optional: true },
     { key: "ai_monthly_budget", label: "Aylık bütçe tavanı, USD (boş: sunucu varsayılanı)", type: "number", def: null, min: 0, max: 10000, step: 0.5, optional: true },
   ] },
@@ -87,6 +102,7 @@ function clean(f, v) {
       const arr = (Array.isArray(v) ? v : String(v || "").split("\n")).map((s) => String(s).replace(/\s+/g, " ").trim()).filter(Boolean);
       if (arr.length > f.max) throw `En fazla ${f.max} satır girin.`;
       if (arr.some((s) => s.length > 140)) throw "Her satır en fazla 140 karakter olabilir.";
+      if (f.pattern && arr.some((s) => !f.pattern.test(s))) throw f.patternMsg;
       return arr;
     }
     default: {

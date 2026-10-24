@@ -42,17 +42,22 @@ ST = {
     "footer_about": "İlahiyat ve İslami İlimler Fakülteleri İslam Mezhepleri Tarihi Anabilim Dalı Koordinasyon Sitesi. 2006'dan beri alanın akademik hafızası.",
     "footer_note": "Ahmet İshak DEMİR adına", "contact_person": "Prof. Dr. Ahmet İshak DEMİR",
     "contact_institution": "Recep Tayyip Erdoğan Üniversitesi İlahiyat Fakültesi", "contact_email": "",
-    "facebook_url": "https://www.facebook.com/Mezhep.Org/",
+    "facebook_url": "https://www.facebook.com/Mezhep.Org/", "youtube_url": "https://www.youtube.com/@mezheporg",
     "banner_enabled": False, "banner_text": "", "banner_link": "", "banner_style": "bilgi",
     "home_eyebrow": "İslam Mezhepleri Tarihi Anabilim Dalı", "home_title": "Mezhepler tarihi çalışmalarının *ortak hafızası*",
     "home_lead": "Türkiye'deki İlahiyat ve İslami İlimler fakültelerinin İslam Mezhepleri Tarihi akademisyenlerini, tezlerini, kitaplarını ve makalelerini tek çatı altında, özetleriyle birlikte derliyoruz.",
     "home_quote": "Gelişmesi ve zenginleşmesi için İslam Mezhepleri ile ilgilenen herkesin katkılarını bekliyoruz.",
     "home_quote_sign": "Ahmet İshak DEMİR", "home_show_news": True, "home_news_count": 6,
     "home_show_coord": True, "home_show_works": True, "home_show_members": True,
+    "home_show_youtube": True, "home_show_videos": True, "videos_eyebrow": "Prof. Dr. Ahmet İshak Demir",
+    "videos_title": "Konuşmalar ve videolar", "videos_more_url": "https://www.ahmetishak.com/galeri/videolar/",
+    "videos_channel_url": "https://www.youtube.com/@AhmetishakDemir",
 }
 if os.path.exists(os.path.join(DATA, "settings.json")):
     ST.update({k: v for k, v in load("settings").items() if v is not None})
 SITE = ST["site_name"] or "Mezhep.Org"
+# Ana sayfa video modülü (scripts/videolar.py ya da sunucu üretir)
+VIDEOS = load("videos")["playlists"] if os.path.exists(os.path.join(DATA, "videos.json")) else []
 E = lambda s: html.escape(str(s or ""), quote=True)
 def exists(p):
     for prefix, base in FILE_ROOTS.items():
@@ -125,6 +130,8 @@ I = {
     "pin": '<path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/>',
     "copy": '<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
     "mail": '<rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 5L2 7"/>',
+    "yt": '<rect x="2" y="5" width="20" height="14" rx="4"/><path d="m10 9 5 3-5 3z" fill="currentColor"/>',
+    "play": '<path d="M8 5.5v13l11-6.5z" fill="currentColor" stroke="none"/>',
     "fb": '<path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/>',
     "download": '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>',
     "star": '<path d="M12 2 14.6 9.4 22 12l-7.4 2.6L12 22l-2.6-7.4L2 12l7.4-2.6z"/>',
@@ -214,7 +221,7 @@ def layout(path, title, body, desc="", active="", data=None):
       <div>
         <a class="brand" href="{r}index.html"><img class="brand-logo" src="{r}assets/img/logo.jpg" alt="Mezhep.Org logosu" width="59" height="40"><span>{E(SITE)}<small>{E(ST["site_tagline"])}</small></span></a>
         <p>{E(ST["footer_about"])}</p>
-        {('<div class="socials"><a class="icon-btn" href="%s" target="_blank" rel="noopener" aria-label="Facebook">%s</a></div>' % (E(ST["facebook_url"]), ic("fb"))) if ST["facebook_url"] else ""}
+        <div class="socials">{('<a class="icon-btn" href="%s" target="_blank" rel="noopener" aria-label="YouTube kanalımız">%s</a>' % (E(ST["youtube_url"]), ic("yt"))) if ST["youtube_url"] else ""}{('<a class="icon-btn" href="%s" target="_blank" rel="noopener" aria-label="Facebook">%s</a>' % (E(ST["facebook_url"]), ic("fb"))) if ST["facebook_url"] else ""}</div>
       </div>
       <div><h4>Keşfet</h4><ul><li><a href="{r}akademisyenler.html">Akademisyenler</a></li><li><a href="{r}eserler.html">Eserler</a></li><li><a href="{r}eserler.html#tur=Doktora">Doktora Tezleri</a></li><li><a href="{r}eserler.html#tur=Yüksek Lisans">Yüksek Lisans Tezleri</a></li></ul></div>
       <div><h4>Güncel</h4><ul><li><a href="{r}haberler.html">Haberler</a></li><li><a href="{r}etkinlikler.html">Etkinlikler</a></li><li><a href="{r}galeri.html">Fotoğraf Galerisi</a></li><li><a href="{r}kaynaklar.html">Kaynaklar</a></li></ul></div>
@@ -251,6 +258,53 @@ def banner_html():
     if ST["banner_link"]:
         text += ' <a href="%s">Ayrıntılar →</a>' % E(ST["banner_link"])
     return '<div class="site-banner sb-%s" role="note"><div class="container">%s</div></div>' % (E(ST["banner_style"]), text)
+
+
+def youtube_band():
+    """Mezhep.Org YouTube kanalı: ana sayfada kartların hemen altında belirgin şerit."""
+    url = ST["youtube_url"]
+    if not (url and ST["home_show_youtube"]):
+        return ""
+    m = re.search(r"youtube\.com/(@[\w.-]+)", url)
+    handle = m.group(1) if m else "YouTube"
+    sub = url + ("&" if "?" in url else "?") + "sub_confirmation=1"
+    return (f'<section class="yt-wrap"><div class="container"><div class="yt-band reveal">'
+            f'<span class="yt-logo" aria-hidden="true">{ic("yt")}</span>'
+            f'<div class="yt-text"><div class="yt-kicker">YouTube kanalımız</div><h2>{E(handle)}</h2>'
+            f'<p>Sempozyum, panel ve koordinasyon toplantılarının kayıtları; ders ve söyleşiler. {E(SITE)}\'un yayın organı.</p></div>'
+            f'<div class="yt-actions"><a class="btn yt-btn" href="{E(url)}" target="_blank" rel="noopener">{ic("play")} Kanala git</a>'
+            f'<a class="btn btn-ghost" href="{E(sub)}" target="_blank" rel="noopener">Abone ol</a></div></div></div></section>')
+
+
+def tr_short_date(iso):
+    m = re.match(r"(\d{4})-(\d{2})-(\d{2})", iso or "")
+    return "%d %s %s" % (int(m.group(3)), AY_KISA[int(m.group(2)) - 1], m.group(1)) if m else ""
+
+
+def video_module():
+    """Video modülü: oynatma listeleri sekme sekme; karta tıklayınca sayfada oynatılır (JS yoksa YouTube'a gider)."""
+    lists = [l for l in VIDEOS if l.get("videos")]
+    if not (lists and ST["home_show_videos"]):
+        return ""
+    label = lambda t: {"Konuşmaları": "Konuşmalar"}.get(re.sub(r"^Ahmet İshak DEMİR\s*", "", t, flags=re.I).strip(), re.sub(r"^Ahmet İshak DEMİR\s*", "", t, flags=re.I).strip() or t)
+    tabs = "".join('<button class="chip" type="button" role="tab" aria-selected="%s" data-vid-tab="%d">%s <span class="n">%d</span></button>'
+                   % ("true" if i == 0 else "false", i, E(label(l["title"])), len(l["videos"])) for i, l in enumerate(lists))
+    panels = ""
+    for i, l in enumerate(lists):
+        cards = "".join(
+            f'<a class="vid-card" href="https://www.youtube.com/watch?v={E(v["id"])}" target="_blank" rel="noopener" data-yt="{E(v["id"])}" data-title="{E(v["title"])}">'
+            f'<span class="vid-thumb"><img src="https://i.ytimg.com/vi/{E(v["id"])}/hqdefault.jpg" alt="" loading="lazy"><span class="vid-play">{ic("play")}</span></span>'
+            f'<span class="vid-title">{E(v["title"])}</span><span class="vid-date">{tr_short_date(v.get("published"))}</span></a>'
+            for v in l["videos"][:8])
+        panels += f'<div class="vid-grid" role="tabpanel" data-vid-panel="{i}"{"" if i == 0 else " hidden"}>{cards}</div>'
+    more = ('<a class="link-arrow" href="%s" target="_blank" rel="noopener">Tüm videolar %s</a>' % (E(ST["videos_more_url"]), ic("arrow"))) if ST["videos_more_url"] else ""
+    sub = ('<a class="btn btn-ghost btn-sm" href="%s" target="_blank" rel="noopener">%s Kanala abone olun</a>'
+           % (E(ST["videos_channel_url"] + ("&" if "?" in ST["videos_channel_url"] else "?") + "sub_confirmation=1"), ic("yt"))) if ST["videos_channel_url"] else ""
+    return (f'<section class="section{{ALT}}" id="videolar"><div class="container">'
+            f'<div class="section-head reveal"><div><div class="eyebrow">{E(ST["videos_eyebrow"])}</div><h2>{E(ST["videos_title"])}</h2>'
+            f'<p>Konferans, panel ve televizyon programlarından seçmeler; kısa söyleşiler.</p></div>{more}</div>'
+            f'<div class="chips vid-tabs" role="tablist" aria-label="Video listeleri">{tabs}</div>{panels}'
+            f'<div class="vid-foot">{sub}</div></div></section>')
 
 
 def emph(t):
@@ -437,7 +491,8 @@ def build_home():
   </div>
 </section>''')
     ]
-    shown = [h for on, h in optional if on]
+    optional.insert(1, (True, video_module()))
+    shown = [h for on, h in optional if on and h]
     optional_sections = "\n\n".join(h.replace("{ALT}", " alt" if n % 2 == 0 else "") for n, h in enumerate(shown))
     body = f'''
 <section class="hero">
@@ -479,13 +534,15 @@ def build_home():
   </div>
 </section>
 
+{youtube_band()}
+
 {optional_sections}
 
 <section class="section" style="padding-top:0">
   <div class="container">
     <div class="cta reveal">{BIG_STAR}
       <div><h2>Katkılarınızı bekliyoruz</h2><p>Sitemizin temel amacı Mezhepler Tarihi çalışmalarını eksiksiz ve özetleriyle birlikte derlemek. Öncelikle kendi çalışmalarınız olmak üzere tashih ve eklemelerinizi bize iletin.</p></div>
-      <div class="actions"><a class="btn btn-primary" href="{{ROOT}}hakkinda.html#iletisim">{ic("mail")} Bize ulaşın</a>{('<a class="btn btn-ghost" href="%s" target="_blank" rel="noopener">%s Facebook</a>' % (E(ST["facebook_url"]), ic("fb"))) if ST["facebook_url"] else ""}</div>
+      <div class="actions"><a class="btn btn-primary" href="{{ROOT}}hakkinda.html#iletisim">{ic("mail")} Bize ulaşın</a>{('<a class="btn btn-ghost" href="%s" target="_blank" rel="noopener">%s YouTube</a>' % (E(ST["youtube_url"]), ic("yt"))) if ST["youtube_url"] else ""}{('<a class="btn btn-ghost" href="%s" target="_blank" rel="noopener">%s Facebook</a>' % (E(ST["facebook_url"]), ic("fb"))) if ST["facebook_url"] else ""}</div>
     </div>
   </div>
 </section>'''
@@ -786,7 +843,8 @@ def build_about():
   <aside id="iletisim">
     <div class="panel"><h3>İletişim</h3><p style="color:var(--ink-2);margin:0 0 16px">Tashih, ekleme ve önerileriniz için site yöneticisine ulaşabilirsiniz.</p>
       <dl class="dl"><dt>Yönetici</dt><dd>{E(ST["contact_person"])}</dd><dt>Kurum</dt><dd>{E(ST["contact_institution"])}</dd>{('<dt>E-posta</dt><dd><a href="mailto:%s">%s</a></dd>' % (E(ST["contact_email"]), E(ST["contact_email"]))) if ST["contact_email"] else ""}</dl></div>
-    {('<a class="btn btn-primary" href="%s" target="_blank" rel="noopener">%s Facebook sayfamız</a>' % (E(ST["facebook_url"]), ic("fb"))) if ST["facebook_url"] else ""}
+    {('<a class="btn btn-primary" href="%s" target="_blank" rel="noopener">%s YouTube kanalımız</a>' % (E(ST["youtube_url"]), ic("yt"))) if ST["youtube_url"] else ""}
+    {('<a class="btn btn-ghost" href="%s" target="_blank" rel="noopener">%s Facebook sayfamız</a>' % (E(ST["facebook_url"]), ic("fb"))) if ST["facebook_url"] else ""}
     <a class="btn btn-ghost" href="{{ROOT}}akademisyen/10.html">{ic("users")} Yönetici profili</a>
   </aside>
 </div>'''

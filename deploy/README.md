@@ -46,6 +46,21 @@ Asistan kaynaklarını yenilemek: aynı komuta `--kaynak "<klasör>"` ekleyin.
   Acil kapatma: `AI_ENABLED=false`.
 - Kaynak metinler (`/opt/mezhep/kaynaklar`) depoya girmez; depo herkese açıktır.
 
+## Hanefî Fıkhı Asistanı
+
+- Kaynak: `HANEFİ FIKHI` klasöründeki OpenITI biçimli Arapça klasik metinler (Hidâye, Bedâi', el-Mebsût,
+  Reddü'l-muhtâr, Fetâvâ-yı Hindiyye…). Hanefî olmayan ve mukayeseli eserler (Neylü'l-meârib, Kelvezânî,
+  İsnevî, Saymerî, Âbî el-Ezherî, İbn Hübeyre) indekse alınmaz; aynı eserin farklı neşirleri tekilleştirilir.
+- İndeksi yerelde üretip gönderin (kaynak metin sunucuya gitmez, yalnızca indeks gider):
+
+  ```
+  cd server && npm run kaynak-hanefi -- "../HANEFİ FIKHI"        # → .yerel/hanefi.db (~1,5 dk)
+  cd .. && node deploy/yayinla.mjs --host root@185.23.17.212 --anahtar ~/.ssh/mezhep_deploy_ed25519 --hanefi-indeks .yerel/hanefi.db
+  ```
+- Akış: Türkçe soru → `effort=none`, en çok 200 token'lık ön çağrıyla Arapça fıkıh terimleri (JSON) → indekste arama
+  → kaynaklı Türkçe yanıt (eser, müellif, cilt/sayfa). İki çağrının token ve maliyeti tek kayıtta toplanır.
+- Panel → Site ayarları → **Asistanlar** sekmesinden açılıp kapatılır; karşılama metni ve önerilen sorular oradadır.
+
 ## Yönetim komutları
 
 ```bash

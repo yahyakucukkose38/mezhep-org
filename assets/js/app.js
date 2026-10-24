@@ -303,10 +303,20 @@
       }
     };
 
-    /* ---- Akaid Asistanı (sağ alt) ---- */
-    var SUGGEST = ["Hudûs delili nedir?", "Mâtürîdî ile Eş'arî arasındaki farklar nelerdir?", "Kesb nazariyesi nedir?", "Allah'ın varlığının delilleri nelerdir?"];
-    var aiStore = { get: function () { try { return JSON.parse(sessionStorage.getItem("mz-asistan") || "[]"); } catch (e) { return []; } },
-      set: function (v) { try { sessionStorage.setItem("mz-asistan", JSON.stringify(v.slice(-20))); } catch (e) {} } };
+    /* ---- Asistanlar: Akaid ve Hanefî Fıkhı (sağ alt) ---- */
+    var AI_DEFAULTS = {
+      akaid: { welcome: "Selâmün aleyküm! Ehl-i Sünnet (Mâtürîdî ve Eş'arî) itikadına dair sorularınızı arşivdeki kaynaklara dayanarak yanıtlıyorum.",
+        note: "Yanıtlar yapay zekâ ile derlenir ve hata içerebilir; önemli konularda kaynaklara ve hocalarımıza başvurun. Fetva verilmez.",
+        suggestions: ["Hudûs delili nedir?", "Mâtürîdî ile Eş'arî arasındaki farklar nelerdir?", "Kesb nazariyesi nedir?", "Allah'ın varlığının delilleri nelerdir?"], tab: "Akaid" },
+      hanefi: { welcome: "Selâmün aleyküm! Hanefî fıkhına dair sorularınızı klasik kaynaklara dayanarak, cilt ve sayfa göstererek yanıtlıyorum.",
+        note: "Yanıtlar yapay zekâ ile Arapça klasik metinlerden derlenir ve hata içerebilir; gösterilen cilt ve sayfadan kontrol edin. Bu bir fetva değildir; kişisel durumunuz için müftülüğe danışın.",
+        suggestions: ["Mest üzerine mesh süresi ne kadardır?", "Abdesti bozan şeyler nelerdir?"], tab: "Hanefî Fıkhı" },
+    };
+    var aiStore = function (key) {
+      var k = key === "akaid" ? "mz-asistan" : "mz-asistan-" + key;
+      return { get: function () { try { return JSON.parse(sessionStorage.getItem(k) || "[]"); } catch (e) { return []; } },
+        set: function (v) { try { sessionStorage.setItem(k, JSON.stringify(v.slice(-20))); } catch (e) {} } };
+    };
     var md = function (t) {
       var blocks = esc(t).split(/\n{2,}/).map(function (b) {
         var lines = b.split("\n");
@@ -318,41 +328,63 @@
       return blocks.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>").replace(/\[(\d{1,2})\]/g, '<sup class="cite">$1</sup>');
     };
     var setupAssistant = function (st) {
-      if (!st.enabled) return;
+      var list = (st.assistants && st.assistants.length) ? st.assistants
+        : st.enabled ? [{ key: "akaid", name: "Akaid Asistanı", subtitle: "Ehl-i Sünnet itikad kaynaklarından", welcome: st.welcome, suggestions: st.suggestions }] : [];
+      if (!list.length) return;
       document.body.classList.add("has-assistant");
+      var byKey = {}, chats = {};
+      list.forEach(function (a) { byKey[a.key] = a; chats[a.key] = { store: aiStore(a.key), history: aiStore(a.key).get(), sending: false }; });
+      var cur = list[0].key;
+      try { var saved = sessionStorage.getItem("mz-asistan-secim"); if (byKey[saved]) cur = saved; } catch (e) {}
+
       var fab = document.createElement("button");
       fab.className = "ai-fab"; fab.type = "button"; fab.setAttribute("aria-haspopup", "dialog"); fab.setAttribute("aria-expanded", "false");
-      fab.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M8 9h8M8 13h5"/></svg><span>Akaid Asistanı</span>';
+      fab.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M8 9h8M8 13h5"/></svg><span>' + esc(list.length > 1 ? "Asistanlar" : list[0].name) + "</span>";
       var box = document.createElement("section");
-      box.className = "ai-box"; box.setAttribute("role", "dialog"); box.setAttribute("aria-label", "Akaid Asistanı"); box.hidden = true;
-      box.innerHTML = '<header class="ai-head"><img src="/assets/img/logo.jpg" alt="" width="44" height="30"><div><strong>Akaid Asistanı</strong><span>Ehl-i Sünnet itikad kaynaklarından</span></div>' +
+      box.className = "ai-box"; box.setAttribute("role", "dialog"); box.setAttribute("aria-label", list.length > 1 ? "Mezhep.Org asistanları" : list[0].name); box.hidden = true;
+      box.innerHTML = '<header class="ai-head"><img src="/assets/img/logo.jpg" alt="" width="44" height="30"><div><strong data-ai-name></strong><span data-ai-sub></span></div>' +
         '<button type="button" class="ai-icon" data-new title="Yeni sohbet" aria-label="Yeni sohbet"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>' +
         '<button type="button" class="ai-icon" data-close title="Kapat" aria-label="Kapat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button></header>' +
+        (list.length > 1 ? '<div class="ai-tabs" role="tablist" aria-label="Asistan seçin">' + list.map(function (a) {
+          return '<button type="button" role="tab" data-ai-tab="' + esc(a.key) + '">' + esc((AI_DEFAULTS[a.key] || {}).tab || a.name) + "</button>";
+        }).join("") + "</div>" : "") +
         '<div class="ai-log" aria-live="polite"></div><div class="ai-foot"></div>';
       document.body.appendChild(box); document.body.appendChild(fab);
-      var log = $(".ai-log", box), foot = $(".ai-foot", box), history = aiStore.get(), sending = false;
+      var log = $(".ai-log", box), foot = $(".ai-foot", box);
 
       var bubble = function (m) {
         if (m.role === "user") return '<div class="ai-msg me"><div class="ai-bubble">' + esc(m.content).replace(/\n/g, "<br>") + "</div></div>";
         var src = (m.sources || []).length ? '<details class="ai-src"><summary>Kaynaklar (' + m.sources.length + ")</summary><ol>" +
-          m.sources.map(function (s) { return "<li value=\"" + s.n + '">' + esc(s.title) + (s.heading ? " <span>— " + esc(s.heading) + "</span>" : "") + "</li>"; }).join("") + "</ol></details>" : "";
+          m.sources.map(function (s) {
+            // Arapça bab başlığı (Hanefî) kendi satırında sağdan sola; Türkçe başlıklar (Akaid) eskisi gibi satır içinde
+            var rtl = /[؀-ۿ]/.test(s.heading || "");
+            return "<li value=\"" + s.n + '">' + esc(s.title) + (s.cite ? ' <span class="ai-cite">' + esc(s.cite) + "</span>" : "") +
+              (s.heading ? (rtl ? '<span class="ai-h" dir="rtl" lang="ar">' + esc(s.heading) + "</span>" : " <span>— " + esc(s.heading) + "</span>") : "") + "</li>";
+          }).join("") + "</ol></details>" : "";
         return '<div class="ai-msg' + (m.error ? " err" : "") + '"><div class="ai-bubble prose">' + (m.error ? esc(m.content) : md(m.content)) + src + "</div></div>";
       };
       var draw = function () {
-        var intro = '<div class="ai-msg"><div class="ai-bubble prose"><p>' + esc(st.welcome || "Selâmün aleyküm! Ehl-i Sünnet (Mâtürîdî ve Eş'arî) itikadına dair sorularınızı arşivdeki kaynaklara dayanarak yanıtlıyorum.") + '</p>' +
-          '<p class="ai-note">Yanıtlar yapay zekâ ile derlenir ve hata içerebilir; önemli konularda kaynaklara ve hocalarımıza başvurun. Fetva verilmez.</p></div></div>';
-        var sugg = (st.suggestions && st.suggestions.length) ? st.suggestions : SUGGEST;
-        var chips = !history.length && me && me.status === "active" ? '<div class="ai-chips">' + sugg.map(function (q) { return '<button type="button" class="chip" data-q="' + esc(q) + '">' + esc(q) + "</button>"; }).join("") + "</div>" : "";
-        log.innerHTML = intro + chips + history.map(bubble).join("") + (sending ? '<div class="ai-msg"><div class="ai-bubble ai-typing"><span></span><span></span><span></span></div></div>' : "");
+        var a = byKey[cur], d = AI_DEFAULTS[cur] || AI_DEFAULTS.akaid, c = chats[cur];
+        $("[data-ai-name]", box).textContent = a.name;
+        $("[data-ai-sub]", box).textContent = a.subtitle || "";
+        $$("[data-ai-tab]", box).forEach(function (t) { t.setAttribute("aria-selected", t.getAttribute("data-ai-tab") === cur); });
+        var intro = '<div class="ai-msg"><div class="ai-bubble prose"><p>' + esc(a.welcome || d.welcome) + '</p><p class="ai-note">' + esc(d.note) + "</p></div></div>";
+        var sugg = (a.suggestions && a.suggestions.length) ? a.suggestions : d.suggestions;
+        var chips = !c.history.length && me && me.status === "active" ? '<div class="ai-chips">' + sugg.map(function (q) { return '<button type="button" class="chip" data-q="' + esc(q) + '">' + esc(q) + "</button>"; }).join("") + "</div>" : "";
+        log.innerHTML = intro + chips + c.history.map(bubble).join("") + (c.sending ? '<div class="ai-msg"><div class="ai-bubble ai-typing"><span></span><span></span><span></span></div></div>' : "");
         $$("[data-q]", log).forEach(function (b) { b.addEventListener("click", function () { send(b.getAttribute("data-q")); }); });
         log.scrollTop = log.scrollHeight;
+        var ta = $("textarea", foot);
+        if (ta) { ta.disabled = c.sending; ta.placeholder = cur === "hanefi" ? "Fıkhî sorunuzu yazın…" : "Sorunuzu yazın…"; }
       };
+      var meta = function (remaining) { var m = $("[data-meta]", foot); if (m && remaining) m.textContent = "Bugün kalan: " + remaining.requests + " soru"; };
       var drawFoot = function (remaining) {
         if (!me) { foot.innerHTML = '<p class="ai-gate">Asistanı kullanmak için <a href="/panel/#/giris">giriş yapın</a> ya da <a href="/panel/#/kayit">üye olun</a>.</p>'; return; }
         if (me.status !== "active") { foot.innerHTML = '<p class="ai-gate">Üyeliğiniz onaylandıktan sonra asistanı kullanabilirsiniz.</p>'; return; }
         foot.innerHTML = '<form class="ai-form"><label class="sr-only" for="ai-in">Sorunuz</label><textarea id="ai-in" rows="1" maxlength="' + st.maxInputChars + '" placeholder="Sorunuzu yazın…"></textarea>' +
           '<button class="ai-send" type="submit" aria-label="Gönder"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4z"/><path d="M22 2 11 13"/></svg></button></form>' +
-          '<div class="ai-meta" data-meta>' + (remaining ? "Bugün kalan: " + remaining.requests + " soru" : "") + "</div>";
+          '<div class="ai-meta" data-meta></div>';
+        meta(remaining);
         var f = $("form", foot), ta = $("textarea", f);
         ta.addEventListener("input", function () { ta.style.height = "auto"; ta.style.height = Math.min(ta.scrollHeight, 140) + "px"; });
         ta.addEventListener("keydown", function (e) { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); f.requestSubmit(); } });
@@ -360,27 +392,35 @@
       };
       var send = function (text) {
         text = String(text || "").trim();
-        if (!text || sending) return;
-        var past = history.filter(function (m) { return !m.error; }).map(function (m) { return { role: m.role, content: m.content }; }).slice(-12);
-        history.push({ role: "user", content: text }); sending = true; draw();
-        var ta = $("textarea", foot); if (ta) { ta.value = ""; ta.style.height = "auto"; ta.disabled = true; }
-        apiCall("POST", "/ai/chat", { message: text, history: past }).then(function (j) {
-          history.push({ role: "assistant", content: j.answer, sources: j.sources });
-          var meta = $("[data-meta]", foot); if (meta && j.remaining) meta.textContent = "Bugün kalan: " + j.remaining.requests + " soru";
+        var key = cur, c = chats[key];
+        if (!text || c.sending) return;
+        var past = c.history.filter(function (m) { return !m.error; }).map(function (m) { return { role: m.role, content: m.content }; }).slice(-12);
+        c.history.push({ role: "user", content: text }); c.sending = true; draw();
+        var ta = $("textarea", foot); if (ta) { ta.value = ""; ta.style.height = "auto"; }
+        apiCall("POST", "/ai/chat", { assistant: key, message: text, history: past }).then(function (j) {
+          c.history.push({ role: "assistant", content: j.answer, sources: j.sources });
+          meta(j.remaining);
         }).catch(function (err) {
-          history.push({ role: "assistant", error: true, content: (err && err.error) || "Asistana ulaşılamadı. Lütfen tekrar deneyin." });
+          c.history.push({ role: "assistant", error: true, content: (err && err.error) || "Asistana ulaşılamadı. Lütfen tekrar deneyin." });
         }).then(function () {
-          sending = false; aiStore.set(history); draw();
-          var t2 = $("textarea", foot); if (t2) { t2.disabled = false; t2.focus(); }
+          c.sending = false; c.store.set(c.history);
+          if (key === cur) { draw(); var t2 = $("textarea", foot); if (t2 && !box.hidden) t2.focus(); }
         });
       };
       var open = function (on) {
         box.hidden = !on; fab.setAttribute("aria-expanded", on); document.body.classList.toggle("ai-open", on);
         if (on) { draw(); var t = $("textarea", foot); (t || $("[data-close]", box)).focus(); } else fab.focus();
       };
+      $$("[data-ai-tab]", box).forEach(function (t) {
+        t.addEventListener("click", function () {
+          cur = t.getAttribute("data-ai-tab");
+          try { sessionStorage.setItem("mz-asistan-secim", cur); } catch (e) {}
+          draw(); var ta = $("textarea", foot); if (ta && !ta.disabled) ta.focus();
+        });
+      });
       fab.addEventListener("click", function () { open(box.hidden); });
       $("[data-close]", box).addEventListener("click", function () { open(false); });
-      $("[data-new]", box).addEventListener("click", function () { history = []; aiStore.set(history); draw(); });
+      $("[data-new]", box).addEventListener("click", function () { var c = chats[cur]; if (c.sending) return; c.history = []; c.store.set(c.history); draw(); });
       box.addEventListener("keydown", function (e) { if (e.key === "Escape") open(false); });
       drawFoot(st.remaining);
     };
@@ -409,6 +449,38 @@
         }
         apiCall("GET", "/ai/status").then(setupAssistant).catch(function () {});
       });
+  }
+
+  /* ---------- video modülü: sekmeler ve sayfa içi oynatıcı ---------- */
+  var vidTabs = $$("[data-vid-tab]");
+  vidTabs.forEach(function (t) {
+    t.addEventListener("click", function () {
+      vidTabs.forEach(function (x) { x.setAttribute("aria-selected", x === t); });
+      $$("[data-vid-panel]").forEach(function (p) { p.hidden = p.getAttribute("data-vid-panel") !== t.getAttribute("data-vid-tab"); });
+    });
+  });
+  var vidCards = $$("[data-yt]");
+  if (vidCards.length) {
+    var vm = document.createElement("div");
+    vm.className = "vid-modal"; vm.setAttribute("role", "dialog"); vm.setAttribute("aria-modal", "true"); vm.setAttribute("aria-label", "Video oynatıcı");
+    vm.innerHTML = '<div class="cap"></div><button class="close" type="button" aria-label="Kapat">' + svg('<path d="M18 6 6 18M6 6l12 12"/>') + '</button><div class="frame"></div>';
+    document.body.appendChild(vm);
+    var lastCard = null;
+    var closeVid = function () { vm.classList.remove("open"); $(".frame", vm).innerHTML = ""; document.body.style.overflow = ""; if (lastCard) lastCard.focus(); };
+    vidCards.forEach(function (c) {
+      c.addEventListener("click", function (e) {
+        var id = c.getAttribute("data-yt");
+        if (!/^[\w-]{11}$/.test(id)) return;
+        e.preventDefault(); lastCard = c;
+        $(".cap", vm).textContent = c.getAttribute("data-title") || "";
+        $(".frame", vm).innerHTML = '<iframe src="https://www.youtube-nocookie.com/embed/' + id + '?autoplay=1&rel=0" title="' + esc(c.getAttribute("data-title") || "Video") +
+          '" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe>';
+        vm.classList.add("open"); document.body.style.overflow = "hidden"; $(".close", vm).focus();
+      });
+    });
+    $(".close", vm).addEventListener("click", closeVid);
+    vm.addEventListener("click", function (e) { if (e.target === vm) closeVid(); });
+    document.addEventListener("keydown", function (e) { if (e.key === "Escape" && vm.classList.contains("open")) closeVid(); });
   }
 
   /* ---------- galeri ışık kutusu ---------- */

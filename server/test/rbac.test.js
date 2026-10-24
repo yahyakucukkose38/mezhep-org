@@ -165,6 +165,19 @@ test("site ayarları: yetki, doğrulama ve etkisi", async () => {
   assert.equal(JSON.parse(fs.readFileSync(path.join(TMP, "json", "settings.json"), "utf8")).banner_text, "Duyuru");
 });
 
+test("video modülü: oynatma listesi doğrulaması ve RSS ayrıştırma", async () => {
+  const r = await U.super.call("PUT", "/admin/settings", { values: { videos_playlists: "PLgecerli1234567890abc\njavascript:alert(1)" } });
+  assert.equal(r.status, 400);
+  assert.ok(r.body.fields.videos_playlists);
+  const v = require("../src/videos");
+  const feed = `<feed><title>Ahmet İshak DEMİR Kısa Kısa</title>
+    <entry><yt:videoId>UMgez7HGUEw</yt:videoId><title>Her İyilik &amp; İyilik midir?</title><published>2026-03-08T10:00:00+00:00</published></entry>
+    <entry><yt:videoId>kötü</yt:videoId><title>x</title></entry></feed>`;
+  const p = v.parseFeed("PLx", feed);
+  assert.equal(p.title, "Ahmet İshak DEMİR Kısa Kısa");
+  assert.deepEqual(p.videos, [{ id: "UMgez7HGUEw", title: "Her İyilik & İyilik midir?", published: "2026-03-08" }]);
+});
+
 test("geri dönüşüm kutusu: silinen kayıt geri getirilir", async () => {
   assert.equal((await U.editor.call("DELETE", "/admin/items/work/656")).status, 403, "silme ayrı yetki");
   assert.equal((await U.yonetici.call("DELETE", "/admin/items/work/656")).status, 200);
