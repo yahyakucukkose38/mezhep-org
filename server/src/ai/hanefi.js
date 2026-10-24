@@ -371,7 +371,8 @@ function citeOf(page) {
   if (!m) return "";
   const [, v, p, v2, p2] = m;
   if (v2 && v2 !== v) return `c. ${+v}, s. ${+p} – c. ${+v2}, s. ${+p2}`;
-  return `c. ${+v}, s. ${+p}${p2 ? "-" + +p2 : ""}`;
+  // tek ciltlik eserlerde cilt numarası 0 olarak işaretlidir: yalnızca sayfa gösterilir
+  return `${+v ? `c. ${+v}, ` : ""}s. ${+p}${p2 ? "-" + +p2 : ""}`;
 }
 
 function indexInfo() {
