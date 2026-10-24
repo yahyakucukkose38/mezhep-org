@@ -1,13 +1,15 @@
-// Yapay zekâ ayarları — tamamı ortam değişkenleriyle yönetilir (deploy/.env.example).
+// Yapay zekâ ayarları: ortam değişkenleri (deploy/.env.example) + panelden değiştirilebilen birkaç değer (site-settings).
 // OPENAI_API_KEY yalnızca sunucu sürecinde okunur; hiçbir yanıta, log satırına ya da dosyaya yazılmaz.
 const num = (name, def) => {
   const v = Number(process.env[name]);
   return Number.isFinite(v) && process.env[name] !== "" && process.env[name] != null ? v : def;
 };
 
+// Panelden değiştirilebilen değerler (site-settings) ortam değişkenlerinin üzerine yazar; boşsa ortam değeri geçerlidir.
 function settings() {
+  const ss = require("../site-settings").all();
   return {
-    enabled: process.env.AI_ENABLED !== "false" && !!process.env.OPENAI_API_KEY,
+    enabled: process.env.AI_ENABLED !== "false" && !!process.env.OPENAI_API_KEY && ss.ai_enabled !== false,
     keyConfigured: !!process.env.OPENAI_API_KEY,
     baseUrl: (process.env.OPENAI_BASE_URL || "https://api.openai.com/v1").replace(/\/$/, ""),
     model: process.env.OPENAI_MODEL || "gpt-6-luna",
@@ -19,14 +21,14 @@ function settings() {
       output: num("AI_PRICE_OUTPUT_PER_1M", 0.50),
     },
     limits: {
-      dailyRequestsPerUser: num("AI_DAILY_REQUESTS_PER_USER", 40),
+      dailyRequestsPerUser: ss.ai_daily_requests ?? num("AI_DAILY_REQUESTS_PER_USER", 40),
       dailyTokensPerUser: num("AI_DAILY_TOKENS_PER_USER", 120000),
       ratePerMinute: num("AI_RATE_PER_MINUTE", 6),
       maxInputChars: num("AI_MAX_INPUT_CHARS", 1500),
       maxHistoryTurns: num("AI_MAX_HISTORY_TURNS", 6),
       maxConcurrent: num("AI_MAX_CONCURRENT", 4),
       maxConcurrentPerUser: num("AI_MAX_CONCURRENT_PER_USER", 1),
-      monthlyBudgetUsd: num("AI_MONTHLY_BUDGET_USD", 20),
+      monthlyBudgetUsd: ss.ai_monthly_budget ?? num("AI_MONTHLY_BUDGET_USD", 20),
       totalBudgetUsd: num("AI_TOTAL_BUDGET_USD", 0), // 0 = sınırsız
     },
     // Görev profilleri: basit işler düşünmeden (none), açıklama/kıyas gerektirenler düşük düşünmeyle (low).

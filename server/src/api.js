@@ -10,6 +10,8 @@ const A = require("./auth");
 const C = require("./content");
 const rebuild = require("./rebuild");
 const ai = require("./ai/service");
+const P = require("./perms");
+const SS = require("./site-settings");
 
 const api = express.Router();
 const ok = (res, data = {}) => res.json(data);
@@ -24,7 +26,7 @@ const wrap = (fn) => async (req, res, next) => {
   }
 };
 
-const userRow = (id) => plain(db.prepare(`SELECT ${A.PUBLIC_USER} FROM users WHERE id = ?`).get(id));
+const userRow = (id) => A.withPerms(plain(db.prepare(`SELECT ${A.PUBLIC_USER} FROM users WHERE id = ?`).get(id)));
 
 // ================================================================ genel
 api.get("/health", (_req, res) => ok(res, { ok: true }));
@@ -34,9 +36,12 @@ api.get("/schema", (_req, res) => ok(res, { schemas: C.SCHEMAS, ranks: C.RANKS, 
 api.get("/me", (req, res) => {
   if (!req.user) return ok(res, { user: null });
   const out = { user: req.user };
-  if (req.user.role === "admin") out.pending = pendingCounts();
+  if (P.isStaff(req.user)) out.pending = pendingCounts(req.user);
   return ok(res, out);
 });
+
+// Tarayıcının ihtiyaç duyduğu herkese açık ayarlar (kayıt/yorum açık mı, asistan metinleri)
+api.get("/site-settings", (_req, res) => ok(res, SS.publicValues()));
 
 api.get("/lookup/members", (req, res) => {
   const q = String(req.query.q || "").toLocaleLowerCase("tr").trim();
@@ -62,6 +67,7 @@ const authLimit = A.rateLimit({ windowMs: 15 * 60e3, max: 12 });
 api.post("/auth/register", authLimit, wrap((req, res) => {
   const b = req.body || {};
   if (b.website) return ok(res, { user: null }); // bot tuzağı
+  if (!SS.get("registration_open")) return A.fail(res, 403, "Yeni üye kaydı şu anda kapalı.");
   const fields = {};
   const name = String(b.name || "").replace(/\s+/g, " ").trim();
   const email = String(b.email || "").trim().toLowerCase();
@@ -153,15 +159,9 @@ api.post("/uploads", A.requireActive, A.rateLimit({ windowMs: 60 * 60e3, max: 60
 // ================================================================ üye gönderileri
 const MEMBER_KINDS = ["member", "work", "topic", "claim"];
 
-function diffAgainst(kind, existing, fields) {
-  const cur = C.formValues(kind, existing);
-  const out = {};
-  for (const [k, v] of Object.entries(fields)) if (String(cur[k] ?? "") !== String(v ?? "")) out[k] = v;
-  return out;
-}
-
 api.post("/submissions", A.requireActive, A.rateLimit({ windowMs: 60 * 60e3, max: 40, key: (r) => "s" + r.user.id }), wrap((req, res) => {
   const { kind } = req.body || {};
+  if (!SS.get("submissions_open")) return A.fail(res, 403, "Öneri gönderimi şu anda kapalı.");
   const target = req.body?.target_id == null || req.body.target_id === "" ? null : int(req.body.target_id);
   const note = String(req.body?.note || "").slice(0, 2000).trim();
   if (!MEMBER_KINDS.includes(kind)) return bad(res, "Geçersiz gönderi türü.");
@@ -173,17 +173,11 @@ api.post("/submissions", A.requireActive, A.rateLimit({ windowMs: 60 * 60e3, max
     if (target == null || !C.getItem("member", target)) return bad(res, "Akademisyen bulunamadı.");
     if (req.user.member_id === target) return bad(res, "Bu profil zaten size bağlı.");
   } else {
-    let existing = null;
+    // Üyeler yalnızca yeni kayıt önerir. Mevcut kayıtları sahibi olan akademisyen doğrudan, diğerlerini yöneticiler düzenler.
     if (target != null) {
-      existing = C.getItem(kind, target);
-      if (!existing) return bad(res, "Düzeltilecek kayıt bulunamadı.");
-      if (kind === "topic") return bad(res, "Haberlerde düzeltme için yorum yazabilir ya da yöneticiye ulaşabilirsiniz.");
+      return A.fail(res, 403, "Mevcut kayıtları yalnızca sahibi olan akademisyen ya da yöneticiler güncelleyebilir. Hata bildirmek için kaydın altına yorum yazabilirsiniz.");
     }
-    data = C.normalize(kind, req.body.data || {}, { partial: target != null });
-    if (existing) {
-      data = diffAgainst(kind, existing, data);
-      if (!Object.keys(data).length) return bad(res, "Mevcut kayıtta bir değişiklik yapmadınız.");
-    }
+    data = C.normalize(kind, req.body.data || {});
   }
   const info = db.prepare("INSERT INTO submissions (user_id, kind, target_id, data, note) VALUES (?, ?, ?, ?, ?)")
     .run(req.user.id, kind, target, JSON.stringify(data), note);
@@ -213,6 +207,43 @@ api.delete("/my/submissions/:id", A.requireUser, (req, res) => {
   n ? ok(res) : A.fail(res, 404, "Geri çekilebilecek bir gönderi bulunamadı.");
 });
 
+// ================================================================ kendi kayıtları (akademisyen)
+const OWN_PERM = { member: "kendi.profil", work: "kendi.eser" };
+
+function ownCheck(req, res) {
+  const { kind } = req.params, id = int(req.params.id);
+  if (!OWN_PERM[kind] || id == null || !C.getItem(kind, id)) { A.fail(res, 404, "Kayıt bulunamadı."); return null; }
+  if (!P.can(req.user, OWN_PERM[kind])) {
+    A.fail(res, 403, req.user.member_id ? "Hesabınızın bu kaydı güncelleme yetkisi yok. Site yöneticisine başvurun."
+      : "Kendi kayıtlarınızı güncelleyebilmek için önce akademik profilinizi hesabınıza bağlatmalısınız (Akademik profilim → Bu profil benim).");
+    return null;
+  }
+  if (!C.ownsItem(req.user, kind, id)) { A.fail(res, 403, "Bu kayıt size ait değil. Yalnızca kendi profilinizi, kendi eserlerinizi ve kendi eklediğiniz eserleri güncelleyebilirsiniz."); return null; }
+  return { kind, id };
+}
+
+api.get("/my/items", A.requireActive, (req, res) => {
+  ok(res, { items: C.ownItems(req.user), can: { profil: P.can(req.user, "kendi.profil"), eser: P.can(req.user, "kendi.eser") } });
+});
+
+api.get("/my/items/:kind/:id", A.requireActive, (req, res) => {
+  const t = ownCheck(req, res);
+  if (!t) return;
+  const item = C.getItem(t.kind, t.id);
+  ok(res, { id: t.id, values: C.formValues(t.kind, item), label: item.name || item.title });
+});
+
+api.put("/my/items/:kind/:id", A.requireActive, A.rateLimit({ windowMs: 60 * 60e3, max: 60, key: (r) => "o" + r.user.id }), wrap((req, res) => {
+  const t = ownCheck(req, res);
+  if (!t) return;
+  const existing = C.getItem(t.kind, t.id);
+  const fields = C.normalize(t.kind, req.body?.data || {}, { partial: true });
+  C.saveItem(t.kind, t.id, C.applyFields(t.kind, existing, fields, req.user), req.user.id);
+  log(req.user.id, "kendi-guncelle", `${t.kind}:${t.id} (${Object.keys(fields).join(",")})`);
+  rebuild.schedule(`${t.kind}:${t.id} sahibi güncelledi`);
+  ok(res, { id: t.id });
+}));
+
 // ================================================================ yorumlar
 const TARGET = /^(work|topic):(\d{1,9})$/;
 
@@ -238,48 +269,68 @@ api.post("/comments", A.requireActive, A.rateLimit({ windowMs: 10 * 60e3, max: 1
   const body = String(req.body?.body || "").replace(/\r/g, "").replace(/\n{3,}/g, "\n\n").trim();
   if (body.length < 3) return bad(res, "Yorum çok kısa.", { body: "Yorum çok kısa." });
   if (body.length > 3000) return bad(res, "Yorum en fazla 3000 karakter olabilir.", { body: "En fazla 3000 karakter." });
-  const status = req.user.role === "admin" ? "visible" : "pending";
+  if (!SS.get("comments_enabled")) return A.fail(res, 403, "Yorumlar şu anda kapalı.");
+  const status = P.can(req.user, "yorum.yonet") || !SS.get("comments_require_approval") ? "visible" : "pending";
   const info = db.prepare("INSERT INTO comments (target, user_id, body, status) VALUES (?, ?, ?, ?)").run(t, req.user.id, body, status);
   log(req.user.id, "yorum", t);
   ok(res, { id: Number(info.lastInsertRowid), status });
 }));
 
 // ================================================================ yönetim
+// Panelin yönetim bölümü: her uç nokta kendi yetkisini ister (bkz. perms.js).
 const admin = express.Router();
-admin.use(A.requireAdmin);
+admin.use(A.requireStaff);
+const need = A.requirePerm;
+const SUB_KINDS = ["member", "work", "topic", "claim"];
 
-function pendingCounts() {
-  const n = (sql) => db.prepare(sql).get().n;
+// Kullanıcının yetkili olduğu işlerdeki bekleyen sayılar
+function pendingCounts(user) {
+  const n = (sql, ...a) => db.prepare(sql).get(...a).n;
+  const kinds = SUB_KINDS.filter((k) => P.can(user, "onay." + k));
   return {
-    submissions: n("SELECT count(*) AS n FROM submissions WHERE status = 'pending'"),
-    users: n("SELECT count(*) AS n FROM users WHERE status = 'pending'"),
-    comments: n("SELECT count(*) AS n FROM comments WHERE status = 'pending'"),
+    submissions: kinds.length ? n(`SELECT count(*) AS n FROM submissions WHERE status = 'pending' AND kind IN (${kinds.map(() => "?").join(",")})`, ...kinds) : 0,
+    users: P.can(user, "uye.onay") || P.can(user, "uye.yonet") ? n("SELECT count(*) AS n FROM users WHERE status = 'pending'") : 0,
+    comments: P.can(user, "yorum.yonet") ? n("SELECT count(*) AS n FROM comments WHERE status = 'pending'") : 0,
   };
 }
 
-admin.get("/stats", (_req, res) => {
+admin.get("/stats", (req, res) => {
   const counts = {};
   for (const k of ["member", "work", "topic", "album"]) counts[k] = db.prepare("SELECT count(*) AS n FROM items WHERE kind = ? AND deleted = 0").get(k).n;
   counts.users = db.prepare("SELECT count(*) AS n FROM users WHERE status = 'active'").get().n;
-  const recent = db.prepare(
-    "SELECT l.action, l.detail, l.at, u.name FROM logs l LEFT JOIN users u ON u.id = l.user_id ORDER BY l.id DESC LIMIT 25"
-  ).all().map(plain);
-  ok(res, { pending: pendingCounts(), counts, recent, build: rebuild.state });
+  counts.staff = db.prepare("SELECT count(*) AS n FROM users WHERE status = 'active' AND role_key != 'uye'").get().n;
+  const recent = P.can(req.user, "kayit.gor")
+    ? db.prepare("SELECT l.action, l.detail, l.at, u.name FROM logs l LEFT JOIN users u ON u.id = l.user_id ORDER BY l.id DESC LIMIT 15").all().map(plain)
+    : [];
+  const newUsers = P.can(req.user, "uye.onay") || P.can(req.user, "uye.yonet")
+    ? db.prepare("SELECT id, name, email, status, created_at FROM users ORDER BY id DESC LIMIT 5").all().map(plain) : [];
+  ok(res, { pending: pendingCounts(req.user), counts, recent, newUsers, build: rebuild.state });
 });
 
 // ---- onay kuyruğu
 admin.get("/submissions", (req, res) => {
   const status = ["pending", "approved", "rejected"].includes(req.query.status) ? req.query.status : "pending";
+  const kinds = SUB_KINDS.filter((k) => P.can(req.user, "onay." + k));
+  if (!kinds.length) return A.fail(res, 403, "Onay kuyruğunu görme yetkiniz yok.");
   const rows = db.prepare(
-    `SELECT s.*, u.name AS user_name, u.email AS user_email, u.member_id AS user_member_id
-     FROM submissions s JOIN users u ON u.id = s.user_id WHERE s.status = ? ORDER BY s.id ${status === "pending" ? "ASC" : "DESC"} LIMIT 200`
-  ).all(status);
-  ok(res, { items: rows.map(submissionView) });
+    `SELECT s.*, u.name AS user_name, u.email AS user_email, u.member_id AS user_member_id, r.name AS reviewer_name
+     FROM submissions s JOIN users u ON u.id = s.user_id LEFT JOIN users r ON r.id = s.reviewed_by
+     WHERE s.status = ? AND s.kind IN (${kinds.map(() => "?").join(",")})
+     ORDER BY s.id ${status === "pending" ? "ASC" : "DESC"} LIMIT 200`
+  ).all(status, ...kinds);
+  ok(res, { items: rows.map(submissionView), kinds });
 });
 
-admin.post("/submissions/:id/approve", wrap((req, res) => {
+function pendingSubmission(req, res) {
   const s = db.prepare("SELECT * FROM submissions WHERE id = ? AND status = 'pending'").get(int(req.params.id));
-  if (!s) return A.fail(res, 404, "Onay bekleyen gönderi bulunamadı.");
+  if (!s) { A.fail(res, 404, "Onay bekleyen gönderi bulunamadı."); return null; }
+  if (!P.can(req.user, "onay." + s.kind)) { A.fail(res, 403, "Bu türdeki önerileri onaylama yetkiniz yok."); return null; }
+  return s;
+}
+
+admin.post("/submissions/:id/approve", wrap((req, res) => {
+  const s = pendingSubmission(req, res);
+  if (!s) return;
   const submitter = userRow(s.user_id);
   let resultId = s.target_id;
   db.exec("BEGIN");
@@ -287,18 +338,14 @@ admin.post("/submissions/:id/approve", wrap((req, res) => {
     if (s.kind === "claim") {
       if (!C.getItem("member", s.target_id)) throw new C.ValidationError({ _: "Akademisyen kaydı artık yok." });
       db.prepare("UPDATE users SET member_id = ? WHERE id = ?").run(s.target_id, s.user_id);
+      // Profili onaylanan üye akademisyen grubuna geçer (kendi profilini ve eserlerini güncelleyebilir)
+      db.prepare("UPDATE users SET role_key = 'akademisyen' WHERE id = ? AND role_key = 'uye'").run(s.user_id);
     } else {
       const existing = s.target_id != null ? C.getItem(s.kind, s.target_id) : null;
       if (s.target_id != null && !existing) throw new C.ValidationError({ _: "Düzeltilecek kayıt artık yok." });
-      // Yönetici formu düzenleyip göndermişse onu, yoksa üyenin önerisini işle.
-      const fields = req.body?.data
-        ? C.normalize(s.kind, req.body.data, { partial: !!existing, isAdmin: true })
-        : C.normalize(s.kind, JSON.parse(s.data), { partial: !!existing, isAdmin: true });
+      const fields = C.normalize(s.kind, req.body?.data || JSON.parse(s.data), { partial: !!existing, isAdmin: true });
       const item = C.applyFields(s.kind, existing, fields, submitter);
-      resultId = C.saveItem(s.kind, s.target_id, item, req.user.id).id;
-      if (s.kind === "member" && s.target_id == null && !submitter.member_id && req.body?.link_user) {
-        db.prepare("UPDATE users SET member_id = ? WHERE id = ?").run(resultId, s.user_id);
-      }
+      resultId = C.saveItem(s.kind, s.target_id, item, req.user.id, s.user_id).id;
     }
     db.prepare("UPDATE submissions SET status = 'approved', admin_note = ?, reviewed_by = ?, reviewed_at = datetime('now'), result_id = ? WHERE id = ?")
       .run(String(req.body?.admin_note || "").slice(0, 1000), req.user.id, resultId ?? null, s.id);
@@ -310,24 +357,37 @@ admin.post("/submissions/:id/approve", wrap((req, res) => {
 }));
 
 admin.post("/submissions/:id/reject", (req, res) => {
-  const n = db.prepare("UPDATE submissions SET status = 'rejected', admin_note = ?, reviewed_by = ?, reviewed_at = datetime('now') WHERE id = ? AND status = 'pending'")
-    .run(String(req.body?.admin_note || "").slice(0, 1000), req.user.id, int(req.params.id)).changes;
-  if (!n) return A.fail(res, 404, "Onay bekleyen gönderi bulunamadı.");
-  log(req.user.id, "red", `#${req.params.id}`);
+  const s = pendingSubmission(req, res);
+  if (!s) return;
+  db.prepare("UPDATE submissions SET status = 'rejected', admin_note = ?, reviewed_by = ?, reviewed_at = datetime('now') WHERE id = ?")
+    .run(String(req.body?.admin_note || "").slice(0, 1000), req.user.id, s.id);
+  log(req.user.id, "red", `${s.kind} #${s.id}`);
   ok(res);
 });
 
-// ---- üyeler (hesaplar)
-admin.get("/users", (req, res) => {
-  const where = ["pending", "active", "blocked"].includes(req.query.status) ? "WHERE u.status = ?" : "";
+// ---- üyeler
+// Bir yetkili, yalnızca kendi yetkilerinin kapsadığı kullanıcıları yönetebilir (üst yetkiliyi engelleyemez/silemez).
+const canManage = (actor, target) => target.id !== actor.id && P.covers(actor.perms, P.permsOf(target.role_key));
+const activeSupers = () => db.prepare("SELECT count(*) AS n FROM users WHERE role_key = 'super' AND status = 'active'").get().n;
+
+admin.get("/users", need("uye.onay", "uye.yonet", "yetki.yonet"), (req, res) => {
+  const where = [], args = [];
+  if (["pending", "active", "blocked"].includes(req.query.status)) { where.push("u.status = ?"); args.push(req.query.status); }
+  if (req.query.role && P.roles().has(req.query.role)) { where.push("u.role_key = ?"); args.push(req.query.role); }
+  if (req.query.staff === "1") where.push("u.role_key != 'uye'");
+  const q = String(req.query.q || "").trim().toLocaleLowerCase("tr");
   const rows = db.prepare(
     `SELECT ${A.PUBLIC_USER.split(", ").map((c) => "u." + c).join(", ")},
-       (SELECT count(*) FROM submissions s WHERE s.user_id = u.id) AS submission_count
-     FROM users u ${where} ORDER BY u.status = 'pending' DESC, u.id DESC`
-  ).all(...(where ? [req.query.status] : [])).map(plain);
-  for (const r of rows) {
-    const m = r.member_id ? C.getItem("member", r.member_id) : null;
-    r.member_name = m ? m.name : null;
+       (SELECT count(*) FROM submissions s WHERE s.user_id = u.id) AS submission_count,
+       (SELECT count(*) FROM comments c WHERE c.user_id = u.id) AS comment_count
+     FROM users u ${where.length ? "WHERE " + where.join(" AND ") : ""} ORDER BY u.status = 'pending' DESC, u.id DESC`
+  ).all(...args).map(plain).filter((u) => !q || `${u.name} ${u.email} ${u.university}`.toLocaleLowerCase("tr").includes(q));
+  for (const u of rows) {
+    A.withPerms(u);
+    const m = u.member_id ? C.getItem("member", u.member_id) : null;
+    u.member_name = m ? m.name : null;
+    u.manageable = canManage(req.user, u);
+    delete u.perms;
   }
   ok(res, { items: rows });
 });
@@ -336,65 +396,206 @@ admin.patch("/users/:id", wrap((req, res) => {
   const id = int(req.params.id);
   const u = userRow(id);
   if (!u) return A.fail(res, 404, "Kullanıcı bulunamadı.");
-  const b = req.body || {};
-  if (id === req.user.id && ((b.role && b.role !== "admin") || (b.status && b.status !== "active"))) {
-    return bad(res, "Kendi yönetici yetkinizi kaldıramaz ya da hesabınızı kapatamazsınız.");
+  const b = req.body || {}, me = req.user, sets = {}, notes = [];
+  const deny = (msg) => A.fail(res, 403, msg);
+
+  if ("status" in b && b.status !== u.status) {
+    if (!["pending", "active", "blocked"].includes(b.status)) return bad(res, "Geçersiz durum.");
+    const approving = u.status === "pending" && b.status === "active";
+    if (approving ? !(P.can(me, "uye.onay") || P.can(me, "uye.yonet")) : !P.can(me, "uye.yonet")) return deny("Üyelik durumunu değiştirme yetkiniz yok.");
+    if (id === me.id) return bad(res, "Kendi hesabınızın durumunu değiştiremezsiniz.");
+    if (!approving && !canManage(me, u)) return deny("Sizden daha geniş yetkili bir kişinin durumunu değiştiremezsiniz.");
+    if (u.role_key === "super" && b.status !== "active" && activeSupers() <= 1) return bad(res, "Son süper yöneticinin hesabı kapatılamaz.");
+    sets.status = b.status; notes.push("durum=" + b.status);
   }
-  if (b.status && !["pending", "active", "blocked"].includes(b.status)) return bad(res, "Geçersiz durum.");
-  if (b.role && !["member", "admin"].includes(b.role)) return bad(res, "Geçersiz rol.");
-  let memberId = u.member_id;
-  if ("member_id" in b) {
-    memberId = b.member_id === null || b.member_id === "" ? null : int(b.member_id);
-    if (memberId != null && !C.getItem("member", memberId)) return bad(res, "Akademisyen bulunamadı.");
+  if ("role_key" in b && b.role_key !== u.role_key) {
+    if (!P.can(me, "yetki.yonet")) return deny("Rol atama yetkiniz yok.");
+    if (id === me.id) return bad(res, "Kendi rolünüzü değiştiremezsiniz.");
+    const role = P.roles().get(b.role_key);
+    if (!role) return bad(res, "Rol bulunamadı.");
+    if ((b.role_key === "super" || u.role_key === "super") && !P.isSuper(me)) return deny("Süper yönetici rolünü yalnızca bir süper yönetici verebilir ya da kaldırabilir.");
+    if (!P.covers(me.perms, P.permsOf(b.role_key))) return deny("Kendinizde olmayan yetkileri içeren bir rolü atayamazsınız.");
+    if (!canManage(me, u)) return deny("Sizden daha geniş yetkili bir kişinin rolünü değiştiremezsiniz.");
+    if (u.role_key === "super" && activeSupers() <= 1) return bad(res, "Son süper yöneticinin rolü değiştirilemez; önce başka bir süper yönetici atayın.");
+    sets.role_key = b.role_key; sets.role = b.role_key === "super" ? "admin" : "member"; notes.push("rol=" + b.role_key);
   }
-  db.prepare("UPDATE users SET status = ?, role = ?, member_id = ? WHERE id = ?").run(b.status || u.status, b.role || u.role, memberId, id);
-  if (b.status === "blocked") db.prepare("DELETE FROM sessions WHERE user_id = ?").run(id);
-  log(req.user.id, "uye-guncelle", `${u.email} ${JSON.stringify(b)}`);
+  const profile = ["name", "email", "title", "university"].filter((k) => k in b && String(b[k] ?? "") !== String(u[k] ?? ""));
+  if (profile.length || ("member_id" in b && (b.member_id ?? null) !== (u.member_id ?? null))) {
+    if (!P.can(me, "uye.yonet")) return deny("Üye bilgilerini düzenleme yetkiniz yok.");
+    if (id !== me.id && !canManage(me, u)) return deny("Sizden daha geniş yetkili bir kişinin bilgilerini düzenleyemezsiniz.");
+    const fields = {};
+    if (profile.includes("name")) {
+      const v = String(b.name).replace(/\s+/g, " ").trim();
+      if (v.length < 5 || v.length > 120) fields.name = "Ad soyad 5-120 karakter olmalı."; else sets.name = v;
+    }
+    if (profile.includes("email")) {
+      const v = String(b.email).trim().toLowerCase();
+      if (!/^[^\s@<>"]+@[^\s@<>"]+\.[^\s@<>"]+$/.test(v)) fields.email = "Geçerli bir e-posta girin.";
+      else if (db.prepare("SELECT 1 FROM users WHERE email = ? AND id != ?").get(v, id)) fields.email = "Bu e-posta başka bir hesapta kayıtlı.";
+      else sets.email = v;
+    }
+    if (profile.includes("title")) sets.title = String(b.title || "").slice(0, 60).trim();
+    if (profile.includes("university")) sets.university = String(b.university || "").slice(0, 160).trim();
+    if ("member_id" in b) {
+      const m = b.member_id === null || b.member_id === "" ? null : int(b.member_id);
+      if (m != null && !C.getItem("member", m)) fields.member_id = "Akademisyen bulunamadı."; else sets.member_id = m;
+    }
+    if (Object.keys(fields).length) return bad(res, "Lütfen işaretli alanları düzeltin.", fields);
+    notes.push("bilgiler: " + Object.keys(sets).filter((k) => !["status", "role", "role_key"].includes(k)).join(","));
+  }
+  if (!Object.keys(sets).length) return ok(res, { user: u });
+  db.prepare(`UPDATE users SET ${Object.keys(sets).map((k) => k + " = ?").join(", ")} WHERE id = ?`).run(...Object.values(sets), id);
+  if (sets.status === "blocked") db.prepare("DELETE FROM sessions WHERE user_id = ?").run(id);
+  log(me.id, "uye-guncelle", `${u.email}: ${notes.join("; ")}`);
   ok(res, { user: userRow(id) });
 }));
 
-admin.post("/users/:id/reset-password", (req, res) => {
-  const id = int(req.params.id);
-  const u = userRow(id);
+admin.post("/users/bulk-approve", need("uye.onay", "uye.yonet"), (req, res) => {
+  const ids = (Array.isArray(req.body?.ids) ? req.body.ids : []).map(int).filter((x) => x != null).slice(0, 500);
+  let n = 0;
+  for (const id of ids) n += db.prepare("UPDATE users SET status = 'active' WHERE id = ? AND status = 'pending'").run(id).changes;
+  if (n) log(req.user.id, "uye-toplu-onay", `${n} üye`);
+  ok(res, { approved: n });
+});
+
+admin.post("/users/:id/reset-password", need("uye.yonet"), (req, res) => {
+  const u = userRow(int(req.params.id));
   if (!u) return A.fail(res, 404, "Kullanıcı bulunamadı.");
-  const temp = crypto.randomBytes(9).toString("base64url") + "7";
-  db.prepare("UPDATE users SET password_hash = ?, must_change = 1 WHERE id = ?").run(A.hashPassword(temp), id);
-  db.prepare("DELETE FROM sessions WHERE user_id = ?").run(id);
+  if (!canManage(req.user, u)) return A.fail(res, 403, "Bu kişinin şifresini sıfırlama yetkiniz yok.");
+  const abc = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
+  const raw = [...crypto.randomBytes(12)].map((b) => abc[b % abc.length]).join("");
+  const temp = `${raw.slice(0, 4)}-${raw.slice(4, 8)}-${raw.slice(8, 12)}`;
+  db.prepare("UPDATE users SET password_hash = ?, must_change = 1 WHERE id = ?").run(A.hashPassword(temp), u.id);
+  db.prepare("DELETE FROM sessions WHERE user_id = ?").run(u.id);
   log(req.user.id, "sifre-sifirla", u.email);
   ok(res, { temporary_password: temp });
 });
 
-admin.delete("/users/:id", (req, res) => {
-  const id = int(req.params.id);
-  if (id === req.user.id) return bad(res, "Kendi hesabınızı silemezsiniz.");
-  const u = userRow(id);
+admin.delete("/users/:id", need("uye.yonet"), (req, res) => {
+  const u = userRow(int(req.params.id));
   if (!u) return A.fail(res, 404, "Kullanıcı bulunamadı.");
-  db.prepare("DELETE FROM users WHERE id = ?").run(id);
+  if (u.id === req.user.id) return bad(res, "Kendi hesabınızı silemezsiniz.");
+  if (!canManage(req.user, u)) return A.fail(res, 403, "Sizden daha geniş yetkili bir kişiyi silemezsiniz.");
+  if (u.role_key === "super" && activeSupers() <= 1) return bad(res, "Son süper yönetici silinemez.");
+  db.prepare("DELETE FROM users WHERE id = ?").run(u.id);
   log(req.user.id, "uye-sil", u.email);
   ok(res);
 });
 
+// ---- roller ve yetkiler
+function roleView(r) {
+  const n = db.prepare("SELECT count(*) AS n FROM users WHERE role_key = ?").get(r.key).n;
+  return { key: r.key, label: r.label, description: r.description, system: !!r.system, perms: P.permsOf(r.key), all: r.perms.includes("*"), users: n };
+}
+
+admin.get("/roles", (_req, res) => {
+  ok(res, { roles: [...P.roles().values()].map(roleView), perms: P.PERMS });
+});
+
+function roleInput(req, res) {
+  const label = String(req.body?.label || "").replace(/\s+/g, " ").trim();
+  const description = String(req.body?.description || "").replace(/\s+/g, " ").trim().slice(0, 200);
+  const perms = [...new Set((Array.isArray(req.body?.perms) ? req.body.perms : []).filter((p) => P.PERMS[p]))];
+  if (label.length < 2 || label.length > 40) { bad(res, "Rol adı 2-40 karakter olmalı.", { label: "Rol adı 2-40 karakter olmalı." }); return null; }
+  if (!P.covers(req.user.perms, perms)) { A.fail(res, 403, "Kendinizde olmayan bir yetkiyi role ekleyemezsiniz."); return null; }
+  return { label, description, perms };
+}
+
+admin.post("/roles", need("yetki.yonet"), (req, res) => {
+  const r = roleInput(req, res);
+  if (!r) return;
+  let key = P.slug(r.label), i = 2;
+  while (P.roles().has(key)) key = `${P.slug(r.label)}-${i++}`;
+  db.prepare("INSERT INTO roles (key, label, description, perms) VALUES (?, ?, ?, ?)").run(key, r.label, r.description, JSON.stringify(r.perms));
+  P.invalidate();
+  log(req.user.id, "rol-ekle", `${key}: ${r.perms.join(",")}`);
+  ok(res, { role: roleView(P.roles().get(key)) });
+});
+
+admin.put("/roles/:key", need("yetki.yonet"), (req, res) => {
+  const cur = P.roles().get(req.params.key);
+  if (!cur) return A.fail(res, 404, "Rol bulunamadı.");
+  if (cur.system) return bad(res, "Sistem rolleri (Süper Yönetici, Üye) değiştirilemez.");
+  if (!P.covers(req.user.perms, P.permsOf(cur.key))) return A.fail(res, 403, "Sizden daha geniş yetkili bir rolü düzenleyemezsiniz.");
+  const r = roleInput(req, res);
+  if (!r) return;
+  db.prepare("UPDATE roles SET label = ?, description = ?, perms = ? WHERE key = ?").run(r.label, r.description, JSON.stringify(r.perms), cur.key);
+  P.invalidate();
+  log(req.user.id, "rol-duzenle", `${cur.key}: ${r.perms.join(",")}`);
+  ok(res, { role: roleView(P.roles().get(cur.key)) });
+});
+
+admin.delete("/roles/:key", need("yetki.yonet"), (req, res) => {
+  const cur = P.roles().get(req.params.key);
+  if (!cur) return A.fail(res, 404, "Rol bulunamadı.");
+  if (cur.system) return bad(res, "Sistem rolleri silinemez.");
+  if (!P.covers(req.user.perms, P.permsOf(cur.key))) return A.fail(res, 403, "Sizden daha geniş yetkili bir rolü silemezsiniz.");
+  const n = db.prepare("SELECT count(*) AS n FROM users WHERE role_key = ?").get(cur.key).n;
+  if (n) return bad(res, `Bu role sahip ${n} kişi var. Önce onlara başka bir rol atayın.`);
+  db.prepare("DELETE FROM roles WHERE key = ?").run(cur.key);
+  P.invalidate();
+  log(req.user.id, "rol-sil", cur.key);
+  ok(res);
+});
+
+// ---- site ayarları
+admin.get("/settings", need("site.ayar", "ai.ayar"), (req, res) => {
+  const groups = SS.GROUPS.filter((g) => P.can(req.user, g.perm));
+  ok(res, { groups, values: SS.all() });
+});
+
+admin.put("/settings", need("site.ayar", "ai.ayar"), (req, res) => {
+  try {
+    const changes = SS.save(req.body?.values, req.user, (perm) => P.can(req.user, perm));
+    const keys = Object.keys(changes);
+    if (keys.length) {
+      log(req.user.id, "ayar", keys.join(", "));
+      if (keys.some((k) => SS.FIELDS[k].group !== "asistan" && SS.FIELDS[k].group !== "uyelik")) rebuild.schedule("site ayarları", 500);
+    }
+    ok(res, { values: SS.all(), changed: keys });
+  } catch (e) {
+    if (e instanceof SS.SettingsError) return bad(res, e.message, e.fields);
+    throw e;
+  }
+});
+
+// ---- işlem kayıtları
+admin.get("/logs", need("kayit.gor"), (req, res) => {
+  const where = [], args = [];
+  if (req.query.action) { where.push("l.action = ?"); args.push(String(req.query.action)); }
+  if (req.query.user) { where.push("l.user_id = ?"); args.push(int(req.query.user)); }
+  const q = String(req.query.q || "").trim();
+  if (q) { where.push("(l.detail LIKE ? OR u.name LIKE ? OR u.email LIKE ?)"); args.push(`%${q}%`, `%${q}%`, `%${q}%`); }
+  const w = where.length ? "WHERE " + where.join(" AND ") : "";
+  const offset = int(req.query.offset) || 0;
+  const total = db.prepare(`SELECT count(*) AS n FROM logs l LEFT JOIN users u ON u.id = l.user_id ${w}`).get(...args).n;
+  const items = db.prepare(`SELECT l.id, l.action, l.detail, l.at, u.name, u.email FROM logs l LEFT JOIN users u ON u.id = l.user_id ${w}
+    ORDER BY l.id DESC LIMIT 100 OFFSET ?`).all(...args, offset).map(plain);
+  const actions = db.prepare("SELECT action, count(*) AS n FROM logs GROUP BY action ORDER BY action").all().map(plain);
+  ok(res, { items, total, actions });
+});
+
 // ---- içerik
+const kindPerm = (req, res, next) => (C.KINDS.includes(req.params.kind) ? need("icerik." + req.params.kind)(req, res, next) : A.fail(res, 404, "Bulunamadı."));
+
 function summary(kind, it) {
   if (kind === "member") return { id: it.id, title: it.name, sub: [it.title, it.university].filter(Boolean).join(" · ") };
   if (kind === "work") return { id: it.id, title: it.title, sub: [it.author, it.year, it.type].filter(Boolean).join(" · ") };
   return { id: it.id, title: it.title, sub: [C.FORUMS[it.forum] || it.forum, it.date].filter(Boolean).join(" · ") };
 }
 
-admin.get("/items/:kind", (req, res) => {
+admin.get("/items/:kind", kindPerm, (req, res) => {
   const { kind } = req.params;
-  if (!C.KINDS.includes(kind)) return A.fail(res, 404, "Bulunamadı.");
   const q = String(req.query.q || "").toLocaleLowerCase("tr").trim();
   let rows = C.listItems(kind).map((it) => summary(kind, it));
   if (q) rows = rows.filter((r) => `${r.title} ${r.sub} ${r.id}`.toLocaleLowerCase("tr").includes(q));
   rows.sort(kind === "member" ? (a, b) => a.title.localeCompare(b.title, "tr") : (a, b) => b.id - a.id);
   const offset = int(req.query.offset) || 0;
-  ok(res, { total: rows.length, items: rows.slice(offset, offset + 50) });
+  ok(res, { total: rows.length, items: rows.slice(offset, offset + 50), canDelete: P.can(req.user, "icerik.sil") });
 });
 
-admin.post("/items/:kind", wrap((req, res) => {
+admin.post("/items/:kind", kindPerm, wrap((req, res) => {
   const { kind } = req.params;
-  if (!C.KINDS.includes(kind)) return A.fail(res, 404, "Bulunamadı.");
   const fields = C.normalize(kind, req.body?.data || {}, { isAdmin: true });
   const item = C.saveItem(kind, null, C.applyFields(kind, null, fields, req.user), req.user.id);
   log(req.user.id, "icerik-ekle", `${kind}:${item.id}`);
@@ -402,9 +603,9 @@ admin.post("/items/:kind", wrap((req, res) => {
   ok(res, { id: item.id });
 }));
 
-admin.put("/items/:kind/:id", wrap((req, res) => {
+admin.put("/items/:kind/:id", kindPerm, wrap((req, res) => {
   const { kind } = req.params, id = int(req.params.id);
-  const existing = C.KINDS.includes(kind) && id != null ? C.getItem(kind, id) : null;
+  const existing = id != null ? C.getItem(kind, id) : null;
   if (!existing) return A.fail(res, 404, "Bulunamadı.");
   const fields = C.normalize(kind, req.body?.data || {}, { isAdmin: true });
   C.saveItem(kind, id, C.applyFields(kind, existing, fields, req.user), req.user.id);
@@ -413,7 +614,7 @@ admin.put("/items/:kind/:id", wrap((req, res) => {
   ok(res, { id });
 }));
 
-admin.delete("/items/:kind/:id", (req, res) => {
+admin.delete("/items/:kind/:id", need("icerik.sil"), (req, res) => {
   const { kind } = req.params, id = int(req.params.id);
   if (!C.KINDS.includes(kind) || !C.deleteItem(kind, id, req.user.id)) return A.fail(res, 404, "Bulunamadı.");
   log(req.user.id, "icerik-sil", `${kind}:${id}`);
@@ -421,8 +622,24 @@ admin.delete("/items/:kind/:id", (req, res) => {
   ok(res);
 });
 
+// ---- geri dönüşüm kutusu
+admin.get("/trash", need("icerik.sil"), (_req, res) => {
+  const rows = db.prepare(`SELECT i.kind, i.id, i.data, i.updated_at, u.name AS by_name FROM items i LEFT JOIN users u ON u.id = i.updated_by
+    WHERE i.deleted = 1 AND i.kind IN ('member', 'work', 'topic') ORDER BY i.updated_at DESC LIMIT 300`).all();
+  ok(res, { items: rows.map((r) => ({ kind: r.kind, ...summary(r.kind, JSON.parse(r.data)), deleted_at: r.updated_at, by_name: r.by_name })) });
+});
+
+admin.post("/trash/:kind/:id/restore", need("icerik.sil"), (req, res) => {
+  const { kind } = req.params, id = int(req.params.id);
+  const n = db.prepare("UPDATE items SET deleted = 0, updated_at = datetime('now'), updated_by = ? WHERE kind = ? AND id = ? AND deleted = 1").run(req.user.id, kind, id).changes;
+  if (!n) return A.fail(res, 404, "Geri getirilecek kayıt bulunamadı.");
+  log(req.user.id, "icerik-geri-getir", `${kind}:${id}`);
+  rebuild.schedule(`${kind}:${id} geri getirildi`);
+  ok(res);
+});
+
 // ---- yorumlar
-admin.get("/comments", (req, res) => {
+admin.get("/comments", need("yorum.yonet"), (req, res) => {
   const status = ["pending", "visible", "hidden"].includes(req.query.status) ? req.query.status : "pending";
   const rows = db.prepare(
     `SELECT c.*, u.name AS user_name, u.email AS user_email FROM comments c JOIN users u ON u.id = c.user_id
@@ -437,7 +654,7 @@ admin.get("/comments", (req, res) => {
   ok(res, { items: rows });
 });
 
-admin.patch("/comments/:id", (req, res) => {
+admin.patch("/comments/:id", need("yorum.yonet"), (req, res) => {
   const status = req.body?.status;
   if (!["visible", "hidden", "pending"].includes(status)) return bad(res, "Geçersiz durum.");
   const n = db.prepare("UPDATE comments SET status = ? WHERE id = ?").run(status, int(req.params.id)).changes;
@@ -446,17 +663,50 @@ admin.patch("/comments/:id", (req, res) => {
   ok(res);
 });
 
-admin.delete("/comments/:id", (req, res) => {
+admin.delete("/comments/:id", need("yorum.yonet"), (req, res) => {
   const n = db.prepare("DELETE FROM comments WHERE id = ?").run(int(req.params.id)).changes;
+  if (n) log(req.user.id, "yorum-sil", `#${req.params.id}`);
   n ? ok(res) : A.fail(res, 404, "Yorum bulunamadı.");
 });
 
-// ---- site üretimi
-admin.get("/build", (_req, res) => ok(res, rebuild.state));
-admin.post("/build", (req, res) => { rebuild.schedule("elle başlatıldı", 0); log(req.user.id, "site-uret"); ok(res, rebuild.state); });
+// ---- dışa aktarma (CSV, Excel uyumlu)
+function csv(res, name, header, rows) {
+  const cell = (v) => {
+    let s = v == null ? "" : String(v);
+    if (/^[=+\-@\t\r]/.test(s)) s = "'" + s; // Excel formül enjeksiyonuna karşı
+    return /[";\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const body = [header, ...rows].map((r) => r.map(cell).join(";")).join("\r\n");
+  res.set({ "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": `attachment; filename="${name}-${new Date().toISOString().slice(0, 10)}.csv"` });
+  res.send("﻿" + body);
+}
 
-// ---- yapay zekâ kullanım raporu
-admin.get("/ai/usage", (req, res) => ok(res, ai.report(req.query.days)));
+admin.get("/export/:what", need("disa.aktar"), (req, res) => {
+  const what = req.params.what;
+  if (what === "uyeler") {
+    if (!P.can(req.user, "uye.yonet")) return A.fail(res, 403, "Üye listesini dışa aktarmak için üye yönetimi yetkisi de gerekir.");
+    const rows = db.prepare("SELECT id, name, email, title, university, role_key, status, created_at, last_login FROM users ORDER BY id").all();
+    log(req.user.id, "disa-aktar", "uyeler");
+    return csv(res, "uyeler", ["No", "Ad Soyad", "E-posta", "Unvan", "Kurum", "Rol", "Durum", "Kayıt", "Son giriş"],
+      rows.map((u) => [u.id, u.name, u.email, u.title, u.university, P.roles().get(u.role_key)?.label || u.role_key, u.status, u.created_at, u.last_login]));
+  }
+  if (what === "akademisyenler") {
+    log(req.user.id, "disa-aktar", "akademisyenler");
+    return csv(res, "akademisyenler", ["No", "Ad Soyad", "Unvan", "Grup", "Üniversite", "Şehir", "Web", "E-posta"],
+      C.listItems("member").sort((a, b) => a.name.localeCompare(b.name, "tr")).map((m) => [m.id, m.name, m.title, m.group, m.university, m.city, m.web, m.email]));
+  }
+  if (what === "eserler") {
+    log(req.user.id, "disa-aktar", "eserler");
+    return csv(res, "eserler", ["No", "Başlık", "Yazar", "Kategori", "Tür", "Yıl", "Kurum", "Basım yeri", "Sayfa", "Danışman", "Tam metin"],
+      C.listItems("work").sort((a, b) => a.id - b.id).map((w) => [w.id, w.title, w.author, w.category, w.type, w.year, w.institution, w.place, w.pages, w.contributor, w.url]));
+  }
+  A.fail(res, 404, "Bilinmeyen dışa aktarma.");
+});
+
+// ---- site üretimi ve yapay zekâ raporu
+admin.get("/build", (_req, res) => ok(res, rebuild.state));
+admin.post("/build", need("site.yayin"), (req, res) => { rebuild.schedule("elle başlatıldı", 0); log(req.user.id, "site-uret"); ok(res, rebuild.state); });
+admin.get("/ai/usage", need("ai.rapor"), (req, res) => ok(res, ai.report(req.query.days)));
 
 api.use("/admin", admin);
 

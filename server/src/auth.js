@@ -2,6 +2,7 @@
 const crypto = require("node:crypto");
 const { db, plain } = require("./db");
 const cfg = require("./config");
+const P = require("./perms"); // rol tablosu ve role_key geçişi burada yüklenir
 
 const COOKIE = "mz_oturum";
 const SCRYPT = { N: 16384, r: 8, p: 1, maxmem: 64 * 1024 * 1024 };
@@ -52,7 +53,16 @@ function readCookie(req, name) {
   return null;
 }
 
-const PUBLIC_USER = "id, email, name, title, university, role, status, member_id, must_change, created_at, last_login";
+const PUBLIC_USER = "id, email, name, title, university, role_key, status, member_id, must_change, created_at, last_login";
+
+// Kullanıcı satırına rol adı ve etkin yetkileri ekler (engellenen/onaysız kullanıcının yönetim yetkisi olmaz).
+function withPerms(u) {
+  if (!u) return u;
+  const role = P.roles().get(u.role_key);
+  u.role_label = role ? role.label : "Üye";
+  u.perms = u.status === "active" ? P.permsOf(u.role_key) : [];
+  return u;
+}
 
 // Her isteğe req.user ekler (oturum yoksa null).
 function loadUser(req, _res, next) {
@@ -63,7 +73,7 @@ function loadUser(req, _res, next) {
       `SELECT ${PUBLIC_USER.split(", ").map((c) => "u." + c).join(", ")} FROM sessions s JOIN users u ON u.id = s.user_id
        WHERE s.token = ? AND s.expires_at > ?`
     ).get(sha(token), new Date().toISOString());
-    if (row && row.status !== "blocked") req.user = plain(row);
+    if (row && row.status !== "blocked") req.user = withPerms(plain(row));
   }
   next();
 }
@@ -82,11 +92,18 @@ function requireActive(req, res, next) {
   next();
 }
 
-function requireAdmin(req, res, next) {
-  if (!req.user || req.user.role !== "admin" || req.user.status !== "active") return fail(res, 403, "Bu alan yalnızca yöneticilere açıktır.");
+// Herhangi bir yönetim yetkisi olanlar (yönetim paneline giriş)
+function requireStaff(req, res, next) {
+  if (!req.user || req.user.status !== "active" || !P.isStaff(req.user)) return fail(res, 403, "Bu alan yalnızca yetkili kişilere açıktır.");
   if (req.user.must_change) return fail(res, 403, "Devam etmeden önce şifrenizi değiştirmelisiniz.");
   next();
 }
+
+// Belirtilen yetkilerden en az birini ister.
+const requirePerm = (...perms) => (req, res, next) => {
+  if (!perms.some((p) => P.can(req.user, p))) return fail(res, 403, "Bu işlem için yetkiniz yok.");
+  next();
+};
 
 // Değişiklik yapan istekler yalnızca kendi sitemizden, özel başlıkla gelebilir (CSRF koruması).
 function sameOrigin(req, res, next) {
@@ -119,5 +136,5 @@ function cleanupSessions() {
 
 module.exports = {
   hashPassword, verifyPassword, passwordProblem, createSession, destroySession, loadUser,
-  requireUser, requireActive, requireAdmin, sameOrigin, rateLimit, cleanupSessions, fail, PUBLIC_USER,
+  requireUser, requireActive, requireStaff, requirePerm, withPerms, sameOrigin, rateLimit, cleanupSessions, fail, PUBLIC_USER,
 };

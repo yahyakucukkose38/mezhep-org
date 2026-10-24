@@ -92,6 +92,13 @@ CREATE TABLE IF NOT EXISTS logs (
 );
 `);
 
+// Şema geçişleri (var olan veritabanlarında eksik sütunları ekler)
+{
+  const cols = db.prepare("PRAGMA table_info(items)").all().map((c) => c.name);
+  // created_by: kaydı ekleyen kullanıcı (sahiplik kuralı için; eski siteden gelenlerde boş)
+  if (!cols.includes("created_by")) db.exec("ALTER TABLE items ADD COLUMN created_by INTEGER");
+}
+
 const SEED_FILES = { member: "members", work: "works", topic: "topics", album: "albums", link: "links", file: "files" };
 
 function seedIfEmpty() {

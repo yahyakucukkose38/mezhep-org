@@ -5,7 +5,8 @@ const crypto = require("node:crypto");
 const express = require("express");
 const cfg = require("./config");
 const { db, seedIfEmpty, log } = require("./db");
-const A = require("./auth");
+const A = require("./auth"); // rol tabloları (perms.js) da buradan yüklenir
+require("./site-settings");
 const rebuild = require("./rebuild");
 const { api } = require("./api");
 
@@ -27,14 +28,14 @@ const CSP = [
 ].join("; ");
 
 function ensureAdmin() {
-  if (db.prepare("SELECT 1 FROM users WHERE role = 'admin' LIMIT 1").get()) return;
+  if (db.prepare("SELECT 1 FROM users WHERE role_key = 'super' LIMIT 1").get()) return;
   const email = (process.env.MZ_ADMIN_EMAIL || "").trim().toLowerCase();
   if (!email) {
     console.warn("[kurulum] Yönetici hesabı yok. MZ_ADMIN_EMAIL ayarlayın ya da `npm run yonetici -- olustur <e-posta> \"Ad Soyad\"` çalıştırın.");
     return;
   }
   const temp = crypto.randomBytes(9).toString("base64url") + "7";
-  db.prepare("INSERT INTO users (email, name, password_hash, role, status, must_change) VALUES (?, ?, ?, 'admin', 'active', 1)")
+  db.prepare("INSERT INTO users (email, name, password_hash, role, role_key, status, must_change) VALUES (?, ?, ?, 'admin', 'super', 'active', 1)")
     .run(email, process.env.MZ_ADMIN_NAME || "Site Yöneticisi", A.hashPassword(temp));
   fs.mkdirSync(cfg.SECRET_DIR, { recursive: true, mode: 0o700 });
   const file = path.join(cfg.SECRET_DIR, "ilk-yonetici.txt");

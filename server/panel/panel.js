@@ -18,6 +18,9 @@
   var STATUS_BADGE = { pending: "b-gold", approved: "b-brand", rejected: "b-rose", active: "b-brand", blocked: "b-rose", visible: "b-brand", hidden: "" };
 
   var state = { user: null, pending: null, schema: null };
+  // Yetki denetimi (sunucu her istekte ayrıca denetler; burası yalnızca arayüzü düzenler)
+  var can = function (p) { var u = state.user; return !!u && u.status === "active" && !u.must_change && (u.perms || []).indexOf(p) > -1; };
+  var isStaff = function () { return !!state.user && (state.user.perms || []).some(function (p) { return p.indexOf("kendi.") !== 0; }); };
   // Her sayfa geçişinde artar; eski sayfadan kalan istek yanıtları yeni sayfayı ezmesin diye yok sayılır.
   var navSeq = 0;
 
@@ -239,7 +242,7 @@
   function renderChrome(route) {
     var u = state.user;
     $("[data-user]").innerHTML = u ? '<span class="avatar">' + esc(initials(u.name)) + '</span><span class="who"><strong>' + esc(u.name) + "</strong><span>" +
-      (u.role === "admin" ? "Yönetici" : "Üye") + '</span></span><button class="btn btn-ghost btn-sm" type="button" data-logout>Çıkış</button>' : "";
+      esc(u.role_label || "Üye") + '</span></span><button class="btn btn-ghost btn-sm" type="button" data-logout>Çıkış</button>' : "";
     var lo = $("[data-logout]");
     lo && lo.addEventListener("click", function () { api("POST", "/auth/logout").then(function () { state.user = null; go("#/giris"); }); });
 
@@ -249,16 +252,27 @@
     if (!showNav) return;
     var p = state.pending || {};
     var link = function (h, label, count) {
-      var cur = route === h || (h !== "#/" && h !== "#/yonetim" && route.indexOf(h) === 0) || (h === "#/yonetim" && route === "#/yonetim");
+      var cur = route === h || (h !== "#/" && h !== "#/yonetim" && route.indexOf(h) === 0);
       return '<a href="' + h + '"' + (cur ? ' aria-current="page"' : "") + ">" + label + (count ? '<span class="count">' + count + "</span>" : "") + "</a>";
     };
+    var own = can("kendi.profil") || can("kendi.eser");
     var html = "<h4>Üyelik</h4>" + link("#/", "Özet") + link("#/oneri/work", "Eser ekle") + link("#/oneri/topic", "Haber gönder") +
-      link("#/profil", "Akademik profilim") + link("#/gonderilerim", "Gönderilerim") + link("#/hesap", "Hesap ayarları");
-    if (u.role === "admin") {
-      html += "<h4>Yönetim</h4>" + link("#/yonetim", "Yönetim özeti") + link("#/yonetim/onaylar", "Onay kuyruğu", p.submissions) +
-        link("#/yonetim/uyeler", "Üyeler", p.users) + link("#/yonetim/yorumlar", "Yorumlar", p.comments) +
-        link("#/yonetim/icerik/member", "Akademisyenler") + link("#/yonetim/icerik/work", "Eserler") + link("#/yonetim/icerik/topic", "Haber ve etkinlikler") +
-        link("#/yonetim/site", "Site yayını") + link("#/yonetim/yapay-zeka", "Yapay zekâ kullanımı");
+      (own ? link("#/eserlerim", "Eserlerim ve profilim") : link("#/profil", "Akademik profilim")) +
+      link("#/gonderilerim", "Gönderilerim") + link("#/hesap", "Hesap ayarları");
+    if (isStaff()) {
+      html += "<h4>Yönetim</h4>" + link("#/yonetim", "Yönetim özeti");
+      if (["onay.member", "onay.work", "onay.topic", "onay.claim"].some(can)) html += link("#/yonetim/onaylar", "Onay kuyruğu", p.submissions);
+      if (can("uye.onay") || can("uye.yonet") || can("yetki.yonet")) html += link("#/yonetim/uyeler", "Üyeler", p.users);
+      if (can("yetki.yonet")) html += link("#/yonetim/roller", "Roller ve yetkiler");
+      if (can("yorum.yonet")) html += link("#/yonetim/yorumlar", "Yorumlar", p.comments);
+      if (can("icerik.member")) html += link("#/yonetim/icerik/member", "Akademisyenler");
+      if (can("icerik.work")) html += link("#/yonetim/icerik/work", "Eserler");
+      if (can("icerik.topic")) html += link("#/yonetim/icerik/topic", "Haber ve etkinlikler");
+      if (can("icerik.sil")) html += link("#/yonetim/cop", "Geri dönüşüm kutusu");
+      if (can("site.ayar") || can("ai.ayar")) html += link("#/yonetim/ayarlar", "Site ayarları");
+      if (can("kayit.gor")) html += link("#/yonetim/kayitlar", "İşlem kayıtları");
+      html += link("#/yonetim/site", "Site yayını");
+      if (can("ai.rapor")) html += link("#/yonetim/yapay-zeka", "Yapay zekâ kullanımı");
     }
     navEl.innerHTML = html;
   }
@@ -348,13 +362,17 @@
   function viewHome() {
     var u = state.user;
     setTitle("Özet");
+    var own = can("kendi.profil") || can("kendi.eser");
     var notice = u.status === "pending"
-      ? '<div class="notice warn"><strong>Üyeliğiniz onay bekliyor.</strong> Yönetici onayladığında eser ekleyebilir, haber gönderebilir ve yorum yazabilirsiniz.</div>' : "";
-    main.innerHTML = notice + '<h1 class="page-title">Hoş geldiniz, ' + esc(u.name.split(" ")[0]) + '</h1><p class="page-lead">Gönderdiğiniz her ekleme ve düzeltme yönetici onayından sonra sitede yayınlanır.</p>' +
+      ? '<div class="notice warn"><strong>Üyeliğiniz onay bekliyor.</strong> Yönetici onayladığında yeni eser ve haber önerebilir, yorum yazabilirsiniz.</div>' : "";
+    main.innerHTML = notice + '<h1 class="page-title">Hoş geldiniz, ' + esc(u.name.split(" ")[0]) + '</h1><p class="page-lead">Hesap türünüz: <span class="badge b-brand">' + esc(u.role_label || "Üye") + "</span> " +
+      (own ? "Kendi profilinizi ve eserlerinizi onay beklemeden güncelleyebilirsiniz. Yeni eklemeleriniz yönetici onayından sonra yayınlanır."
+        : "Yeni eser, haber ve akademisyen önerileriniz yönetici onayından sonra yayınlanır.") + "</p>" +
       '<div class="p-grid">' +
       '<a class="p-card" href="#/oneri/work"><span class="ic">' + IC.book + '</span><h3>Eser ekle</h3><p>Tez, kitap, makale ya da tebliğinizi özetiyle birlikte ekleyin.</p></a>' +
       '<a class="p-card" href="#/oneri/topic"><span class="ic">' + IC.news + '</span><h3>Haber gönder</h3><p>Yeni doktor, atama, sempozyum ve duyurularınızı paylaşın.</p></a>' +
-      '<a class="p-card" href="#/profil"><span class="ic">' + IC.user + "</span><h3>Akademik profilim</h3><p>" + (u.member_id ? "Profil bilgilerinizi ve fotoğrafınızı güncelleyin." : "Sitedeki profilinizi hesabınıza bağlayın.") + "</p></a>" +
+      (own ? '<a class="p-card" href="#/eserlerim"><span class="ic">' + IC.user + '</span><h3>Eserlerim ve profilim</h3><p>Özgeçmişinizi ve eserlerinizi doğrudan güncelleyin.</p></a>'
+        : '<a class="p-card" href="#/profil"><span class="ic">' + IC.user + "</span><h3>Akademik profilim</h3><p>" + (u.member_id ? "Profiliniz hesabınıza bağlı." : "Sitedeki profilinizi hesabınıza bağlayın; onaylanınca akademisyen olarak kendi kayıtlarınızı güncelleyebilirsiniz.") + "</p></a>") +
       '<a class="p-card" href="#/hesap"><span class="ic">' + IC.key + '</span><h3>Hesap ayarları</h3><p>Ad, unvan, kurum ve şifre.</p></a></div>' +
       '<h2 style="font-size:1.4rem">Son gönderileriniz</h2><div data-subs><p class="muted">Yükleniyor…</p></div>';
     loadMySubmissions($("[data-subs]", main), 5);
@@ -390,7 +408,7 @@
   function viewAccount() {
     var u = state.user;
     setTitle("Hesap ayarları");
-    main.innerHTML = '<h1 class="page-title">Hesap ayarları</h1><p class="page-lead">' + esc(u.email) + " · " + (u.role === "admin" ? "Yönetici" : "Üye") + " · " + badge(u.status) + "</p>" +
+    main.innerHTML = '<h1 class="page-title">Hesap ayarları</h1><p class="page-lead">' + esc(u.email) + " · " + esc(u.role_label || "Üye") + " · " + badge(u.status) + "</p>" +
       '<form class="form panel" novalidate><h3>Bilgilerim</h3>' +
       '<div class="field" data-field="name"><label for="a-name">Ad Soyad</label><input type="text" id="a-name" name="name" value="' + esc(u.name) + '" maxlength="120" required><span class="err" hidden></span></div>' +
       '<div class="row2"><div class="field"><label for="a-title">Unvan</label><input type="text" id="a-title" name="title" value="' + esc(u.title) + '" maxlength="60"></div>' +
@@ -407,9 +425,14 @@
 
   function viewProfile() {
     var u = state.user;
-    if (u.member_id) return go("#/oneri/member/" + u.member_id);
+    if (u.member_id && can("kendi.profil")) return go("#/duzenle/member/" + u.member_id);
     setTitle("Akademik profilim");
-    main.innerHTML = '<h1 class="page-title">Akademik profilim</h1><p class="page-lead">Sitede adınıza bir akademisyen profili varsa bulup hesabınıza bağlanmasını isteyin. Profil yoksa yeni profil önerebilirsiniz.</p>' +
+    if (u.member_id) {
+      main.innerHTML = '<h1 class="page-title">Akademik profilim</h1><div class="notice info">Profiliniz hesabınıza bağlı. Hesabınıza profil güncelleme yetkisi verilmediği için değişiklikleri site yöneticisine iletebilirsiniz.</div>' +
+        '<p><a class="btn btn-ghost" href="/akademisyen/' + u.member_id + '.html">Profili görüntüle</a></p>';
+      return;
+    }
+    main.innerHTML = '<h1 class="page-title">Akademik profilim</h1><p class="page-lead">Sitede adınıza bir akademisyen profili varsa bulup hesabınıza bağlanmasını isteyin. Yönetici onaylayınca <strong>Akademisyen</strong> grubuna geçer; kendi profilinizi ve eserlerinizi onay beklemeden güncelleyebilirsiniz. Profil yoksa yeni profil önerebilirsiniz.</p>' +
       '<div class="panel"><div data-picker></div><div class="form-actions" style="margin-top:16px"><a class="btn btn-ghost" href="#/oneri/member">Profilim yok, yeni profil öner</a></div></div>';
     memberPicker($("[data-picker]", main), function (m) { go("#/sahiplen/" + m.id); }, "Adınızı yazın…");
   }
@@ -429,32 +452,67 @@
   }
 
   function viewSuggest(kind, id) {
-    var isEdit = id != null;
-    var titles = {
-      work: isEdit ? "Eser için düzeltme öner" : "Eser ekle",
-      member: isEdit ? (state.user.member_id === id ? "Akademik profilimi güncelle" : "Akademisyen için düzeltme öner") : "Yeni akademisyen profili öner",
-      topic: "Haber / duyuru gönder"
-    };
-    if (!titles[kind] || (kind === "topic" && isEdit)) return viewNotFound();
+    // Mevcut kayıtlar öneriyle değiştirilmez; sahibi ya da yetkili yönetici doğrudan düzenler.
+    if (id != null) return go("#/duzenle/" + kind + "/" + id);
+    var titles = { work: "Eser ekle", member: "Yeni akademisyen profili öner", topic: "Haber / duyuru gönder" };
+    if (!titles[kind]) return viewNotFound();
     setTitle(titles[kind]);
-    main.innerHTML = '<h1 class="page-title">' + esc(titles[kind]) + '</h1><p class="page-lead" data-lead>' +
-      (isEdit ? "Yalnızca değiştirmek istediğiniz alanları düzenleyin. Öneriniz yönetici onayından sonra yayınlanır." : "Gönderiniz yönetici onayından sonra sitede yayınlanır.") +
-      '</p><form class="form panel" novalidate><div class="form" data-fields><p class="muted">Form yükleniyor…</p></div>' +
+    main.innerHTML = '<h1 class="page-title">' + esc(titles[kind]) + '</h1><p class="page-lead">Gönderiniz yönetici onayından sonra sitede yayınlanır.' +
+      (kind === "work" ? " Onaylandıktan sonra bu eseri kendiniz de güncelleyebilirsiniz (Akademisyen grubundaysanız)." : "") + '</p>' +
+      '<form class="form panel" novalidate><div class="form" data-fields><p class="muted">Form yükleniyor…</p></div>' +
       '<div class="field"><label for="s-note">Yöneticiye not (isteğe bağlı)</label><textarea id="s-note" name="note" maxlength="2000" placeholder="Kaynak, açıklama vb."></textarea></div>' +
-      '<div class="form-actions"><button class="btn btn-primary" type="submit">Gönder</button>' + (isEdit ? '<a class="btn btn-ghost" href="/' + (kind === "work" ? "eser" : "akademisyen") + "/" + id + '.html">Sayfaya dön</a>' : "") + "</div></form>";
-    var load = isEdit ? api("GET", "/items/" + kind + "/" + id) : Promise.resolve({ values: kind === "topic" ? { forum: "haber" } : {} });
-    load.then(function (j) {
-      if (isEdit) $("[data-lead]", main).insertAdjacentHTML("afterbegin", "<strong>" + esc(j.label) + "</strong> · ");
+      '<div class="form-actions"><button class="btn btn-primary" type="submit">Gönder</button></div></form>';
+    buildForm($("[data-fields]", main), kind, kind === "topic" ? { forum: "haber" } : {}, {}).then(function (form) {
+      var f = $("form", main);
+      f.addEventListener("submit", function (e) {
+        e.preventDefault();
+        var b = $("button[type=submit]", f); busy(b, true);
+        api("POST", "/submissions", { kind: kind, data: form.values(), note: f.note.value })
+          .then(function () { toast("Gönderiniz yöneticiye iletildi. Teşekkürler!"); go("#/gonderilerim"); })
+          .catch(function (err) { busy(b, false); form.showErrors(err.fields); fail(err); });
+      });
+    }).catch(fail);
+  }
+
+  // Akademisyenin kendi profilini/eserini onaysız düzenlemesi; yetkili yönetici yönetim ekranına yönlendirilir.
+  function viewOwnEdit(kind, id) {
+    if (can("icerik." + kind)) return go("#/yonetim/icerik/" + kind + "/" + id);
+    setTitle("Düzenle");
+    main.innerHTML = '<p><a class="link-arrow" href="#/eserlerim">← Eserlerim ve profilim</a></p><h1 class="page-title" data-h>Düzenle</h1><div data-body><p class="muted">Yükleniyor…</p></div>';
+    api("GET", "/my/items/" + kind + "/" + id).then(function (j) {
+      $("[data-h]", main).textContent = j.label;
+      $("[data-body]", main).innerHTML = '<p class="page-lead">Değişiklikleriniz kaydettiğinizde birkaç saniye içinde sitede yayınlanır ve işlem kayıtlarına düşer.</p>' +
+        '<form class="form panel" novalidate><div class="form" data-fields></div><div class="form-actions"><button class="btn btn-primary" type="submit">Kaydet ve yayınla</button>' +
+        '<a class="btn btn-ghost" target="_blank" href="/' + (kind === "work" ? "eser" : "akademisyen") + "/" + id + '.html">Sayfayı aç</a></div></form>';
       return buildForm($("[data-fields]", main), kind, j.values, {}).then(function (form) {
         var f = $("form", main);
         f.addEventListener("submit", function (e) {
           e.preventDefault();
           var b = $("button[type=submit]", f); busy(b, true);
-          api("POST", "/submissions", { kind: kind, target_id: id, data: form.values(), note: f.note.value })
-            .then(function () { toast("Gönderiniz yöneticiye iletildi. Teşekkürler!"); go("#/gonderilerim"); })
+          api("PUT", "/my/items/" + kind + "/" + id, { data: form.values() })
+            .then(function () { busy(b, false); toast("Kaydedildi. Site birkaç saniye içinde güncellenecek."); })
             .catch(function (err) { busy(b, false); form.showErrors(err.fields); fail(err); });
         });
       });
+    }).catch(function (err) {
+      $("[data-body]", main).innerHTML = '<div class="notice warn">' + esc(err.message) + '</div><p><a class="btn btn-ghost" href="#/profil">Akademik profilim</a></p>';
+    });
+  }
+
+  function viewMyItems() {
+    setTitle("Eserlerim ve profilim");
+    main.innerHTML = '<h1 class="page-title">Eserlerim ve profilim</h1><p class="page-lead">Kendi profilinizi, yazarı olduğunuz eserleri ve sizin eklediğiniz eserleri buradan onay beklemeden güncelleyebilirsiniz. Başkalarının eklediği kayıtlar listede yer almaz.</p><div data-l><p class="muted">Yükleniyor…</p></div>';
+    api("GET", "/my/items").then(function (j) {
+      var box = $("[data-l]", main);
+      if (!j.items.length) {
+        box.innerHTML = '<div class="empty">' + (state.user.member_id ? "Henüz size ait bir eser bulunamadı. Yeni eserlerinizi <a href=\"#/oneri/work\">Eser ekle</a> bölümünden önerebilirsiniz."
+          : "Profiliniz henüz hesabınıza bağlı değil. <a href=\"#/profil\">Akademik profilim</a> bölümünden bağlatabilirsiniz.") + "</div>";
+        return;
+      }
+      box.innerHTML = '<div class="p-list">' + j.items.map(function (it) {
+        return '<a class="p-item" href="#/duzenle/' + it.kind + "/" + it.id + '"><span class="badge ' + (it.kind === "member" ? "b-brand" : "b-gold") + '">' + (it.kind === "member" ? "Profil" : "Eser") +
+          '</span><div class="grow"><div class="t">' + esc(it.title) + '</div><div class="s">' + esc(it.sub) + (it.added ? " · sizin eklediğiniz" : "") + '</div></div><span class="btn btn-ghost btn-sm">Düzenle</span></a>';
+      }).join("") + "</div>";
     }).catch(fail);
   }
 
@@ -464,15 +522,22 @@
     api("GET", "/admin/stats").then(function (j) {
       var p = j.pending, c = j.counts, b = j.build;
       var stat = function (n, label, href, alert) { return '<a class="p-card p-stat' + (alert && n ? " alert" : "") + '" href="' + href + '"><b>' + n + "</b><span>" + label + "</span></a>"; };
-      main.innerHTML = '<h1 class="page-title">Yönetim özeti</h1><p class="page-lead">Onay bekleyen işler, içerik sayıları ve son hareketler.</p>' +
-        '<div class="p-grid">' + stat(p.submissions, "Onay bekleyen gönderi", "#/yonetim/onaylar", true) + stat(p.users, "Onay bekleyen üye", "#/yonetim/uyeler", true) +
-        stat(p.comments, "Onay bekleyen yorum", "#/yonetim/yorumlar", true) + stat(c.users, "Etkin üye", "#/yonetim/uyeler") + "</div>" +
-        '<div class="p-grid">' + stat(c.member, "Akademisyen", "#/yonetim/icerik/member") + stat(c.work, "Eser", "#/yonetim/icerik/work") +
-        stat(c.topic, "Haber ve etkinlik", "#/yonetim/icerik/topic") + stat(c.album, "Fotoğraf albümü", "/galeri.html") + "</div>" +
+      var todo = [];
+      if (["onay.member", "onay.work", "onay.topic", "onay.claim"].some(can)) todo.push(stat(p.submissions, "Onay bekleyen gönderi", "#/yonetim/onaylar", true));
+      if (can("uye.onay") || can("uye.yonet")) todo.push(stat(p.users, "Onay bekleyen üye", "#/yonetim/uyeler/pending", true));
+      if (can("yorum.yonet")) todo.push(stat(p.comments, "Onay bekleyen yorum", "#/yonetim/yorumlar", true));
+      main.innerHTML = '<h1 class="page-title">Yönetim özeti</h1><p class="page-lead">Rolünüz: <span class="badge b-brand">' + esc(state.user.role_label) + "</span> · " + state.user.perms.filter(function (x) { return x.indexOf("kendi.") !== 0; }).length + " yönetim yetkisi</p>" +
+        (todo.length ? '<div class="p-grid">' + todo.join("") + "</div>" : "") +
+        '<div class="p-grid">' + stat(c.member, "Akademisyen", can("icerik.member") ? "#/yonetim/icerik/member" : "/akademisyenler.html") + stat(c.work, "Eser", can("icerik.work") ? "#/yonetim/icerik/work" : "/eserler.html") +
+        stat(c.topic, "Haber ve etkinlik", can("icerik.topic") ? "#/yonetim/icerik/topic" : "/haberler.html") + stat(c.users, "Etkin üye", (can("uye.onay") || can("uye.yonet")) ? "#/yonetim/uyeler/active" : "#/yonetim") +
+        stat(c.staff, "Yetkili kişi", can("yetki.yonet") ? "#/yonetim/uyeler/yetkili" : "#/yonetim") + "</div>" +
         '<div class="panel" style="margin-bottom:18px"><h3>Site yayını</h3><p class="muted" style="margin:0">' + buildLine(b) + ' · <a href="#/yonetim/site">Ayrıntılar</a></p></div>' +
-        '<h2 style="font-size:1.3rem">Son hareketler</h2><div class="p-table-wrap"><table class="p-table"><thead><tr><th>Zaman</th><th>Kişi</th><th>İşlem</th><th>Ayrıntı</th></tr></thead><tbody>' +
-        j.recent.map(function (r) { return "<tr><td>" + when(r.at) + "</td><td>" + esc(r.name || "—") + "</td><td>" + esc(r.action) + '</td><td class="sub">' + esc(r.detail) + "</td></tr>"; }).join("") +
-        "</tbody></table></div>";
+        (j.newUsers.length ? '<h2 style="font-size:1.3rem">Son kayıt olanlar</h2><div class="p-list" style="margin-bottom:18px">' + j.newUsers.map(function (u) {
+          return '<a class="p-item" href="#/yonetim/uyeler"><span class="avatar">' + esc(initials(u.name)) + '</span><div class="grow"><div class="t">' + esc(u.name) + '</div><div class="s">' + esc(u.email) + " · " + when(u.created_at) + "</div></div>" + badge(u.status) + "</a>";
+        }).join("") + "</div>" : "") +
+        (j.recent.length ? '<h2 style="font-size:1.3rem">Son hareketler</h2><div class="p-table-wrap"><table class="p-table"><thead><tr><th>Zaman</th><th>Kişi</th><th>İşlem</th><th>Ayrıntı</th></tr></thead><tbody>' +
+          j.recent.map(function (r) { return "<tr><td>" + when(r.at) + "</td><td>" + esc(r.name || "—") + "</td><td>" + esc(ACTION_LABEL[r.action] || r.action) + '</td><td class="sub">' + esc(r.detail) + "</td></tr>"; }).join("") +
+          '</tbody></table></div><p style="margin-top:10px"><a class="link-arrow" href="#/yonetim/kayitlar">Tüm işlem kayıtları</a></p>' : "");
     }).catch(fail);
   }
 
@@ -554,53 +619,260 @@
 
   function viewUsers(filter) {
     setTitle("Üyeler");
-    var tabs = '<nav class="tabs">' + [["", "Tümü"], ["pending", "Onay bekleyen"], ["active", "Etkin"], ["blocked", "Engelli"]].map(function (t) {
-      return '<a href="#/yonetim/uyeler' + (t[0] ? "/" + t[0] : "") + '"' + ((filter || "") === t[0] ? ' aria-current="page"' : "") + ">" + t[1] + "</a>";
+    filter = filter || "";
+    var tabs = '<nav class="tabs">' + [["", "Tümü"], ["pending", "Onay bekleyen"], ["active", "Etkin"], ["blocked", "Engelli"], ["yetkili", "Yetkililer"]].map(function (t) {
+      return '<a href="#/yonetim/uyeler' + (t[0] ? "/" + t[0] : "") + '"' + (filter === t[0] ? ' aria-current="page"' : "") + ">" + t[1] + "</a>";
     }).join("") + "</nav>";
-    main.innerHTML = '<h1 class="page-title">Üyeler</h1><p class="page-lead">Hesapları onaylayın, yetkilendirin ve akademisyen profillerine bağlayın.</p>' + tabs + '<div data-u><p class="muted">Yükleniyor…</p></div>';
-    api("GET", "/admin/users" + (filter ? "?status=" + filter : "")).then(function (j) {
-      var box = $("[data-u]", main);
+    main.innerHTML = '<h1 class="page-title">Üyeler</h1><p class="page-lead">Hesapları onaylayın, rol verin, düzenleyin ve akademisyen profillerine bağlayın.</p>' + tabs +
+      '<div class="toolbar-row"><label class="input">' + svg('<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>') + '<input type="search" data-q placeholder="Ad, e-posta ya da kurum ara…" aria-label="Üye ara"></label>' +
+      '<select class="select" data-role aria-label="Rol"><option value="">Tüm roller</option></select>' +
+      (can("disa.aktar") && can("uye.yonet") ? '<a class="btn btn-ghost btn-sm" href="/api/admin/export/uyeler" download>CSV indir</a>' : "") + "</div>" +
+      '<div data-bulk></div><div data-u><p class="muted">Yükleniyor…</p></div>';
+    var roles = [], t;
+    var load = function () {
+      var qs = [];
+      if (filter === "yetkili") qs.push("staff=1"); else if (filter) qs.push("status=" + filter);
+      var role = $("[data-role]", main).value; if (role) qs.push("role=" + encodeURIComponent(role));
+      var q = $("[data-q]", main).value.trim(); if (q) qs.push("q=" + encodeURIComponent(q));
+      api("GET", "/admin/users?" + qs.join("&")).then(draw).catch(fail);
+    };
+    api("GET", "/admin/roles").then(function (r) {
+      roles = r.roles;
+      $("[data-role]", main).insertAdjacentHTML("beforeend", roles.map(function (x) { return '<option value="' + esc(x.key) + '">' + esc(x.label) + "</option>"; }).join(""));
+      try { var pre = sessionStorage.getItem("mz-rol-filtre"); if (pre) { $("[data-role]", main).value = pre; sessionStorage.removeItem("mz-rol-filtre"); } } catch (e) {}
+    }).catch(function () {}).then(load);
+    $("[data-q]", main).addEventListener("input", function () { clearTimeout(t); t = setTimeout(load, 250); });
+    $("[data-role]", main).addEventListener("change", load);
+
+    function draw(j) {
+      var box = $("[data-u]", main), bulk = $("[data-bulk]", main);
+      var pend = j.items.filter(function (u) { return u.status === "pending"; });
+      bulk.innerHTML = pend.length > 1 && (can("uye.onay") || can("uye.yonet"))
+        ? '<div class="notice info" style="display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap"><span>' + pend.length + ' üyelik başvurusu bekliyor.</span><button class="btn btn-primary btn-sm" data-bulk-approve>Tümünü onayla</button></div>' : "";
+      var ba = $("[data-bulk-approve]", bulk);
+      ba && ba.addEventListener("click", function () {
+        confirmBox(pend.length + " üyelik başvurusu onaylanacak.", "Tümünü onayla").then(function (y) {
+          if (y) api("POST", "/admin/users/bulk-approve", { ids: pend.map(function (u) { return u.id; }) }).then(function (r) { toast(r.approved + " üye onaylandı."); refresh(); }).catch(fail);
+        });
+      });
       if (!j.items.length) { box.innerHTML = '<div class="empty">Kayıt yok.</div>'; return; }
-      box.innerHTML = '<div class="p-table-wrap"><table class="p-table"><thead><tr><th>Üye</th><th>Durum</th><th>Profil</th><th>Kayıt / Son giriş</th><th>İşlemler</th></tr></thead><tbody>' +
+      box.innerHTML = '<div class="p-table-wrap"><table class="p-table"><thead><tr><th>Üye</th><th>Rol</th><th>Durum</th><th>Profil</th><th>Kayıt / son giriş</th><th>İşlemler</th></tr></thead><tbody>' +
         j.items.map(function (u) {
           var me = u.id === state.user.id;
-          return '<tr data-id="' + u.id + '"><td><strong>' + esc(u.name) + "</strong>" + (u.role === "admin" ? ' <span class="badge b-indigo">Yönetici</span>' : "") +
-            '<div class="sub">' + esc(u.email) + "</div><div class=\"sub\">" + esc([u.title, u.university].filter(Boolean).join(" · ")) + "</div></td><td>" + badge(u.status) + "</td><td>" +
+          var roleCell = can("yetki.yonet") && !me && u.manageable
+            ? '<select class="select" data-set-role style="height:36px;font-size:.85rem">' + roles.map(function (r) {
+                return '<option value="' + esc(r.key) + '"' + (r.key === u.role_key ? " selected" : "") + ">" + esc(r.label) + "</option>"; }).join("") + "</select>"
+            : '<span class="badge' + (u.role_key !== "uye" ? " b-indigo" : "") + '">' + esc(u.role_label) + "</span>";
+          var acts = "";
+          if (u.status === "pending" && (can("uye.onay") || can("uye.yonet"))) acts += '<button class="btn btn-primary btn-sm" data-act="approve">Onayla</button>';
+          if (can("uye.yonet") && !me && u.manageable) {
+            acts += u.status === "blocked" ? '<button class="btn btn-ghost btn-sm" data-act="unblock">Engeli kaldır</button>' : '<button class="btn btn-ghost btn-sm" data-act="block">Engelle</button>';
+          }
+          if (can("uye.yonet") && (me || u.manageable)) acts += '<button class="btn btn-ghost btn-sm" data-act="edit">Düzenle</button><button class="btn btn-ghost btn-sm" data-act="link">Profile bağla</button>';
+          if (can("uye.yonet") && !me && u.manageable) acts += '<button class="btn btn-ghost btn-sm" data-act="reset">Geçici şifre</button><button class="btn btn-danger btn-sm" data-act="delete">Sil</button>';
+          return '<tr data-id="' + u.id + '"><td><strong>' + esc(u.name) + (me ? ' <span class="sub">(siz)</span>' : "") + '</strong><div class="sub">' + esc(u.email) + '</div><div class="sub">' +
+            esc([u.title, u.university].filter(Boolean).join(" · ")) + '</div><div class="sub">' + u.submission_count + " gönderi · " + u.comment_count + " yorum</div></td><td>" + roleCell + "</td><td>" + badge(u.status) + "</td><td>" +
             (u.member_name ? '<a href="/akademisyen/' + u.member_id + '.html" target="_blank">' + esc(u.member_name) + "</a>" : '<span class="sub">Bağlı değil</span>') +
-            '</td><td class="sub">' + when(u.created_at) + "<br>" + (u.last_login ? when(u.last_login) : "—") + '</td><td><div class="actions">' +
-            (u.status === "pending" ? '<button class="btn btn-primary btn-sm" data-act="approve">Onayla</button>' : "") +
-            (!me && u.status !== "blocked" ? '<button class="btn btn-ghost btn-sm" data-act="block">Engelle</button>' : "") +
-            (u.status === "blocked" ? '<button class="btn btn-ghost btn-sm" data-act="unblock">Engeli kaldır</button>' : "") +
-            (!me ? '<button class="btn btn-ghost btn-sm" data-act="role">' + (u.role === "admin" ? "Üye yap" : "Yönetici yap") + "</button>" : "") +
-            '<button class="btn btn-ghost btn-sm" data-act="link">Profile bağla</button><button class="btn btn-ghost btn-sm" data-act="reset">Geçici şifre</button>' +
-            (!me ? '<button class="btn btn-danger btn-sm" data-act="delete">Sil</button>' : "") + "</div></td></tr>";
+            '</td><td class="sub">' + when(u.created_at) + "<br>" + (u.last_login ? when(u.last_login) : "—") + '</td><td><div class="actions">' + (acts || '<span class="sub">—</span>') + "</div></td></tr>";
         }).join("") + "</tbody></table></div>";
-      $$("[data-act]", box).forEach(function (b) {
-        b.addEventListener("click", function () {
-          var tr = b.closest("tr"), id = tr.dataset.id, u = j.items.filter(function (x) { return String(x.id) === id; })[0], act = b.dataset.act;
-          var reload = function (msg) { toast(msg); refreshMe().then(function () { renderChrome(location.hash); viewUsers(filter); }); };
-          if (act === "approve") api("PATCH", "/admin/users/" + id, { status: "active" }).then(function () { reload("Üyelik onaylandı."); }).catch(fail);
-          else if (act === "unblock") api("PATCH", "/admin/users/" + id, { status: "active" }).then(function () { reload("Engel kaldırıldı."); }).catch(fail);
-          else if (act === "block") confirmBox(u.name + " engellenecek ve oturumları kapatılacak.", "Engelle", true).then(function (y) { if (y) api("PATCH", "/admin/users/" + id, { status: "blocked" }).then(function () { reload("Üye engellendi."); }).catch(fail); });
-          else if (act === "role") confirmBox(u.name + (u.role === "admin" ? " artık yönetici olmayacak." : " yönetici yapılacak ve tüm yönetim işlemlerini yapabilecek."), "Onayla").then(function (y) {
-            if (y) api("PATCH", "/admin/users/" + id, { role: u.role === "admin" ? "member" : "admin" }).then(function () { reload("Yetki güncellendi."); }).catch(fail);
-          });
-          else if (act === "delete") confirmBox(u.name + " hesabı ve tüm gönderileri/yorumları kalıcı olarak silinecek.", "Kalıcı olarak sil", true).then(function (y) { if (y) api("DELETE", "/admin/users/" + id).then(function () { reload("Hesap silindi."); }).catch(fail); });
-          else if (act === "reset") confirmBox(u.name + " için geçici şifre üretilecek; mevcut oturumları kapanacak.", "Şifre üret").then(function (y) {
-            if (y) api("POST", "/admin/users/" + id + "/reset-password").then(function (r) {
-              dialog("<h3>Geçici şifre</h3><p>Bu şifreyi " + esc(u.name) + ' ile güvenli bir yoldan paylaşın. İlk girişte değiştirmesi istenecek. Bu pencere kapanınca şifre bir daha gösterilmez.</p><div class="temp-pass">' +
-                esc(r.temporary_password) + '</div><div class="form-actions" style="margin-top:16px"><button class="btn btn-primary" data-close>Tamam</button></div>');
-            }).catch(fail);
-          });
-          else if (act === "link") dialog("<h3>Akademisyen profiline bağla</h3><p>" + esc(u.name) + ' hesabının yöneteceği profili seçin.</p><div data-p></div><div class="form-actions" style="margin-top:16px">' +
-            (u.member_id ? '<button class="btn btn-danger btn-sm" data-unlink>Bağlantıyı kaldır</button>' : "") + '<button class="btn btn-ghost" data-close>Kapat</button></div>', function (d) {
-            memberPicker($("[data-p]", d), function (m) { api("PATCH", "/admin/users/" + id, { member_id: m.id }).then(function () { d.close(); reload("Profil bağlandı: " + m.name); }).catch(fail); });
-            var ul = $("[data-unlink]", d);
-            ul && ul.addEventListener("click", function () { api("PATCH", "/admin/users/" + id, { member_id: null }).then(function () { d.close(); reload("Bağlantı kaldırıldı."); }).catch(fail); });
+      $$("[data-set-role]", box).forEach(function (sel) {
+        var prev = sel.value;
+        sel.addEventListener("change", function () {
+          var u = byId(sel.closest("tr").dataset.id), r = roles.filter(function (x) { return x.key === sel.value; })[0];
+          confirmBox(u.name + " kişisinin rolü \"" + r.label + "\" olacak. Bu rol " + (r.all ? "tüm yetkileri" : r.perms.length + " yetkiyi") + " içerir.", "Rolü değiştir").then(function (y) {
+            if (!y) { sel.value = prev; return; }
+            api("PATCH", "/admin/users/" + u.id, { role_key: sel.value }).then(function () { toast("Rol güncellendi."); prev = sel.value; refresh(); }).catch(function (e) { sel.value = prev; fail(e); });
           });
         });
       });
+      $$("[data-act]", box).forEach(function (b) {
+        b.addEventListener("click", function () { act(byId(b.closest("tr").dataset.id), b.dataset.act); });
+      });
+      function byId(id) { return j.items.filter(function (x) { return String(x.id) === String(id); })[0]; }
+    }
+    function refresh() { refreshMe().then(function () { renderChrome(location.hash.replace(/\?.*/, "")); load(); }); }
+    function act(u, a) {
+      var patch = function (body, msg) { api("PATCH", "/admin/users/" + u.id, body).then(function () { toast(msg); refresh(); }).catch(fail); };
+      if (a === "approve" || a === "unblock") patch({ status: "active" }, a === "approve" ? "Üyelik onaylandı." : "Engel kaldırıldı.");
+      else if (a === "block") confirmBox(u.name + " engellenecek ve oturumları kapatılacak.", "Engelle", true).then(function (y) { if (y) patch({ status: "blocked" }, "Üye engellendi."); });
+      else if (a === "delete") confirmBox(u.name + " hesabı ve tüm gönderileri/yorumları kalıcı olarak silinecek.", "Kalıcı olarak sil", true).then(function (y) {
+        if (y) api("DELETE", "/admin/users/" + u.id).then(function () { toast("Hesap silindi."); refresh(); }).catch(fail);
+      });
+      else if (a === "reset") confirmBox(u.name + " için geçici şifre üretilecek; mevcut oturumları kapanacak.", "Şifre üret").then(function (y) {
+        if (y) api("POST", "/admin/users/" + u.id + "/reset-password").then(function (r) {
+          dialog("<h3>Geçici şifre</h3><p>Bu şifreyi " + esc(u.name) + ' ile güvenli bir yoldan paylaşın. İlk girişte değiştirmesi istenecek. Bu pencere kapanınca şifre bir daha gösterilmez.</p><div class="temp-pass">' +
+            esc(r.temporary_password) + '</div><div class="form-actions" style="margin-top:16px"><button class="btn btn-primary" data-close>Tamam</button></div>');
+        }).catch(fail);
+      });
+      else if (a === "edit") dialog('<h3>Üye bilgileri</h3><form class="form" novalidate>' +
+        '<div class="field" data-field="name"><label for="e-name">Ad Soyad</label><input type="text" id="e-name" name="name" value="' + esc(u.name) + '" maxlength="120"><span class="err" hidden></span></div>' +
+        '<div class="field" data-field="email"><label for="e-mail">E-posta</label><input type="email" id="e-mail" name="email" value="' + esc(u.email) + '"><span class="err" hidden></span></div>' +
+        '<div class="row2"><div class="field"><label for="e-title">Unvan</label><input type="text" id="e-title" name="title" value="' + esc(u.title) + '" maxlength="60"></div>' +
+        '<div class="field"><label for="e-uni">Kurum</label><input type="text" id="e-uni" name="university" value="' + esc(u.university) + '" maxlength="160"></div></div>' +
+        '<div class="form-actions"><button class="btn btn-primary" type="submit">Kaydet</button><button class="btn btn-ghost" type="button" data-close>Vazgeç</button></div></form>', function (d) {
+        var f = $("form", d);
+        f.addEventListener("submit", function (e) {
+          e.preventDefault();
+          api("PATCH", "/admin/users/" + u.id, { name: f.name.value, email: f.email.value, title: f.title.value, university: f.university.value })
+            .then(function () { d.close(); toast("Bilgiler kaydedildi."); refresh(); }).catch(function (err) { showFieldErrors(f, err.fields); fail(err); });
+        });
+      });
+      else if (a === "link") dialog("<h3>Akademisyen profiline bağla</h3><p>" + esc(u.name) + ' hesabının yöneteceği profili seçin. Bağlanan üye, Akademisyen grubundaysa bu profili kendisi güncelleyebilir.</p><div data-p></div><div class="form-actions" style="margin-top:16px">' +
+        (u.member_id ? '<button class="btn btn-danger btn-sm" data-unlink>Bağlantıyı kaldır</button>' : "") + '<button class="btn btn-ghost" data-close>Kapat</button></div>', function (d) {
+        memberPicker($("[data-p]", d), function (m) { api("PATCH", "/admin/users/" + u.id, { member_id: m.id }).then(function () { d.close(); toast("Profil bağlandı: " + m.name); refresh(); }).catch(fail); });
+        var ul = $("[data-unlink]", d);
+        ul && ul.addEventListener("click", function () { api("PATCH", "/admin/users/" + u.id, { member_id: null }).then(function () { d.close(); toast("Bağlantı kaldırıldı."); refresh(); }).catch(fail); });
+      });
+    }
+  }
+
+  function viewRoles() {
+    setTitle("Roller ve yetkiler");
+    main.innerHTML = '<h1 class="page-title">Roller ve yetkiler</h1><p class="page-lead">Her üyenin bir rolü vardır. Bir role istediğiniz yetkileri verip istediğiniz kadar kişiye atayabilirsiniz. Kendinizde olmayan bir yetkiyi başkasına veremezsiniz; Süper Yönetici ve Üye rolleri sabittir.</p>' +
+      '<div class="form-actions" style="margin-bottom:16px"><button class="btn btn-primary btn-sm" data-new>Yeni rol</button><a class="btn btn-ghost btn-sm" href="#/yonetim/uyeler/yetkili">Yetkili kişiler</a></div><div data-r><p class="muted">Yükleniyor…</p></div>';
+    var data;
+    var load = function () { api("GET", "/admin/roles").then(function (j) { data = j; draw(); }).catch(fail); };
+    var groups = function () {
+      var g = {};
+      Object.keys(data.perms).forEach(function (k) { var p = data.perms[k]; (g[p.group] = g[p.group] || []).push(k); });
+      return g;
+    };
+    function draw() {
+      $("[data-r]", main).innerHTML = data.roles.map(function (r) {
+        return '<article class="review"><header><div><h3 style="margin-top:0">' + esc(r.label) + (r.system ? ' <span class="badge">sabit</span>' : "") + '</h3><div class="muted">' + esc(r.description || "") + '</div></div><div class="form-actions" style="padding:0">' +
+          '<a class="btn btn-ghost btn-sm" href="#/yonetim/uyeler?rol=' + esc(r.key) + '" data-filter-role="' + esc(r.key) + '">' + r.users + " kişi</a>" +
+          (!r.system ? '<button class="btn btn-ghost btn-sm" data-edit="' + esc(r.key) + '">Düzenle</button><button class="btn btn-danger btn-sm" data-del="' + esc(r.key) + '">Sil</button>' : "") +
+          '</div></header><div class="body">' + (r.all ? '<span class="badge b-brand">Tüm yetkiler</span>' : r.perms.length ? r.perms.map(function (p) {
+            return '<span class="badge" style="margin:0 6px 6px 0">' + esc((data.perms[p] || {}).label || p) + "</span>"; }).join("") : '<span class="muted">Yönetim yetkisi yok.</span>') + "</div></article>";
+      }).join("");
+      $$("[data-edit]", main).forEach(function (b) { b.addEventListener("click", function () { edit(data.roles.filter(function (r) { return r.key === b.dataset.edit; })[0]); }); });
+      $$("[data-del]", main).forEach(function (b) {
+        b.addEventListener("click", function () {
+          confirmBox("\"" + b.dataset.del + "\" rolü silinecek.", "Sil", true).then(function (y) {
+            if (y) api("DELETE", "/admin/roles/" + b.dataset.del).then(function () { toast("Rol silindi."); load(); }).catch(fail);
+          });
+        });
+      });
+      $$("[data-filter-role]", main).forEach(function (a) { a.addEventListener("click", function (e) { e.preventDefault(); sessionStorage.setItem("mz-rol-filtre", a.dataset.filterRole); go("#/yonetim/uyeler"); }); });
+    }
+    function edit(r) {
+      var g = groups(), mine = state.user.perms;
+      dialog('<h3>' + (r ? "Rolü düzenle" : "Yeni rol") + '</h3><form class="form" novalidate>' +
+        '<div class="field" data-field="label"><label for="r-label">Rol adı</label><input type="text" id="r-label" name="label" maxlength="40" value="' + esc(r ? r.label : "") + '" required><span class="err" hidden></span></div>' +
+        '<div class="field"><label for="r-desc">Açıklama</label><input type="text" id="r-desc" name="description" maxlength="200" value="' + esc(r ? r.description : "") + '"></div>' +
+        Object.keys(g).map(function (gr) {
+          return '<fieldset class="perm-group"><legend>' + esc(gr) + "</legend>" + g[gr].map(function (p) {
+            var off = mine.indexOf(p) < 0;
+            return '<label class="check' + (off ? " is-off" : "") + '"><input type="checkbox" name="perm" value="' + esc(p) + '"' + (r && r.perms.indexOf(p) > -1 ? " checked" : "") + (off ? " disabled" : "") + "> <span>" +
+              esc(data.perms[p].label) + (off ? ' <em class="sub">(sizde yok)</em>' : "") + "</span></label>";
+          }).join("") + "</fieldset>";
+        }).join("") +
+        '<div class="form-actions"><button class="btn btn-primary" type="submit">Kaydet</button><button class="btn btn-ghost" type="button" data-close>Vazgeç</button></div></form>', function (d) {
+        d.classList.add("wide");
+        var f = $("form", d);
+        f.addEventListener("submit", function (e) {
+          e.preventDefault();
+          var body = { label: f.label.value, description: f.description.value, perms: $$('input[name="perm"]:checked', f).map(function (x) { return x.value; }) };
+          (r ? api("PUT", "/admin/roles/" + r.key, body) : api("POST", "/admin/roles", body))
+            .then(function () { d.close(); toast(r ? "Rol güncellendi." : "Rol oluşturuldu."); load(); }).catch(function (err) { showFieldErrors(f, err.fields); fail(err); });
+        });
+      });
+    }
+    $("[data-new]", main).addEventListener("click", function () { edit(null); });
+    load();
+  }
+
+  function viewSettings(tab) {
+    setTitle("Site ayarları");
+    main.innerHTML = '<h1 class="page-title">Site ayarları</h1><p class="page-lead">Sitenin metinlerini, duyurularını ve davranışını buradan yönetin. Site metinleriyle ilgili değişiklikler kaydedince birkaç saniye içinde yayınlanır.</p><div data-s><p class="muted">Yükleniyor…</p></div>';
+    api("GET", "/admin/settings").then(function (j) {
+      var g = j.groups.filter(function (x) { return x.key === tab; })[0] || j.groups[0];
+      var tabs = '<nav class="tabs">' + j.groups.map(function (x) { return '<a href="#/yonetim/ayarlar/' + x.key + '"' + (x === g ? ' aria-current="page"' : "") + ">" + esc(x.label) + "</a>"; }).join("") + "</nav>";
+      var field = function (f) {
+        var v = j.values[f.key], id = "st-" + f.key;
+        var lbl = '<label for="' + id + '">' + esc(f.label) + "</label>";
+        if (f.type === "bool") return '<div class="field" data-field="' + f.key + '"><label class="check"><input type="checkbox" id="' + id + '" name="' + f.key + '"' + (v ? " checked" : "") + "> <span>" + esc(f.label) + '</span></label><span class="err" hidden></span></div>';
+        if (f.type === "textarea") return '<div class="field" data-field="' + f.key + '">' + lbl + '<textarea id="' + id + '" name="' + f.key + '" maxlength="' + (f.max || 1000) + '">' + esc(v) + '</textarea><span class="err" hidden></span></div>';
+        if (f.type === "lines") return '<div class="field" data-field="' + f.key + '">' + lbl + '<textarea id="' + id + '" name="' + f.key + '" rows="5">' + esc((v || []).join("\n")) + '</textarea><span class="err" hidden></span></div>';
+        if (f.type === "select") return '<div class="field" data-field="' + f.key + '">' + lbl + '<select id="' + id + '" name="' + f.key + '">' + f.options.map(function (o) {
+          return '<option value="' + esc(o) + '"' + (o === v ? " selected" : "") + ">" + esc((f.labels || {})[o] || o) + "</option>"; }).join("") + '</select><span class="err" hidden></span></div>';
+        var type = { number: "number", url: "url", email: "email" }[f.type] || "text";
+        return '<div class="field" data-field="' + f.key + '">' + lbl + '<input type="' + type + '" id="' + id + '" name="' + f.key + '" value="' + esc(v == null ? "" : v) + '"' +
+          (f.max && type !== "number" ? ' maxlength="' + f.max + '"' : "") + (type === "number" ? ' min="' + f.min + '" max="' + f.max + '" step="' + (f.step || 1) + '"' : "") + '><span class="err" hidden></span></div>';
+      };
+      $("[data-s]", main).innerHTML = tabs + '<form class="form panel" novalidate>' + g.fields.map(field).join("") +
+        '<div class="form-actions"><button class="btn btn-primary" type="submit">Kaydet</button>' + (g.key === "duyuru" || g.key === "anasayfa" || g.key === "genel" ? '<a class="btn btn-ghost" href="/index.html" target="_blank">Siteyi aç</a>' : "") + "</div></form>";
+      var f = $("form", main);
+      f.addEventListener("submit", function (e) {
+        e.preventDefault();
+        var values = {};
+        g.fields.forEach(function (fd) { var el = f.elements[fd.key]; values[fd.key] = fd.type === "bool" ? el.checked : el.value; });
+        var b = $("button[type=submit]", f); busy(b, true);
+        api("PUT", "/admin/settings", { values: values }).then(function (r) {
+          busy(b, false); showFieldErrors(f, {});
+          toast(r.changed.length ? "Ayarlar kaydedildi." : "Değişiklik yok.");
+        }).catch(function (err) { busy(b, false); showFieldErrors(f, err.fields); fail(err); });
+      });
     }).catch(fail);
+  }
+
+  var ACTION_LABEL = {
+    giris: "Giriş", kayit: "Yeni kayıt", "sifre-degisti": "Şifre değiştirdi", gonderi: "Öneri gönderdi", yorum: "Yorum yazdı", yukleme: "Dosya yükledi",
+    onay: "Öneriyi onayladı", red: "Öneriyi reddetti", "uye-guncelle": "Üyeyi güncelledi", "uye-toplu-onay": "Toplu üye onayı", "uye-sil": "Üyeyi sildi",
+    "sifre-sifirla": "Şifre sıfırladı", "rol-ekle": "Rol ekledi", "rol-duzenle": "Rolü düzenledi", "rol-sil": "Rolü sildi", ayar: "Ayar değiştirdi",
+    "icerik-ekle": "Kayıt ekledi", "icerik-duzenle": "Kaydı düzenledi", "icerik-sil": "Kaydı sildi", "icerik-geri-getir": "Kaydı geri getirdi",
+    "kendi-guncelle": "Kendi kaydını güncelledi", "yorum-visible": "Yorumu yayınladı", "yorum-hidden": "Yorumu gizledi", "yorum-sil": "Yorumu sildi",
+    "site-uret": "Siteyi yeniden üretti", "disa-aktar": "Dışa aktardı", "icerik-yenile": "İçerik yenilendi", "ilk-yonetici": "İlk yönetici oluşturuldu"
+  };
+
+  function viewLogs() {
+    setTitle("İşlem kayıtları");
+    main.innerHTML = '<h1 class="page-title">İşlem kayıtları</h1><p class="page-lead">Sitede kimin, ne zaman, ne yaptığının kaydı.</p>' +
+      '<div class="toolbar-row"><label class="input">' + svg('<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>') + '<input type="search" data-q placeholder="Kişi ya da ayrıntı ara…" aria-label="Kayıt ara"></label>' +
+      '<select class="select" data-action aria-label="İşlem türü"><option value="">Tüm işlemler</option></select></div><div data-l><p class="muted">Yükleniyor…</p></div>';
+    var offset = 0, t, first = true;
+    var load = function () {
+      var qs = "offset=" + offset, a = $("[data-action]", main).value, q = $("[data-q]", main).value.trim();
+      if (a) qs += "&action=" + encodeURIComponent(a);
+      if (q) qs += "&q=" + encodeURIComponent(q);
+      api("GET", "/admin/logs?" + qs).then(function (j) {
+        if (first) {
+          first = false;
+          $("[data-action]", main).insertAdjacentHTML("beforeend", j.actions.map(function (x) { return '<option value="' + esc(x.action) + '">' + esc(ACTION_LABEL[x.action] || x.action) + " (" + x.n + ")</option>"; }).join(""));
+        }
+        var box = $("[data-l]", main);
+        if (!j.items.length) { box.innerHTML = '<div class="empty">Kayıt yok.</div>'; return; }
+        box.innerHTML = '<p class="muted">' + j.total + " kayıt · " + (offset + 1) + "–" + Math.min(offset + 100, j.total) + ' gösteriliyor</p><div class="p-table-wrap"><table class="p-table"><thead><tr><th>Zaman</th><th>Kişi</th><th>İşlem</th><th>Ayrıntı</th></tr></thead><tbody>' +
+          j.items.map(function (r) { return "<tr><td style=\"white-space:nowrap\">" + when(r.at) + "</td><td>" + esc(r.name || "Sistem") + '<div class="sub">' + esc(r.email || "") + "</div></td><td>" + esc(ACTION_LABEL[r.action] || r.action) + '</td><td class="sub">' + esc(r.detail) + "</td></tr>"; }).join("") +
+          '</tbody></table></div><div class="form-actions" style="justify-content:center;margin-top:14px">' + (offset > 0 ? '<button class="btn btn-ghost btn-sm" data-prev>Daha yeni</button>' : "") +
+          (offset + 100 < j.total ? '<button class="btn btn-ghost btn-sm" data-next>Daha eski</button>' : "") + "</div>";
+        var p = $("[data-prev]", box), n = $("[data-next]", box);
+        p && p.addEventListener("click", function () { offset -= 100; load(); window.scrollTo(0, 0); });
+        n && n.addEventListener("click", function () { offset += 100; load(); window.scrollTo(0, 0); });
+      }).catch(fail);
+    };
+    $("[data-q]", main).addEventListener("input", function () { clearTimeout(t); t = setTimeout(function () { offset = 0; load(); }, 300); });
+    $("[data-action]", main).addEventListener("change", function () { offset = 0; load(); });
+    load();
+  }
+
+  function viewTrash() {
+    setTitle("Geri dönüşüm kutusu");
+    main.innerHTML = '<h1 class="page-title">Geri dönüşüm kutusu</h1><p class="page-lead">Silinen akademisyen, eser ve haber kayıtları burada durur; geri getirdiğinizde sitede yeniden yayınlanır.</p><div data-l><p class="muted">Yükleniyor…</p></div>';
+    var load = function () {
+      api("GET", "/admin/trash").then(function (j) {
+        var box = $("[data-l]", main);
+        if (!j.items.length) { box.innerHTML = '<div class="empty">Geri dönüşüm kutusu boş.</div>'; return; }
+        box.innerHTML = '<div class="p-list">' + j.items.map(function (it) {
+          return '<div class="p-item"><span class="badge">' + esc(KIND_LABEL[it.kind] || it.kind) + '</span><div class="grow"><div class="t">' + esc(it.title) + '</div><div class="s">#' + it.id + " · " + esc(it.sub) +
+            " · silinme: " + when(it.deleted_at) + (it.by_name ? " · " + esc(it.by_name) : "") + '</div></div><button class="btn btn-ghost btn-sm" data-restore="' + it.kind + "/" + it.id + '">Geri getir</button></div>';
+        }).join("") + "</div>";
+        $$("[data-restore]", box).forEach(function (b) {
+          b.addEventListener("click", function () { api("POST", "/admin/trash/" + b.dataset.restore + "/restore").then(function () { toast("Kayıt geri getirildi."); load(); }).catch(fail); });
+        });
+      }).catch(fail);
+    };
+    load();
   }
 
   var CONTENT = { member: ["Akademisyenler", "akademisyen"], work: ["Eserler", "eser"], topic: ["Haber ve etkinlikler", "haber"] };
@@ -609,9 +881,11 @@
     if (!CONTENT[kind]) return viewNotFound();
     setTitle(CONTENT[kind][0]);
     offset = offset || 0;
+    var exp = { member: "akademisyenler", work: "eserler" }[kind];
     main.innerHTML = '<h1 class="page-title">' + CONTENT[kind][0] + '</h1><p class="page-lead">Kayıtları doğrudan düzenleyin; değişiklikler kaydedince sitede yayınlanır.</p>' +
       '<div class="toolbar-row"><label class="input">' + svg('<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>') + '<input type="search" placeholder="Ara…" value="' + esc(q || "") + '" aria-label="Ara"></label>' +
-      '<a class="btn btn-primary btn-sm" href="#/yonetim/icerik/' + kind + '/yeni">Yeni ekle</a></div><div data-l><p class="muted">Yükleniyor…</p></div>';
+      '<a class="btn btn-primary btn-sm" href="#/yonetim/icerik/' + kind + '/yeni">Yeni ekle</a>' + (exp && can("disa.aktar") ? '<a class="btn btn-ghost btn-sm" href="/api/admin/export/' + exp + '" download>CSV indir</a>' : "") +
+      '</div><div data-l><p class="muted">Yükleniyor…</p></div>';
     var input = $("input", main), t;
     input.addEventListener("input", function () { clearTimeout(t); t = setTimeout(function () { load(input.value, 0); }, 250); });
     function load(query, off) {
@@ -637,7 +911,7 @@
     setTitle(isNew ? "Yeni kayıt" : "Düzenle");
     main.innerHTML = '<p><a class="link-arrow" href="#/yonetim/icerik/' + kind + '">← ' + CONTENT[kind][0] + '</a></p><h1 class="page-title" data-h>' + (isNew ? "Yeni kayıt" : "Düzenle") + "</h1>" +
       '<form class="form panel" novalidate><div class="form" data-fields><p class="muted">Yükleniyor…</p></div><div class="form-actions"><button class="btn btn-primary" type="submit">Kaydet ve yayınla</button>' +
-      (isNew ? "" : '<a class="btn btn-ghost" target="_blank" href="/' + CONTENT[kind][1] + "/" + id + '.html">Sayfayı aç</a><button class="btn btn-danger" type="button" data-del>Sil</button>') + "</div></form>";
+      (isNew ? "" : '<a class="btn btn-ghost" target="_blank" href="/' + CONTENT[kind][1] + "/" + id + '.html">Sayfayı aç</a>' + (can("icerik.sil") ? '<button class="btn btn-danger" type="button" data-del>Sil</button>' : "")) + "</div></form>";
     var load = isNew ? Promise.resolve({ values: kind === "topic" ? { forum: "haber" } : kind === "member" ? { group: "Öğretim Elemanları" } : {} }) : api("GET", "/items/" + kind + "/" + id);
     load.then(function (j) {
       if (!isNew) $("[data-h]", main).textContent = j.label;
@@ -786,14 +1060,20 @@
 
     if (u.status !== "active") return viewHome();
     if (path[0] === "profil") return viewProfile();
+    if (path[0] === "eserlerim") return viewMyItems();
+    if (path[0] === "duzenle" && path[1] && /^\d+$/.test(path[2] || "")) return viewOwnEdit(path[1], +path[2]);
     if (path[0] === "sahiplen" && /^\d+$/.test(path[1])) return viewClaim(+path[1]);
     if (path[0] === "oneri" && path[1]) return viewSuggest(path[1], /^\d+$/.test(path[2] || "") ? +path[2] : null);
 
     if (path[0] === "yonetim") {
-      if (u.role !== "admin") return viewNotFound();
+      if (!isStaff()) return viewNotFound();
       if (!path[1]) return viewAdminHome();
       if (path[1] === "onaylar") return viewQueue(path[2]);
       if (path[1] === "uyeler") return viewUsers(path[2]);
+      if (path[1] === "roller" && can("yetki.yonet")) return viewRoles();
+      if (path[1] === "ayarlar" && (can("site.ayar") || can("ai.ayar"))) return viewSettings(path[2]);
+      if (path[1] === "kayitlar" && can("kayit.gor")) return viewLogs();
+      if (path[1] === "cop" && can("icerik.sil")) return viewTrash();
       if (path[1] === "yorumlar") return viewComments(path[2]);
       if (path[1] === "site") return viewSite();
       if (path[1] === "yapay-zeka") return viewAiUsage(path[2]);

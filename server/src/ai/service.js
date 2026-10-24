@@ -257,7 +257,9 @@ function report(days = 30) {
 
 function status(user) {
   const s = settings();
-  const out = { enabled: s.enabled && corpus.indexInfo().ready, maxInputChars: s.limits.maxInputChars, signedIn: !!user, active: user?.status === "active" };
+  const ss = require("../site-settings").all();
+  const out = { enabled: s.enabled && corpus.indexInfo().ready, maxInputChars: s.limits.maxInputChars, signedIn: !!user, active: user?.status === "active",
+    welcome: ss.ai_welcome, suggestions: ss.ai_suggestions };
   if (user && out.enabled) out.remaining = remaining(user.id);
   return out;
 }

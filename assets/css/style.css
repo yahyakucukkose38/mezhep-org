@@ -506,3 +506,9 @@ a.feed-item:hover { background: var(--surface-2); }
 @media (max-width: 380px) {
   .site-header .brand > span { display: none; }
 }
+
+/* ---------- duyuru şeridi (panel → Site ayarları → Duyuru şeridi) ---------- */
+.site-banner { background: var(--brand); color: var(--brand-ink); font-size: .9rem; font-weight: 500; padding: 10px 0; text-align: center; line-height: 1.5; }
+.site-banner a { color: inherit; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; margin-left: 6px; }
+.site-banner.sb-uyari { background: var(--gold-soft); color: var(--ink); }
+.site-banner.sb-onemli { background: var(--rose); color: #fff; }

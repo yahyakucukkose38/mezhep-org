@@ -34,6 +34,25 @@ def load(name):
 
 members, works, topics = load("members"), load("works"), load("topics")
 links, files, albums, pages = load("links"), load("files"), load("albums"), load("pages")
+
+# Panelden yönetilen site ayarları (sunucu dışa aktarır: settings.json). Dosya yoksa (statik sürüm) varsayılanlar geçerli.
+ST = {
+    "site_name": "Mezhep.Org", "site_tagline": "İslam Mezhepleri Tarihi",
+    "site_description": "İlahiyat ve İslami İlimler Fakülteleri İslam Mezhepleri Tarihi Anabilim Dalı Koordinasyon Sitesi: akademisyenler, tezler, kitaplar, makaleler, haberler ve etkinlikler.",
+    "footer_about": "İlahiyat ve İslami İlimler Fakülteleri İslam Mezhepleri Tarihi Anabilim Dalı Koordinasyon Sitesi. 2006'dan beri alanın akademik hafızası.",
+    "footer_note": "Ahmet İshak DEMİR adına", "contact_person": "Prof. Dr. Ahmet İshak DEMİR",
+    "contact_institution": "Recep Tayyip Erdoğan Üniversitesi İlahiyat Fakültesi", "contact_email": "",
+    "facebook_url": "https://www.facebook.com/Mezhep.Org/",
+    "banner_enabled": False, "banner_text": "", "banner_link": "", "banner_style": "bilgi",
+    "home_eyebrow": "İslam Mezhepleri Tarihi Anabilim Dalı", "home_title": "Mezhepler tarihi çalışmalarının *ortak hafızası*",
+    "home_lead": "Türkiye'deki İlahiyat ve İslami İlimler fakültelerinin İslam Mezhepleri Tarihi akademisyenlerini, tezlerini, kitaplarını ve makalelerini tek çatı altında, özetleriyle birlikte derliyoruz.",
+    "home_quote": "Gelişmesi ve zenginleşmesi için İslam Mezhepleri ile ilgilenen herkesin katkılarını bekliyoruz.",
+    "home_quote_sign": "Ahmet İshak DEMİR", "home_show_news": True, "home_news_count": 6,
+    "home_show_coord": True, "home_show_works": True, "home_show_members": True,
+}
+if os.path.exists(os.path.join(DATA, "settings.json")):
+    ST.update({k: v for k, v in load("settings").items() if v is not None})
+SITE = ST["site_name"] or "Mezhep.Org"
 E = lambda s: html.escape(str(s or ""), quote=True)
 def exists(p):
     for prefix, base in FILE_ROOTS.items():
@@ -159,7 +178,7 @@ def layout(path, title, body, desc="", active="", data=None):
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{E(full_title)}</title>
-<meta name="description" content="{E(desc or 'İlahiyat ve İslami İlimler Fakülteleri İslam Mezhepleri Tarihi Anabilim Dalı Koordinasyon Sitesi: akademisyenler, tezler, kitaplar, makaleler, haberler ve etkinlikler.')}">
+<meta name="description" content="{E(desc or ST["site_description"])}">
 <meta property="og:title" content="{E(title)}">
 <meta property="og:site_name" content="{SITE}">
 <meta property="og:image" content="{SITE_URL}assets/img/og.jpg">
@@ -173,10 +192,10 @@ def layout(path, title, body, desc="", active="", data=None):
 <script>{THEME_SCRIPT}</script>{'<meta name="mz-dynamic" content="1">' if DYNAMIC else ""}
 </head>
 <body data-root="{r}">
-<a class="skip" href="#main">İçeriğe geç</a>
+<a class="skip" href="#main">İçeriğe geç</a>{banner_html()}
 <header class="site-header">
   <div class="container">
-    <a class="brand" href="{r}index.html" aria-label="{SITE} ana sayfa"><img class="brand-logo" src="{r}assets/img/logo.jpg" alt="" width="59" height="40"><span>Mezhep.Org<small>İslam Mezhepleri Tarihi</small></span></a>
+    <a class="brand" href="{r}index.html" aria-label="{SITE} ana sayfa"><img class="brand-logo" src="{r}assets/img/logo.jpg" alt="" width="59" height="40"><span>{E(SITE)}<small>{E(ST["site_tagline"])}</small></span></a>
     <nav class="nav" aria-label="Ana menü">{nav}</nav>
     <div class="header-actions">
       <button class="search-trigger" data-open-search type="button" aria-label="Sitede ara">{ic("search")}<span>Sitede ara…</span><kbd>Ctrl K</kbd></button>
@@ -193,15 +212,15 @@ def layout(path, title, body, desc="", active="", data=None):
   <div class="container">
     <div class="footer-grid">
       <div>
-        <a class="brand" href="{r}index.html"><img class="brand-logo" src="{r}assets/img/logo.jpg" alt="Mezhep.Org logosu" width="59" height="40"><span>Mezhep.Org<small>İslam Mezhepleri Tarihi</small></span></a>
-        <p>İlahiyat ve İslami İlimler Fakülteleri İslam Mezhepleri Tarihi Anabilim Dalı Koordinasyon Sitesi. 2006'dan beri alanın akademik hafızası.</p>
-        <div class="socials"><a class="icon-btn" href="https://www.facebook.com/Mezhep.Org/" target="_blank" rel="noopener" aria-label="Facebook">{ic("fb")}</a></div>
+        <a class="brand" href="{r}index.html"><img class="brand-logo" src="{r}assets/img/logo.jpg" alt="Mezhep.Org logosu" width="59" height="40"><span>{E(SITE)}<small>{E(ST["site_tagline"])}</small></span></a>
+        <p>{E(ST["footer_about"])}</p>
+        {('<div class="socials"><a class="icon-btn" href="%s" target="_blank" rel="noopener" aria-label="Facebook">%s</a></div>' % (E(ST["facebook_url"]), ic("fb"))) if ST["facebook_url"] else ""}
       </div>
       <div><h4>Keşfet</h4><ul><li><a href="{r}akademisyenler.html">Akademisyenler</a></li><li><a href="{r}eserler.html">Eserler</a></li><li><a href="{r}eserler.html#tur=Doktora">Doktora Tezleri</a></li><li><a href="{r}eserler.html#tur=Yüksek Lisans">Yüksek Lisans Tezleri</a></li></ul></div>
       <div><h4>Güncel</h4><ul><li><a href="{r}haberler.html">Haberler</a></li><li><a href="{r}etkinlikler.html">Etkinlikler</a></li><li><a href="{r}galeri.html">Fotoğraf Galerisi</a></li><li><a href="{r}kaynaklar.html">Kaynaklar</a></li></ul></div>
       <div><h4>Site</h4><ul><li><a href="{r}hakkinda.html">Hakkında</a></li><li><a href="{r}hakkinda.html#sss">Sık Sorulanlar</a></li><li><a href="{r}hakkinda.html#kosullar">Kullanım Koşulları</a></li><li><a href="{r}hakkinda.html#iletisim">İletişim</a></li>{'<li><a href="/panel/#/kayit">Üye ol</a></li><li><a href="/panel/">Üye paneli</a></li>' if DYNAMIC else ""}</ul></div>
     </div>
-    <div class="footer-bottom"><span>© 2006–{TODAY.year} Mezhep.Org · Tüm hakları saklıdır.</span><span>Ahmet İshak DEMİR adına</span></div>
+    <div class="footer-bottom"><span>© 2006–{TODAY.year} {E(SITE)} · Tüm hakları saklıdır.</span><span>{E(ST["footer_note"])}</span></div>
   </div>
 </footer>
 <button class="icon-btn to-top" type="button" aria-label="Yukarı çık">{ic("up")}</button>
@@ -224,11 +243,42 @@ def layout(path, title, body, desc="", active="", data=None):
         f.write(doc)
 
 
+def banner_html():
+    """Panelden açılan duyuru şeridi (tüm sayfaların en üstünde)."""
+    if not ST["banner_enabled"] or not ST["banner_text"]:
+        return ""
+    text = E(ST["banner_text"])
+    if ST["banner_link"]:
+        text += ' <a href="%s">Ayrıntılar →</a>' % E(ST["banner_link"])
+    return '<div class="site-banner sb-%s" role="note"><div class="container">%s</div></div>' % (E(ST["banner_style"]), text)
+
+
+def emph(t):
+    """'*vurgu*' → <em>vurgu</em> (önce kaçışlanır)."""
+    return re.sub(r"\*(.+?)\*", r"<em>\1</em>", E(t))
+
+
 def dyn_button(href, label, icon="star", primary=False):
     """Yalnızca sunucu (üyelik) modunda görünen panel bağlantısı."""
     if not DYNAMIC:
         return ""
     return '<a class="btn %s btn-sm" href="/panel/#/%s" data-needs-login>%s %s</a>' % ("btn-primary" if primary else "btn-ghost", href, ic(icon), E(label))
+
+
+def own_button(kind, oid):
+    """Düzenle düğmesi: varsayılan gizli; tarayıcı, kayıt sahibine (akademisyen) ya da yetkili yöneticiye gösterir."""
+    if not DYNAMIC:
+        return ""
+    return ('<a class="btn btn-ghost btn-sm" href="/panel/#/duzenle/%s/%d" data-own="%s:%d" hidden>%s Düzenle</a>'
+            % (kind, oid, kind, oid, ic("copy")))
+
+
+def claim_button(mid):
+    """'Bu profil benim': profili zaten bir hesaba bağlı olan kişiye gizlenir (tarayıcı karar verir)."""
+    if not DYNAMIC:
+        return ""
+    return ('<a class="btn btn-primary btn-sm" href="/panel/#/sahiplen/%d" data-claim="%d">%s Bu profil benim</a>'
+            % (mid, mid, ic("users")))
 
 
 def comments_block(target):
@@ -355,20 +405,48 @@ def work_item(w):
 
 # ---------------------------------------------------------------- ANA SAYFA
 def build_home():
-    latest = news[:6]
+    latest = news[:max(3, min(12, int(ST["home_news_count"] or 6)))]
     pop = sorted(works, key=lambda w: -w["hits"])[:6]
     recent_members = sorted(members, key=lambda m: (parse_date(m["added"]), m["id"]), reverse=True)[:8]
     s = STATS
     coord = "".join(f'<a class="coord reveal" href="{{ROOT}}etkinlikler.html#koordinasyon"><div class="no">{n:02d}</div><div class="city">{c}</div><div class="yr">{y} · Koordinasyon</div></a>' for n, c, y in COORD)
     people = "".join(f'''<a class="card person reveal" href="{{ROOT}}{m["slug"]}">{avatar(m)}<div class="info"><div class="rank">{E(m["title"])}</div><h3>{E(m["name"])}</h3><div class="uni">{E(m["university"])}</div></div></a>''' for m in recent_members)
+    optional = [
+        (ST['home_show_news'], f'''<section class="section{{ALT}}">
+  <div class="container">
+    <div class="section-head reveal"><div><div class="eyebrow">Güncel</div><h2>Son haberler</h2><p>Bilim dalımızdan yeni doktorlar, unvan ve atamalar, vefat haberleri ve duyurular.</p></div><a class="link-arrow" href="{{ROOT}}haberler.html">Tüm haberler {ic("arrow")}</a></div>
+    <div class="grid grid-3">{"".join(news_card(t, "reveal") for t in latest)}</div>
+  </div>
+</section>'''),
+        (ST['home_show_coord'], f'''<section class="section{{ALT}}">
+  <div class="container">
+    <div class="section-head reveal"><div><div class="eyebrow">Koordinasyon Toplantıları</div><h2>2007'den bugüne dokuz buluşma</h2><p>Anabilim dalının ülke çapındaki öğretim elemanlarını bir araya getiren geleneksel koordinasyon toplantıları.</p></div><a class="link-arrow" href="{{ROOT}}etkinlikler.html">Tüm etkinlikler {ic("arrow")}</a></div>
+    <div class="coord-strip">{coord}</div>
+  </div>
+</section>'''),
+        (ST['home_show_works'], f'''<section class="section{{ALT}}">
+  <div class="container">
+    <div class="section-head reveal"><div><div class="eyebrow">En çok okunanlar</div><h2>Öne çıkan eserler</h2></div><a class="link-arrow" href="{{ROOT}}eserler.html">Tüm eserler {ic("arrow")}</a></div>
+    <div class="feed reveal">{"".join(work_item(w) for w in pop)}</div>
+  </div>
+</section>'''),
+        (ST['home_show_members'], f'''<section class="section{{ALT}}">
+  <div class="container">
+    <div class="section-head reveal"><div><div class="eyebrow">Aramıza katılanlar</div><h2>Yeni eklenen akademisyenler</h2></div><a class="link-arrow" href="{{ROOT}}akademisyenler.html">Tüm akademisyenler {ic("arrow")}</a></div>
+    <div class="grid grid-4">{people}</div>
+  </div>
+</section>''')
+    ]
+    shown = [h for on, h in optional if on]
+    optional_sections = "\n\n".join(h.replace("{ALT}", " alt" if n % 2 == 0 else "") for n, h in enumerate(shown))
     body = f'''
 <section class="hero">
   {PATTERN}<div class="hero-glow"></div>
   <div class="container hero-grid">
     <div class="reveal">
-      <div class="eyebrow">İslam Mezhepleri Tarihi Anabilim Dalı</div>
-      <h1>Mezhepler tarihi çalışmalarının <em>ortak hafızası</em></h1>
-      <p class="hero-lead">Türkiye'deki İlahiyat ve İslami İlimler fakültelerinin İslam Mezhepleri Tarihi akademisyenlerini, tezlerini, kitaplarını ve makalelerini tek çatı altında, özetleriyle birlikte derliyoruz.</p>
+      <div class="eyebrow">{E(ST["home_eyebrow"])}</div>
+      <h1>{emph(ST["home_title"])}</h1>
+      <p class="hero-lead">{E(ST["home_lead"])}</p>
       <div class="hero-actions">
         <a class="btn btn-primary" href="{{ROOT}}eserler.html">{ic("book")} Eserleri keşfet</a>
         <button class="btn btn-ghost" type="button" data-open-search>{ic("search")} Sitede ara</button>
@@ -377,8 +455,8 @@ def build_home():
     <div class="hero-card reveal">
       <img class="hero-logo" src="{{ROOT}}assets/img/logo.jpg" alt="Mezhep.Org logosu" width="100" height="68">
       <div class="arabic" lang="ar">المذاهب الإسلامية</div>
-      <p class="quote">“Gelişmesi ve zenginleşmesi için İslam Mezhepleri ile ilgilenen herkesin katkılarını bekliyoruz.”</p>
-      <div class="sig">Saygılarımızla, <strong>Ahmet İshak DEMİR</strong></div>
+      {('<p class="quote">“%s”</p>' % E(ST["home_quote"])) if ST["home_quote"] else ""}
+      {('<div class="sig">Saygılarımızla, <strong>%s</strong></div>' % E(ST["home_quote_sign"])) if ST["home_quote_sign"] else ""}
       <div class="hero-stats">
         <div class="stat"><b data-count="{s["members"]}">{s["members"]}</b><span>Akademisyen</span></div>
         <div class="stat"><b data-count="{s["works"]}">{s["works"]}</b><span>Akademik eser</span></div>
@@ -401,39 +479,13 @@ def build_home():
   </div>
 </section>
 
-<section class="section alt">
-  <div class="container">
-    <div class="section-head reveal"><div><div class="eyebrow">Güncel</div><h2>Son haberler</h2><p>Bilim dalımızdan yeni doktorlar, unvan ve atamalar, vefat haberleri ve duyurular.</p></div><a class="link-arrow" href="{{ROOT}}haberler.html">Tüm haberler {ic("arrow")}</a></div>
-    <div class="grid grid-3">{"".join(news_card(t, "reveal") for t in latest)}</div>
-  </div>
-</section>
-
-<section class="section">
-  <div class="container">
-    <div class="section-head reveal"><div><div class="eyebrow">Koordinasyon Toplantıları</div><h2>2007'den bugüne dokuz buluşma</h2><p>Anabilim dalının ülke çapındaki öğretim elemanlarını bir araya getiren geleneksel koordinasyon toplantıları.</p></div><a class="link-arrow" href="{{ROOT}}etkinlikler.html">Tüm etkinlikler {ic("arrow")}</a></div>
-    <div class="coord-strip">{coord}</div>
-  </div>
-</section>
-
-<section class="section alt">
-  <div class="container">
-    <div class="section-head reveal"><div><div class="eyebrow">En çok okunanlar</div><h2>Öne çıkan eserler</h2></div><a class="link-arrow" href="{{ROOT}}eserler.html">Tüm eserler {ic("arrow")}</a></div>
-    <div class="feed reveal">{"".join(work_item(w) for w in pop)}</div>
-  </div>
-</section>
-
-<section class="section">
-  <div class="container">
-    <div class="section-head reveal"><div><div class="eyebrow">Aramıza katılanlar</div><h2>Yeni eklenen akademisyenler</h2></div><a class="link-arrow" href="{{ROOT}}akademisyenler.html">Tüm akademisyenler {ic("arrow")}</a></div>
-    <div class="grid grid-4">{people}</div>
-  </div>
-</section>
+{optional_sections}
 
 <section class="section" style="padding-top:0">
   <div class="container">
     <div class="cta reveal">{BIG_STAR}
       <div><h2>Katkılarınızı bekliyoruz</h2><p>Sitemizin temel amacı Mezhepler Tarihi çalışmalarını eksiksiz ve özetleriyle birlikte derlemek. Öncelikle kendi çalışmalarınız olmak üzere tashih ve eklemelerinizi bize iletin.</p></div>
-      <div class="actions"><a class="btn btn-primary" href="{{ROOT}}hakkinda.html#iletisim">{ic("mail")} Bize ulaşın</a><a class="btn btn-ghost" href="https://www.facebook.com/Mezhep.Org/" target="_blank" rel="noopener">{ic("fb")} Facebook</a></div>
+      <div class="actions"><a class="btn btn-primary" href="{{ROOT}}hakkinda.html#iletisim">{ic("mail")} Bize ulaşın</a>{('<a class="btn btn-ghost" href="%s" target="_blank" rel="noopener">%s Facebook</a>' % (E(ST["facebook_url"]), ic("fb"))) if ST["facebook_url"] else ""}</div>
     </div>
   </div>
 </section>'''
@@ -486,7 +538,7 @@ def build_members():
     {news_html}
     {"" if (bio or ws or rel) else '<div class="panel empty">Bu akademisyen için henüz özgeçmiş veya eser bilgisi eklenmemiş. Katkıda bulunmak için <a href="{ROOT}hakkinda.html#iletisim">bize ulaşın</a>.</div>'}
   </div>
-  <aside><div class="panel"><h3>Bilgiler</h3><dl class="dl">{info}</dl></div>{dyn_button("sahiplen/%d" % m["id"], "Bu profil benim", "users", True)}{dyn_button("oneri/member/%d" % m["id"], "Düzeltme öner", "copy")}<a class="btn btn-ghost" href="{{ROOT}}akademisyenler.html">{ic("left")} Tüm akademisyenler</a></aside>
+  <aside><div class="panel"><h3>Bilgiler</h3><dl class="dl">{info}</dl></div>{claim_button(m["id"])}{own_button("member", m["id"])}<a class="btn btn-ghost" href="{{ROOT}}akademisyenler.html">{ic("left")} Tüm akademisyenler</a></aside>
 </div>'''
         layout(m["slug"], m["name"], body, "%s — %s" % (m["display"], m["university"]), "akademisyenler.html")
 
@@ -582,7 +634,7 @@ def build_works():
     {comments_block("work:%d" % w["id"])}
     <div class="panel"><h3>Benzer eserler</h3><div class="feed" style="margin-top:14px">{"".join(work_item(x) for x in similar[:4])}</div></div>
   </div>
-  <aside><div class="panel"><h3>Künye</h3><dl class="dl">{info}</dl></div>{btn}{dyn_button("oneri/work/%d" % w["id"], "Düzeltme öner", "copy")}<a class="btn btn-ghost" href="{{ROOT}}eserler.html">{ic("left")} Tüm eserler</a></aside>
+  <aside><div class="panel"><h3>Künye</h3><dl class="dl">{info}</dl></div>{btn}{own_button("work", w["id"])}<a class="btn btn-ghost" href="{{ROOT}}eserler.html">{ic("left")} Tüm eserler</a></aside>
 </div>'''
         layout(w["slug"], w["title"], body, strip_tags(w["ozet"] or w["abstract"])[:160] or "%s — %s" % (w["title"], w["author"]), "eserler.html")
 
@@ -733,8 +785,8 @@ def build_about():
   </div>
   <aside id="iletisim">
     <div class="panel"><h3>İletişim</h3><p style="color:var(--ink-2);margin:0 0 16px">Tashih, ekleme ve önerileriniz için site yöneticisine ulaşabilirsiniz.</p>
-      <dl class="dl"><dt>Yönetici</dt><dd>Prof. Dr. Ahmet İshak DEMİR</dd><dt>Kurum</dt><dd>Recep Tayyip Erdoğan Üniversitesi İlahiyat Fakültesi</dd></dl></div>
-    <a class="btn btn-primary" href="https://www.facebook.com/Mezhep.Org/" target="_blank" rel="noopener">{ic("fb")} Facebook sayfamız</a>
+      <dl class="dl"><dt>Yönetici</dt><dd>{E(ST["contact_person"])}</dd><dt>Kurum</dt><dd>{E(ST["contact_institution"])}</dd>{('<dt>E-posta</dt><dd><a href="mailto:%s">%s</a></dd>' % (E(ST["contact_email"]), E(ST["contact_email"]))) if ST["contact_email"] else ""}</dl></div>
+    {('<a class="btn btn-primary" href="%s" target="_blank" rel="noopener">%s Facebook sayfamız</a>' % (E(ST["facebook_url"]), ic("fb"))) if ST["facebook_url"] else ""}
     <a class="btn btn-ghost" href="{{ROOT}}akademisyen/10.html">{ic("users")} Yönetici profili</a>
   </aside>
 </div>'''

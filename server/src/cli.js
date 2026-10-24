@@ -18,9 +18,9 @@ if (cmd === "olustur" && email) {
   const pw = temp();
   const existing = db.prepare("SELECT id FROM users WHERE email = ?").get(email.toLowerCase());
   if (existing) {
-    db.prepare("UPDATE users SET role = 'admin', status = 'active', password_hash = ?, must_change = 1 WHERE id = ?").run(A.hashPassword(pw), existing.id);
+    db.prepare("UPDATE users SET role = 'admin', role_key = 'super', status = 'active', password_hash = ?, must_change = 1 WHERE id = ?").run(A.hashPassword(pw), existing.id);
   } else {
-    db.prepare("INSERT INTO users (email, name, password_hash, role, status, must_change) VALUES (?, ?, ?, 'admin', 'active', 1)")
+    db.prepare("INSERT INTO users (email, name, password_hash, role, role_key, status, must_change) VALUES (?, ?, ?, 'admin', 'super', 'active', 1)")
       .run(email.toLowerCase(), name || "Site Yöneticisi", A.hashPassword(pw));
   }
   console.log(`Yönetici hazır: ${email}\nGeçici şifre: ${pw}\n(ilk girişte değiştirilecek)`);
@@ -62,7 +62,7 @@ if (cmd === "olustur" && email) {
   log(null, "icerik-yenile", JSON.stringify(stats));
   console.log("İçerik yenilendi:", stats, "\nSiteyi yeniden üretmek için uygulamayı yeniden başlatın ya da panelden 'Siteyi şimdi yeniden üret'.");
 } else if (cmd === "liste") {
-  for (const r of db.prepare("SELECT email, name, status FROM users WHERE role = 'admin'").all()) console.log(`${r.email}\t${r.name}\t${r.status}`);
+  for (const r of db.prepare("SELECT email, name, status FROM users WHERE role_key = 'super'").all()) console.log(`${r.email}\t${r.name}\t${r.status}`);
 } else {
   console.log('Kullanım: npm run yonetici -- olustur <e-posta> "<Ad Soyad>" | sifre <e-posta> | liste | icerik-yenile');
   process.exit(1);

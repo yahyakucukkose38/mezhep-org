@@ -226,14 +226,50 @@ function applyFields(kind, existing, fields, user) {
   return item;
 }
 
-function saveItem(kind, id, item, userId) {
+// createdBy yalnızca yeni kayıtta yazılır (kaydı ekleyen kişi; sahiplik kuralında kullanılır).
+function saveItem(kind, id, item, userId, createdBy = userId) {
   if (id == null) id = nextId(kind);
   item.id = id;
   db.prepare(
-    `INSERT INTO items (kind, id, data, updated_at, updated_by) VALUES (?, ?, ?, datetime('now'), ?)
+    `INSERT INTO items (kind, id, data, updated_at, updated_by, created_by) VALUES (?, ?, ?, datetime('now'), ?, ?)
      ON CONFLICT(kind, id) DO UPDATE SET data = excluded.data, deleted = 0, updated_at = excluded.updated_at, updated_by = excluded.updated_by`
-  ).run(kind, id, JSON.stringify(item), userId ?? null);
+  ).run(kind, id, JSON.stringify(item), userId ?? null, createdBy ?? null);
   return item;
+}
+
+const foldName = (s) => String(s || "").replace(/İ/g, "i").replace(/I/g, "ı").toLocaleLowerCase("tr").replace(/ı/g, "i")
+  .normalize("NFKD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
+
+// Kullanıcı bu kaydın sahibi mi? Profil: hesaba bağlı akademisyen kaydı.
+// Eser: kaydı kendisi eklemiş ya da bağlı olduğu akademisyen eserin yazarı.
+function ownsItem(user, kind, id) {
+  if (!user) return false;
+  if (kind === "member") return user.member_id != null && user.member_id === id;
+  if (kind !== "work") return false;
+  const row = db.prepare("SELECT data, created_by FROM items WHERE kind = 'work' AND id = ? AND deleted = 0").get(id);
+  if (!row) return false;
+  if (row.created_by === user.id) return true;
+  const me = user.member_id != null ? getItem("member", user.member_id) : null;
+  if (!me) return false;
+  const author = ` ${foldName(JSON.parse(row.data).author)} `, name = foldName(me.name);
+  return name.length > 4 && author.includes(` ${name} `);
+}
+
+// Kullanıcının düzenleyebildiği kendi kayıtları (profil + eserler)
+function ownItems(user) {
+  const out = [];
+  if (user.member_id != null) {
+    const m = getItem("member", user.member_id);
+    if (m) out.push({ kind: "member", id: m.id, title: m.name, sub: "Akademik profiliniz" });
+  }
+  const me = user.member_id != null ? getItem("member", user.member_id) : null;
+  const name = me ? foldName(me.name) : null;
+  for (const r of db.prepare("SELECT id, data, created_by FROM items WHERE kind = 'work' AND deleted = 0").all()) {
+    const w = JSON.parse(r.data);
+    const mine = r.created_by === user.id || (name && name.length > 4 && ` ${foldName(w.author)} `.includes(` ${name} `));
+    if (mine) out.push({ kind: "work", id: r.id, title: w.title, sub: [w.author, w.year, w.type].filter(Boolean).join(" · "), added: r.created_by === user.id });
+  }
+  return out;
 }
 
 function deleteItem(kind, id, userId) {
@@ -268,9 +304,10 @@ function exportAll(dir) {
     write(file, rows);
   }
   write("pages", getItem("page", 1) || { welcome: "", policy: "" });
+  write("settings", require("./site-settings").all()); // site üreteci için panel ayarları
 }
 
 module.exports = {
   SCHEMAS, KINDS, RANKS, GROUPS, WORK_TYPES, FORUMS, ValidationError, normalize, cleanHtml, htmlText,
-  getItem, listItems, applyFields, saveItem, deleteItem, formValues, exportAll, trDate, plain,
+  getItem, listItems, applyFields, saveItem, deleteItem, ownsItem, ownItems, formValues, exportAll, trDate, plain,
 };

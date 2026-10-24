@@ -35,7 +35,7 @@ class Client {
 
 test.before(async () => {
   seedIfEmpty();
-  db.prepare("INSERT INTO users (email, name, password_hash, role, status) VALUES (?, ?, ?, 'admin', 'active')")
+  db.prepare("INSERT INTO users (email, name, password_hash, role, role_key, status) VALUES (?, ?, ?, 'admin', 'super', 'active')")
     .run("admin@test.local", "Yönetici Kişi", A.hashPassword("YoneticiSifre123"));
   server = createApp().listen(0);
   await new Promise((r) => server.once("listening", r));
@@ -81,7 +81,8 @@ test("yanlış şifreyle giriş başarısız, doğrusuyla başarılı", async ()
   assert.equal((await admin.call("POST", "/auth/login", { email: "admin@test.local", password: "yanlis-sifre-1" })).status, 401);
   const r = await admin.call("POST", "/auth/login", { email: "ADMIN@test.local", password: "YoneticiSifre123" });
   assert.equal(r.status, 200);
-  assert.equal(r.body.user.role, "admin");
+  assert.equal(r.body.user.role_key, "super");
+  assert.ok(r.body.user.perms.includes("yetki.yonet"));
 });
 
 test("üye yönetim uçlarına erişemez", async () => {
@@ -101,6 +102,7 @@ test("yönetici üyeyi onaylar; kayıttaki profil talebi kuyruğa düşer", asyn
   const me = (await uye.call("GET", "/me")).body.user;
   assert.equal(me.status, "active");
   assert.equal(me.member_id, 10);
+  assert.equal(me.role_key, "akademisyen", "profil sahipliği onaylanan üye akademisyen olur");
 });
 
 test("yeni eser önerisi temizlenir, onaylanınca içeriğe eklenir", async () => {
@@ -131,17 +133,14 @@ test("geçersiz tür ve yıl alan alan hata verir", async () => {
   assert.ok(r2.body.fields.type);
 });
 
-test("düzeltme önerisi yalnızca değişen alanları taşır; boş öneri reddedilir", async () => {
-  const cur = (await uye.call("GET", "/items/member/10")).body.values;
-  const same = await uye.call("POST", "/submissions", { kind: "member", target_id: 10, data: cur });
-  assert.equal(same.status, 400);
-  const r = await uye.call("POST", "/submissions", { kind: "member", target_id: 10, data: { ...cur, city: "Rize Merkez" } });
-  assert.equal(r.status, 200);
-  const s = (await admin.call("GET", "/admin/submissions")).body.items.find((x) => x.id === r.body.id);
-  assert.deepEqual(Object.keys(s.data), ["city"]);
-  await admin.call("POST", `/admin/submissions/${s.id}/approve`, {});
+test("mevcut kayda öneri gönderilemez; akademisyen kendi profilini doğrudan günceller", async () => {
+  const cur = (await uye.call("GET", "/my/items/member/10")).body.values;
+  assert.equal((await uye.call("POST", "/submissions", { kind: "member", target_id: 10, data: { ...cur, city: "X" } })).status, 403);
+  const r = await uye.call("PUT", "/my/items/member/10", { data: { ...cur, city: "Rize Merkez", group: "Emekliler" } });
+  assert.equal(r.status, 200, r.body.error);
   assert.equal(C.getItem("member", 10).city, "Rize Merkez");
-  assert.ok(C.getItem("member", 10).name, "diğer alanlar korunur");
+  assert.equal(C.getItem("member", 10).group, "Öğretim Elemanları", "grup alanı yalnızca yöneticide");
+  assert.equal((await uye.call("PUT", "/my/items/member/11", { data: { city: "Y" } })).status, 403, "başkasının profili");
 });
 
 test("üye grup alanını değiştiremez; haber yalnızca izinli bölümlere gönderilir", async () => {
@@ -194,7 +193,7 @@ test("geçici şifre sonrası şifre değişikliği zorunlu", async () => {
 
 test("yönetici kendi yetkisini kaldıramaz; engellenen üye giriş yapamaz", async () => {
   const me = (await admin.call("GET", "/me")).body.user;
-  assert.equal((await admin.call("PATCH", `/admin/users/${me.id}`, { role: "member" })).status, 400);
+  assert.equal((await admin.call("PATCH", `/admin/users/${me.id}`, { role_key: "uye" })).status, 400);
   const z = (await admin.call("GET", "/admin/users")).body.items.find((u) => u.email === "zeynep@test.local");
   await admin.call("PATCH", `/admin/users/${z.id}`, { status: "blocked" });
   assert.equal((await uye.call("GET", "/me")).body.user, null);

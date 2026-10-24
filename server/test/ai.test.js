@@ -74,8 +74,8 @@ test.before(async () => {
   corpus.buildIndex(src, corpus.INDEX_FILE, () => {});
 
   seedIfEmpty();
-  const mk = (email, role, status) => db.prepare("INSERT INTO users (email, name, password_hash, role, status) VALUES (?, ?, ?, ?, ?)")
-    .run(email, email.split("@")[0] + " Kişi", A.hashPassword("SifreDeneme123"), role, status);
+  const mk = (email, role, status) => db.prepare("INSERT INTO users (email, name, password_hash, role, role_key, status) VALUES (?, ?, ?, ?, ?, ?)")
+    .run(email, email.split("@")[0] + " Kişi", A.hashPassword("SifreDeneme123"), role, role === "admin" ? "super" : "uye", status);
   mk("admin@t.local", "admin", "active"); mk("uye@t.local", "member", "active"); mk("bekleyen@t.local", "member", "pending");
   server = createApp().listen(0);
   await new Promise((r) => server.once("listening", r));

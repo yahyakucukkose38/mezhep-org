@@ -242,7 +242,10 @@
         body: body ? JSON.stringify(body) : undefined
       }).then(function (r) { return r.json().then(function (j) { if (!r.ok) throw j; return j; }); });
     };
-    var me = null, pending = null;
+    var me = null, pending = null, siteSet = {};
+    // Yönetim paneline giriş: "kendi.*" dışında en az bir yetki
+    var isStaff = function (u) { return !!u && (u.perms || []).some(function (p) { return p.indexOf("kendi.") !== 0; }); };
+    var can = function (p) { return !!me && (me.perms || []).indexOf(p) > -1; };
     var acc = $("[data-account]");
     var renderAccount = function () {
       if (!acc) return;
@@ -258,7 +261,7 @@
         (n ? '<span class="acc-dot" aria-label="' + n + ' bekleyen iş">' + n + "</span>" : "") +
         '</button><div class="acc-pop" role="menu"><div class="acc-head"><strong>' + esc(me.name) + "</strong><span>" + esc(me.email) + "</span></div>" +
         '<a role="menuitem" href="/panel/">Üye panelim</a>' +
-        (me.role === "admin" ? '<a role="menuitem" href="/panel/#/yonetim">Yönetim paneli' + (n ? ' <span class="badge b-rose">' + n + "</span>" : "") + "</a>" : "") +
+        (isStaff(me) ? '<a role="menuitem" href="/panel/#/yonetim">Yönetim paneli' + (n ? ' <span class="badge b-rose">' + n + "</span>" : "") + "</a>" : "") +
         '<button role="menuitem" type="button" data-logout>Çıkış yap</button></div></div>';
       var btn = $(".acc-btn", acc), pop = $(".acc-pop", acc);
       btn.addEventListener("click", function (e) { e.stopPropagation(); var o = pop.classList.toggle("open"); btn.setAttribute("aria-expanded", o); });
@@ -279,13 +282,15 @@
         }));
         list.innerHTML = rows.length ? rows.join("") : '<p class="muted">Henüz yorum yok. İlk yorumu siz yazın.</p>';
       }).catch(function () { list.innerHTML = '<p class="muted">Yorumlar yüklenemedi.</p>'; });
-      if (!me) {
+      if (siteSet.comments_enabled === false) {
+        form.innerHTML = '<p class="muted">Yorumlar şu anda kapalı.</p>';
+      } else if (!me) {
         form.innerHTML = '<p class="muted">Yorum yazmak için <a href="/panel/#/giris">giriş yapın</a> ya da <a href="/panel/#/kayit">üye olun</a>.</p>';
       } else if (me.status !== "active") {
         form.innerHTML = '<p class="muted">Üyeliğiniz onaylandıktan sonra yorum yazabilirsiniz.</p>';
       } else {
         form.innerHTML = '<form class="comment-form"><label class="sr-only" for="yorum-' + esc(target) + '">Yorumunuz</label><textarea id="yorum-' + esc(target) +
-          '" rows="4" maxlength="3000" required placeholder="Yorumunuzu yazın…"></textarea><div class="comment-actions"><span class="muted">Yorumlar yönetici onayından sonra yayınlanır.</span><button class="btn btn-primary btn-sm" type="submit">Gönder</button></div></form>';
+          '" rows="4" maxlength="3000" required placeholder="Yorumunuzu yazın…"></textarea><div class="comment-actions"><span class="muted">' + (siteSet.comments_require_approval === false ? "" : "Yorumlar yönetici onayından sonra yayınlanır.") + '</span><button class="btn btn-primary btn-sm" type="submit">Gönder</button></div></form>';
         var f = $("form", form);
         f.addEventListener("submit", function (e) {
           e.preventDefault();
@@ -334,9 +339,10 @@
         return '<div class="ai-msg' + (m.error ? " err" : "") + '"><div class="ai-bubble prose">' + (m.error ? esc(m.content) : md(m.content)) + src + "</div></div>";
       };
       var draw = function () {
-        var intro = '<div class="ai-msg"><div class="ai-bubble prose"><p>Selâmün aleyküm! Ehl-i Sünnet (Mâtürîdî ve Eş\'arî) itikadına dair sorularınızı arşivdeki kaynaklara dayanarak yanıtlıyorum.</p>' +
+        var intro = '<div class="ai-msg"><div class="ai-bubble prose"><p>' + esc(st.welcome || "Selâmün aleyküm! Ehl-i Sünnet (Mâtürîdî ve Eş'arî) itikadına dair sorularınızı arşivdeki kaynaklara dayanarak yanıtlıyorum.") + '</p>' +
           '<p class="ai-note">Yanıtlar yapay zekâ ile derlenir ve hata içerebilir; önemli konularda kaynaklara ve hocalarımıza başvurun. Fetva verilmez.</p></div></div>';
-        var chips = !history.length && me && me.status === "active" ? '<div class="ai-chips">' + SUGGEST.map(function (q) { return '<button type="button" class="chip" data-q="' + esc(q) + '">' + esc(q) + "</button>"; }).join("") + "</div>" : "";
+        var sugg = (st.suggestions && st.suggestions.length) ? st.suggestions : SUGGEST;
+        var chips = !history.length && me && me.status === "active" ? '<div class="ai-chips">' + sugg.map(function (q) { return '<button type="button" class="chip" data-q="' + esc(q) + '">' + esc(q) + "</button>"; }).join("") + "</div>" : "";
         log.innerHTML = intro + chips + history.map(bubble).join("") + (sending ? '<div class="ai-msg"><div class="ai-bubble ai-typing"><span></span><span></span><span></span></div></div>' : "");
         $$("[data-q]", log).forEach(function (b) { b.addEventListener("click", function () { send(b.getAttribute("data-q")); }); });
         log.scrollTop = log.scrollHeight;
@@ -382,7 +388,25 @@
     apiCall("GET", "/me").then(function (j) { me = j.user; pending = j.pending || null; })
       .catch(function () {})
       .then(function () {
-        renderAccount(); $$("[data-comments]").forEach(loadComments);
+        renderAccount();
+        apiCall("GET", "/site-settings").then(function (v) { siteSet = v || {}; }).catch(function () {})
+          .then(function () { $$("[data-comments]").forEach(loadComments); });
+        // "Bu profil benim": profili zaten bir hesaba bağlı kişiye gösterilmez
+        $$("[data-claim]").forEach(function (b) { if (me && me.member_id != null) b.hidden = true; });
+        // "Düzenle": yetkili yöneticiye ya da kaydın sahibi olan akademisyene gösterilir
+        var owns = $$("[data-own]");
+        if (me && owns.length) {
+          var showFor = function (keys) {
+            owns.forEach(function (b) {
+              var t = b.getAttribute("data-own").split(":");
+              if (can("icerik." + t[0])) { b.href = "/panel/#/yonetim/icerik/" + t[0] + "/" + t[1]; b.hidden = false; }
+              else if (keys.indexOf(t[0] + ":" + t[1]) > -1) b.hidden = false;
+            });
+          };
+          if (can("kendi.profil") || can("kendi.eser")) {
+            apiCall("GET", "/my/items").then(function (j) { showFor(j.items.map(function (i) { return i.kind + ":" + i.id; })); }).catch(function () { showFor([]); });
+          } else showFor([]);
+        }
         apiCall("GET", "/ai/status").then(setupAssistant).catch(function () {});
       });
   }
