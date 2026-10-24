@@ -69,10 +69,51 @@ function toRootPath(u) {
   return m ? "{ROOT}" + m[1] : u;
 }
 
+// ---------------------------------------------------------------- video gömme
+// Yalnızca güvenli sağlayıcı listesindeki oynatıcılar: YouTube (çerezsiz alan adı; Shorts dahil) ve Vimeo.
+// Kullanıcının yapıştırdığı bağlantı ya da gömme kodu ne olursa olsun, kimlik çıkarılıp standart adres yeniden kurulur.
+const VIDEO_HOSTS = ["www.youtube-nocookie.com", "player.vimeo.com"];
+function parseVideo(url) {
+  const u = String(url || "").trim().replace(/&amp;/g, "&");
+  let m = u.match(/^(?:https?:)?\/\/(?:www\.|m\.)?(?:youtube(?:-nocookie)?\.com\/(?:watch\?(?:[^#]*&)?v=|embed\/|shorts\/|live\/|v\/)|youtu\.be\/)([\w-]{11})(?![\w-])/i);
+  if (m) return { provider: "youtube", id: m[1], short: /\/shorts\//i.test(u) };
+  m = u.match(/^(?:https?:)?\/\/(?:www\.|player\.)?vimeo\.com\/(?:video\/)?(\d{6,12})(?:\/([0-9a-f]{6,20}))?(?:[/?#]|$)/i);
+  if (m) {
+    const h = m[2] || (u.match(/[?&]h=([0-9a-f]{6,20})/i) || [])[1] || "";
+    return { provider: "vimeo", id: m[1], hash: h };
+  }
+  return null;
+}
+const videoSrc = (v) => (v.provider === "youtube" ? `https://www.youtube-nocookie.com/embed/${v.id}?rel=0` : `https://player.vimeo.com/video/${v.id}${v.hash ? "?h=" + v.hash : ""}`);
+const CANON_VIDEO = /^https:\/\/(?:www\.youtube-nocookie\.com\/embed\/[\w-]{11}\?rel=0|player\.vimeo\.com\/video\/\d{6,12}(?:\?h=[0-9a-f]{6,20})?)$/;
+function videoFigure(v, half) {
+  const cls = ["media-video", v.short ? "short" : "", half ? "half" : ""].filter(Boolean).join(" ");
+  return `<figure class="${cls}"><iframe src="${videoSrc(v)}" title="${v.provider === "youtube" ? "YouTube" : "Vimeo"} videosu" loading="lazy" ` +
+    `allow="accelerometer; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe></figure>`;
+}
+const decodeEnt = (s) => s.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, "&");
+// Metindeki gömme kodları (düz metin olarak yapıştırılmış olanlar dahil) standart video bloğuna çevrilir;
+// desteklenmeyen sağlayıcıların iframe'leri tamamen atılır.
+function embedVideos(html) {
+  return String(html || "")
+    .replace(/&lt;iframe\b[\s\S]*?&lt;\/iframe&gt;/gi, (code) => `</p>${decodeEnt(code)}<p>`)
+    .replace(/<figure\b([^>]*)>\s*(<iframe\b[^>]*>[\s\S]*?<\/iframe>)\s*<\/figure>|<iframe\b[^>]*>[\s\S]*?(?:<\/iframe>|$)/gi, (all, figAttrs, inner) => {
+      const src = ((inner || all).match(/\bsrc\s*=\s*["']([^"']+)["']/i) || [])[1];
+      const v = parseVideo(src);
+      return v ? videoFigure(v, /\bhalf\b/.test(figAttrs || "")) : "";
+    });
+}
+
 const SANITIZE = {
   allowedTags: ["p", "br", "strong", "b", "em", "i", "u", "a", "img", "ul", "ol", "li", "h2", "h3", "h4", "blockquote",
-    "table", "thead", "tbody", "tr", "td", "th", "sup", "sub"],
-  allowedAttributes: { a: ["href", "target", "rel"], img: ["src", "alt", "loading"] },
+    "table", "thead", "tbody", "tr", "td", "th", "sup", "sub", "figure", "iframe"],
+  allowedAttributes: {
+    a: ["href", "target", "rel"], img: ["src", "alt", "loading", "class"], figure: ["class"],
+    iframe: ["src", "title", "loading", "allow", "allowfullscreen", "referrerpolicy"],
+  },
+  // görsel ve videolar "yarım genişlik" ile yan yana dizilebilir
+  allowedClasses: { figure: ["media-video", "short", "half"], img: ["half"] },
+  allowedIframeHostnames: VIDEO_HOSTS,
   allowedSchemes: ["http", "https", "mailto"],
   allowedSchemesAppliedToAttributes: ["href"],
   allowProtocolRelative: false,
@@ -83,15 +124,17 @@ const SANITIZE = {
       const ext = /^https?:/i.test(href);
       return { tagName: "a", attribs: ext ? { href, target: "_blank", rel: "noopener" } : { href } };
     },
-    img: (tag, attribs) => ({ tagName: "img", attribs: { src: toRootPath(attribs.src), alt: attribs.alt || "", loading: "lazy" } }),
+    img: (tag, attribs) => ({ tagName: "img", attribs: { src: toRootPath(attribs.src), alt: attribs.alt || "", loading: "lazy", ...(/\bhalf\b/.test(attribs.class || "") ? { class: "half" } : {}) } }),
   },
-  exclusiveFilter: (frame) => frame.tag === "img" && !/^(\{ROOT\}(media|uploads)\/|https:\/\/)/.test(frame.attribs.src || ""),
+  exclusiveFilter: (frame) => (frame.tag === "img" && !/^(\{ROOT\}(media|uploads)\/|https:\/\/)/.test(frame.attribs.src || "")) ||
+    (frame.tag === "iframe" && !CANON_VIDEO.test(frame.attribs.src || "")),
 };
 
 function cleanHtml(html) {
-  let h = sanitizeHtml(String(html || ""), SANITIZE).replace(/ /g, " ").trim();
+  let h = sanitizeHtml(embedVideos(html), SANITIZE).replace(/ /g, " ").trim();
   h = h.replace(/<p>\s*(<br\s*\/?>\s*)*<\/p>/g, "").replace(/(<br\s*\/?>\s*){3,}/g, "<br><br>");
-  return htmlText(h) || /<img/.test(h) ? h : "";
+  h = h.replace(/<figure class="media-video[^"]*">\s*<\/figure>/g, "");
+  return htmlText(h) || /<(img|iframe)\b/.test(h) ? h : "";
 }
 
 const htmlText = (h) => sanitizeHtml(String(h || ""), { allowedTags: [], allowedAttributes: {} })
@@ -180,6 +223,30 @@ function getItem(kind, id) {
   return row ? JSON.parse(row.data) : null;
 }
 
+// Sürüm damgası (milisaniyeli son güncelleme): düzenleme ekranı açıkken kayıt başkası tarafından değiştirildiyse
+// kaydetme reddedilir; böylece kimse farkında olmadan başkasının değişikliğinin üzerine yazmaz.
+function itemVersion(kind, id) {
+  const row = db.prepare("SELECT updated_at FROM items WHERE kind = ? AND id = ? AND deleted = 0").get(kind, id);
+  return row ? row.updated_at : null;
+}
+
+// Haber metinlerinde "&lt;iframe…" olarak (düz yazı) kalmış gömme kodlarını güvenli oynatıcıya çevirir.
+// Kayıt sahibi/güncelleyen bilgisi korunur; dönen dizi değiştirilen kayıtlardır ("topic:306").
+function fixEmbedCodes() {
+  const rows = db.prepare("SELECT kind, id, data FROM items WHERE deleted = 0 AND kind = 'topic' AND data LIKE '%&lt;iframe%'").all();
+  const done = [];
+  for (const r of rows) {
+    const item = JSON.parse(r.data);
+    const posts = (item.posts || []).map((p) => ({ ...p, html: /&lt;iframe/i.test(p.html || "") ? cleanHtml(p.html) : p.html }));
+    if (posts.every((p, i) => p.html === item.posts[i].html)) continue;
+    item.posts = posts;
+    item.summary = htmlText(posts[0]?.html).slice(0, 260);
+    db.prepare("UPDATE items SET data = ? WHERE kind = ? AND id = ?").run(JSON.stringify(item), r.kind, r.id);
+    done.push(`${r.kind}:${r.id}`);
+  }
+  return done;
+}
+
 function listItems(kind) {
   return db.prepare("SELECT data FROM items WHERE kind = ? AND deleted = 0").all(kind).map((r) => JSON.parse(r.data));
 }
@@ -231,7 +298,7 @@ function saveItem(kind, id, item, userId, createdBy = userId) {
   if (id == null) id = nextId(kind);
   item.id = id;
   db.prepare(
-    `INSERT INTO items (kind, id, data, updated_at, updated_by, created_by) VALUES (?, ?, ?, datetime('now'), ?, ?)
+    `INSERT INTO items (kind, id, data, updated_at, updated_by, created_by) VALUES (?, ?, ?, strftime('%Y-%m-%d %H:%M:%f', 'now'), ?, ?)
      ON CONFLICT(kind, id) DO UPDATE SET data = excluded.data, deleted = 0, updated_at = excluded.updated_at, updated_by = excluded.updated_by`
   ).run(kind, id, JSON.stringify(item), userId ?? null, createdBy ?? null);
   return item;
@@ -310,5 +377,5 @@ function exportAll(dir) {
 
 module.exports = {
   SCHEMAS, KINDS, RANKS, GROUPS, WORK_TYPES, FORUMS, ValidationError, normalize, cleanHtml, htmlText,
-  getItem, listItems, applyFields, saveItem, deleteItem, ownsItem, ownItems, formValues, exportAll, trDate, plain,
+  getItem, itemVersion, listItems, applyFields, parseVideo, videoFigure, fixEmbedCodes, saveItem, deleteItem, ownsItem, ownItems, formValues, exportAll, trDate, plain,
 };

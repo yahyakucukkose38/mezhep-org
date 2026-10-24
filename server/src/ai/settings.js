@@ -37,6 +37,9 @@ function settings() {
     tasks: {
       kisa: { effort: process.env.AI_EFFORT_SIMPLE || "none", maxOutput: num("AI_MAX_OUTPUT_SIMPLE", 400), contextChars: 5000, sources: 4 },
       soru: { effort: process.env.AI_EFFORT_REASONED || "low", maxOutput: num("AI_MAX_OUTPUT_REASONED", 1200), contextChars: 9000, sources: 6 },
+      // Hanefî asistanı üslupları: fetva (basit soru; üç bölümlü kısa cevap) ve akademik (ihtilaf + ayrıntılı kaynak)
+      fetva: { effort: process.env.AI_EFFORT_SIMPLE || "none", maxOutput: num("AI_MAX_OUTPUT_FETVA", 700), contextChars: 6000, sources: 4 },
+      akademik: { effort: process.env.AI_EFFORT_REASONED || "low", maxOutput: num("AI_MAX_OUTPUT_ACADEMIC", 2000), contextChars: 12000, sources: 8 },
       // Hanefî asistanı: Türkçe soruyu Arapça arama terimlerine çeviren kısa ön çağrı (yanıtla aynı kayda yazılır).
       terimler: { effort: "none", maxOutput: num("AI_MAX_OUTPUT_TERMS", 200) },
     },

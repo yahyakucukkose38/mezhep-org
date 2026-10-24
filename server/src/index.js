@@ -23,8 +23,8 @@ const CSP = [
   "font-src 'self' https://fonts.gstatic.com",
   "img-src 'self' data: https:",
   "connect-src 'self'",
-  // ana sayfa video modülü: YouTube'un çerezsiz oynatıcısı
-  "frame-src https://www.youtube-nocookie.com",
+  // ana sayfa video modülü ve haber/eser metinlerindeki videolar: yalnızca izinli oynatıcılar (content.js VIDEO_HOSTS)
+  "frame-src https://www.youtube-nocookie.com https://player.vimeo.com",
   "frame-ancestors 'self'",
   "base-uri 'self'",
   "form-action 'self'",
@@ -68,13 +68,16 @@ function createApp() {
     next();
   }, api);
 
+  // Sayfalar, panel ve betik/stil dosyaları her istekte doğrulanır (ETag ile değişmediyse 304, gövdesiz):
+  // düzenlenen bir haber ya da yeni sürüm, tarayıcı önbelleği yüzünden eski hâliyle görünmez.
+  const revalidate = { maxAge: 0, setHeaders: (res) => res.set("Cache-Control", "no-cache") };
   const panelDir = path.join(__dirname, "..", "panel");
-  app.use("/panel", express.static(panelDir, { index: "index.html", maxAge: "5m" }));
-  app.get(/^\/panel(\/.*)?$/, (_req, res) => res.sendFile(path.join(panelDir, "index.html")));
+  app.use("/panel", express.static(panelDir, { index: "index.html", ...revalidate }));
+  app.get(/^\/panel(\/.*)?$/, (_req, res) => res.set("Cache-Control", "no-cache").sendFile(path.join(panelDir, "index.html")));
 
   // Üretilmiş site önce (search-index.js de oradadır), sonra kaynak varlıklar, eski medya ve yüklemeler.
-  app.use(express.static(cfg.SITE_DIR, { extensions: ["html"], maxAge: "2m" }));
-  app.use("/assets", express.static(cfg.ASSETS_DIR, { maxAge: "1h" }));
+  app.use(express.static(cfg.SITE_DIR, { extensions: ["html"], ...revalidate }));
+  app.use("/assets", express.static(cfg.ASSETS_DIR, revalidate));
   app.use("/media", express.static(cfg.MEDIA_DIR, { maxAge: "30d", immutable: true }));
   app.use("/uploads", express.static(cfg.UPLOAD_DIR, { maxAge: "30d", immutable: true }));
 
@@ -97,6 +100,9 @@ if (require.main === module) {
   for (const d of [cfg.UPLOAD_DIR, cfg.SITE_DIR]) fs.mkdirSync(d, { recursive: true });
   if (seedIfEmpty()) console.log("[kurulum] İçerik data/*.json dosyalarından veritabanına aktarıldı.");
   ensureAdmin();
+  // Metne düz yazı olarak kaydedilmiş video gömme kodlarını (eski editör) oynatıcıya çevirir; yapılacak iş yoksa hiçbir şey yazmaz.
+  const fixed = require("./content").fixEmbedCodes();
+  if (fixed.length) { log(null, "video-kodu-donustur", fixed.join(", ")); console.log(`[icerik] video kodu oynatıcıya çevrildi: ${fixed.join(", ")}`); }
   A.cleanupSessions();
   setInterval(A.cleanupSessions, 6 * 3600e3).unref();
   // Sunucu her açılışta siteyi güncel veriyle (ve dinamik özelliklerle) yeniden üretir.

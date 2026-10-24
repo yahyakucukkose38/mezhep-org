@@ -52,7 +52,17 @@
     $(".toast-zone").appendChild(t);
     setTimeout(function () { t.remove(); }, isErr ? 6000 : 3500);
   }
-  function fail(e) { toast((e && e.message) || "Bir hata oluştu.", true); }
+  // Hata türleri ayrı mesajlarla gösterilir: oturum, yetki, doğrulama, çakışma, sunucu ve bağlantı.
+  function fail(e) {
+    var st = e && e.status, msg = (e && e.message) || "Bir hata oluştu.";
+    if (!st && e instanceof TypeError) msg = "Sunucuya ulaşılamadı. İnternet bağlantınızı kontrol edip tekrar deneyin.";
+    else if (st === 401) msg = "Oturumunuz sona ermiş. Lütfen yeniden giriş yapın.";
+    else if (st === 403) msg = "Yetki hatası: " + msg;
+    else if (st === 409) msg = "Kayıt çakışması: " + msg;
+    else if ((st === 400 || st === 413) && e.fields) msg = "Doğrulama hatası: " + msg;
+    else if (st >= 500) msg = "Sunucu hatası: " + msg + " Lütfen biraz sonra tekrar deneyin.";
+    toast(msg, true);
+  }
   function go(hash) { if (location.hash === hash) render(); else location.hash = hash; }
   function initials(n) { return String(n || "?").split(/\s+/).filter(Boolean).map(function (w) { return w[0]; }).slice(0, 2).join("").toUpperCase(); }
   function when(s) {
@@ -103,7 +113,7 @@
       input = '<div class="editor" data-editor="' + f.key + '"><div class="editor-bar" role="toolbar" aria-label="Biçimlendirme">' +
         '<button type="button" data-cmd="bold" title="Kalın"><b>K</b></button><button type="button" data-cmd="italic" title="İtalik"><i>İ</i></button>' +
         '<button type="button" data-cmd="h3" title="Ara başlık">Başlık</button><button type="button" data-cmd="insertUnorderedList" title="Liste">• Liste</button>' +
-        '<button type="button" data-cmd="link" title="Bağlantı">Bağlantı</button><button type="button" data-cmd="image" title="Görsel ekle">Görsel</button>' +
+        '<button type="button" data-cmd="link" title="Bağlantı">Bağlantı</button><button type="button" data-cmd="image" title="Görsel ekle">Görsel</button><button type="button" data-cmd="video" title="YouTube / Vimeo videosu ekle">Video</button>' +
         '<button type="button" data-cmd="removeFormat" title="Biçimi temizle">Temizle</button></div>' +
         '<div class="editor-area prose" contenteditable="true" role="textbox" aria-multiline="true" aria-labelledby="' + id + '-l" data-placeholder="Metni buraya yazın ya da yapıştırın…">' +
         String(v).replace(/\{ROOT\}/g, "/") + "</div></div>";
@@ -173,34 +183,266 @@
     return api("POST", "/uploads", fd).then(function (j) { return j.path; });
   }
 
+  // ---- video: güvenli sağlayıcı listesi (sunucudaki content.js parseVideo ile aynı kurallar)
+  function parseVideo(url) {
+    var u = String(url || "").trim().replace(/&amp;/g, "&");
+    var m = u.match(/^(?:https?:)?\/\/(?:www\.|m\.)?(?:youtube(?:-nocookie)?\.com\/(?:watch\?(?:[^#]*&)?v=|embed\/|shorts\/|live\/|v\/)|youtu\.be\/)([\w-]{11})(?![\w-])/i);
+    if (m) return { provider: "youtube", id: m[1], short: /\/shorts\//i.test(u) };
+    m = u.match(/^(?:https?:)?\/\/(?:www\.|player\.)?vimeo\.com\/(?:video\/)?(\d{6,12})(?:\/([0-9a-f]{6,20}))?(?:[/?#]|$)/i);
+    if (m) return { provider: "vimeo", id: m[1], hash: m[2] || (u.match(/[?&]h=([0-9a-f]{6,20})/i) || [])[1] || "" };
+    return null;
+  }
+  var VIDEO_HELP = "Desteklenen bağlantılar: YouTube (youtube.com/watch, youtu.be, Shorts) ve Vimeo. YouTube'da Paylaş → Bağlantıyı kopyala ya da Yerleştir kodunu yapıştırabilirsiniz.";
+  function videoHtml(v, half) {
+    var src = v.provider === "youtube" ? "https://www.youtube-nocookie.com/embed/" + v.id + "?rel=0" : "https://player.vimeo.com/video/" + v.id + (v.hash ? "?h=" + v.hash : "");
+    return '<figure class="media-video' + (v.short ? " short" : "") + (half ? " half" : "") + '" contenteditable="false"><iframe src="' + src + '" title="' + (v.provider === "youtube" ? "YouTube" : "Vimeo") +
+      ' videosu" loading="lazy" allow="accelerometer; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe></figure>';
+  }
+  function srcOfEmbed(code) { var m = String(code).match(/<iframe\b[^>]*\bsrc\s*=\s*["']([^"']+)["']/i); return m ? m[1] : ""; }
+
+  // Video ekleme / değiştirme penceresi: bağlantı tanınır, önizlenir, yerleşim (tam / yarım genişlik) seçilir.
+  function videoDialog(initial, half) {
+    return new Promise(function (resolve) {
+      var done = false;
+      dialog('<h3>Video ekle</h3><p class="sub">' + esc(VIDEO_HELP) + '</p><div class="field"><label for="v-url">Video bağlantısı ya da gömme kodu</label>' +
+        '<input id="v-url" type="text" autocomplete="off" placeholder="https://www.youtube.com/watch?v=…" value="' + esc(initial || "") + '"><span class="err" data-verr hidden></span></div>' +
+        '<div class="prose video-preview" data-vprev><span class="muted">Önizleme burada görünür.</span></div>' +
+        '<fieldset class="field"><legend class="lbl">Yerleşim</legend><label class="check"><input type="radio" name="v-lay" value="full"' + (half ? "" : " checked") + '> Tam genişlik</label>' +
+        '<label class="check"><input type="radio" name="v-lay" value="half"' + (half ? " checked" : "") + '> Yarım genişlik (görsel ya da başka bir videoyla yan yana)</label></fieldset>' +
+        '<div class="form-actions"><button class="btn btn-primary" type="button" data-ok disabled>Videoya dönüştür</button><button class="btn btn-ghost" type="button" data-close>Vazgeç</button></div>', function (d) {
+        var inp = $("#v-url", d), prev = $("[data-vprev]", d), err = $("[data-verr]", d), ok = $("[data-ok]", d), cur = null;
+        var check = function () {
+          var raw = inp.value.trim(), v = parseVideo(/<iframe/i.test(raw) ? srcOfEmbed(raw) : raw);
+          cur = v; ok.disabled = !v;
+          err.hidden = !raw || !!v;
+          err.textContent = raw && !v ? "Bu bağlantı tanınmadı ya da desteklenmeyen bir sağlayıcıya ait. " + VIDEO_HELP : "";
+          prev.innerHTML = v ? videoHtml(v, false) : '<span class="muted">Önizleme burada görünür.</span>';
+        };
+        inp.addEventListener("input", check);
+        ok.addEventListener("click", function () { done = true; d.close(); resolve({ video: cur, half: $('[name="v-lay"]:checked', d).value === "half" }); });
+        d.addEventListener("close", function () { if (!done) resolve(null); }, { once: true });
+        check();
+        setTimeout(function () { inp.focus(); inp.select(); }, 30);
+      });
+    });
+  }
+
+  // Önizleme: düzenleyicideki metin sitedeki biçimiyle (videolar oynatılabilir) gösterilir.
+  function previewDialog(title, html) {
+    dialog('<div class="preview-head"><span class="badge b-gold">Önizleme</span><button class="btn btn-ghost btn-sm" type="button" data-close>Kapat</button></div>' +
+      '<h2 class="preview-title">' + esc(title || "") + '</h2><div class="prose preview-body">' + String(html || "").replace(/\{ROOT\}/g, "/").replace(/ contenteditable="false"/g, "") + "</div>",
+      function (d) { d.classList.add("wide"); d.addEventListener("close", function () { d.classList.remove("wide"); d.innerHTML = ""; }, { once: true }); });
+  }
+
   function setupEditor(ed) {
-    var area = $(".editor-area", ed);
+    var area = $(".editor-area", ed), saved = null;
+    var bar = document.createElement("div");
+    bar.className = "editor-note"; bar.hidden = true; ed.insertBefore(bar, area);
+    var tools = document.createElement("div");
+    tools.className = "media-tools"; tools.hidden = true; ed.appendChild(tools);
+    var picked = null;
+
+    var keepRange = function () {
+      var s = window.getSelection();
+      if (s.rangeCount && area.contains(s.getRangeAt(0).commonAncestorContainer)) saved = s.getRangeAt(0).cloneRange();
+    };
+    var restoreRange = function () {
+      area.focus();
+      var s = window.getSelection();
+      s.removeAllRanges();
+      if (saved && area.contains(saved.commonAncestorContainer)) s.addRange(saved);
+      else { var r = document.createRange(); r.selectNodeContents(area); r.collapse(false); s.addRange(r); }
+    };
+    // Video ve görseller paragraf içine değil, kendi blokları olarak eklenir; ardından yazmaya devam edilebilecek boş satır bırakılır.
+    var insertBlock = function (html) {
+      restoreRange();
+      document.execCommand("insertHTML", false, html + "<p><br></p>");
+      markMedia(); keepRange();
+    };
+    var markMedia = function () { $$("figure.media-video", area).forEach(function (f) { f.setAttribute("contenteditable", "false"); }); };
+    var note = function (html, actions) {
+      bar.innerHTML = html + '<span class="grow"></span>' + actions.map(function (a, i) { return '<button type="button" class="btn btn-sm ' + (i ? "btn-ghost" : "btn-primary") + '" data-i="' + i + '">' + esc(a[0]) + "</button>"; }).join("");
+      bar.hidden = false;
+      $$("button", bar).forEach(function (b) { b.addEventListener("click", function () { bar.hidden = true; actions[+b.dataset.i][1](); }); });
+    };
+    var addVideo = function (initial) {
+      keepRange();
+      videoDialog(initial).then(function (r) { if (r) { insertBlock(videoHtml(r.video, r.half)); toast("Video eklendi. Kaydettiğinizde sitede yayınlanır."); } });
+    };
+    // Düz metin olarak yapıştırılmış gömme kodlarını (ör. YouTube "Yerleştir" kodu) bulup dönüştürmeyi önerir.
+    var offerCodeFix = function () {
+      var codes = [];
+      var walker = document.createTreeWalker(area, NodeFilter.SHOW_TEXT);
+      while (walker.nextNode()) if (/<iframe\b[\s\S]*?<\/iframe>/i.test(walker.currentNode.nodeValue)) codes.push(walker.currentNode);
+      if (!codes.length) return;
+      note("<strong>Metinde video kodu var.</strong> Oynatıcıya dönüştürülsün mü?", [["Videoya dönüştür", function () {
+        var bad = 0;
+        codes.forEach(function (node) {
+          var parts = node.nodeValue.split(/(<iframe\b[\s\S]*?<\/iframe>)/i), frag = document.createDocumentFragment();
+          parts.forEach(function (p) {
+            if (!/^<iframe/i.test(p)) { if (p.trim()) frag.appendChild(document.createTextNode(p)); return; }
+            var v = parseVideo(srcOfEmbed(p));
+            if (!v) { bad++; return; }
+            var t = document.createElement("div"); t.innerHTML = videoHtml(v, false); frag.appendChild(t.firstChild);
+          });
+          var block = node.parentNode;
+          node.parentNode.replaceChild(frag, node);
+          // video bloğu paragrafın içinde kalmasın
+          if (block !== area && block.tagName === "P") {
+            $$("figure.media-video", block).forEach(function (f) { block.parentNode.insertBefore(f, block.nextSibling); });
+            if (!block.textContent.trim() && !$("img", block)) block.remove();
+          }
+        });
+        markMedia();
+        toast(bad ? bad + " kod desteklenmeyen bir sağlayıcıya ait olduğu için kaldırıldı." : "Video kodu oynatıcıya dönüştürüldü.", !!bad);
+      }], ["Şimdilik kalsın", function () {}]]);
+    };
+
     area.addEventListener("paste", function (e) {
       // Word vb. kaynaklardan gelen biçim kalabalığını önlemek için düz metin yapıştırılır.
       e.preventDefault();
       var t = (e.clipboardData || window.clipboardData).getData("text/plain");
+      var one = t.trim();
+      // Gömme kodu: doğrudan oynatıcıya çevrilir
+      if (/^<iframe\b[\s\S]*<\/iframe>$/i.test(one)) {
+        var v = parseVideo(srcOfEmbed(one));
+        if (v) { keepRange(); insertBlock(videoHtml(v, false)); toast("Video kodu oynatıcıya dönüştürüldü."); }
+        else toast("Bu gömme kodu desteklenmeyen bir sağlayıcıya ait. " + VIDEO_HELP, true);
+        return;
+      }
+      // Tek başına video bağlantısı: bağlantı olarak eklenir, "Videoya dönüştür" önerilir
+      var vid = /^\S+$/.test(one) && parseVideo(one);
+      if (vid) {
+        document.execCommand("insertHTML", false, '<a href="' + esc(one) + '" data-pending-video>' + esc(one) + "</a>&nbsp;");
+        note("<strong>" + (vid.provider === "youtube" ? (vid.short ? "YouTube Shorts" : "YouTube") : "Vimeo") + " bağlantısı algılandı.</strong>", [["Videoya dönüştür", function () {
+          var a = $("a[data-pending-video]", area);
+          if (!a) return;
+          var host = a.closest("p, li, h3, blockquote") || a;
+          var t2 = document.createElement("div"); t2.innerHTML = videoHtml(vid, false);
+          var fig = t2.firstChild;
+          if (host !== a && host.parentNode === area) {
+            a.remove();
+            if (host.textContent.replace(/ /g, " ").trim()) host.parentNode.insertBefore(fig, host.nextSibling); else host.parentNode.replaceChild(fig, host);
+          } else a.parentNode.replaceChild(fig, a);
+          markMedia();
+        }], ["Bağlantı olarak bırak", function () { var a = $("a[data-pending-video]", area); if (a) a.removeAttribute("data-pending-video"); }]]);
+        return;
+      }
       var html = t.split(/\n{2,}/).map(function (p) { return "<p>" + esc(p).replace(/\n/g, "<br>") + "</p>"; }).join("");
       document.execCommand("insertHTML", false, html);
+      if (/<iframe\b/i.test(t)) offerCodeFix();
     });
+
+    // Görsel ya da videoya tıklanınca: tam / yarım genişlik, (video için) değiştir, kaldır
+    area.addEventListener("click", function (e) {
+      var m = e.target.closest ? e.target.closest("figure.media-video, img") : null;
+      if (!m || !area.contains(m)) { tools.hidden = true; picked = null; return; }
+      picked = m;
+      $$(".is-picked", area).forEach(function (x) { x.classList.remove("is-picked"); });
+      m.classList.add("is-picked");
+      var half = m.classList.contains("half"), isVid = m.tagName === "FIGURE";
+      tools.innerHTML = '<span class="sub">' + (isVid ? "Video" : "Görsel") + '</span><button type="button" data-t="full"' + (half ? "" : ' aria-pressed="true"') + '>Tam genişlik</button>' +
+        '<button type="button" data-t="half"' + (half ? ' aria-pressed="true"' : "") + ">Yarım (yan yana)</button>" + (isVid ? '<button type="button" data-t="edit">Değiştir</button>' : "") +
+        '<button type="button" data-t="del" class="danger">Kaldır</button>';
+      var r = m.getBoundingClientRect(), er = ed.getBoundingClientRect();
+      tools.style.top = Math.max(0, r.top - er.top - 44) + "px";
+      tools.style.left = Math.max(0, Math.min(r.left - er.left, er.width - 320)) + "px";
+      tools.hidden = false;
+    });
+    tools.addEventListener("mousedown", function (e) { e.preventDefault(); });
+    tools.addEventListener("click", function (e) {
+      var b = e.target.closest("button"); if (!b || !picked) return;
+      var t = b.dataset.t, m = picked;
+      tools.hidden = true; m.classList.remove("is-picked"); picked = null;
+      if (t === "full") m.classList.remove("half");
+      else if (t === "half") m.classList.add("half");
+      else if (t === "del") { confirmBox((m.tagName === "FIGURE" ? "Video" : "Görsel") + " metinden kaldırılacak.", "Kaldır", true).then(function (y) { if (y) m.remove(); }); }
+      else if (t === "edit") {
+        var cur = $("iframe", m).getAttribute("src");
+        videoDialog(cur, m.classList.contains("half")).then(function (r) {
+          if (!r) return;
+          var tmp = document.createElement("div"); tmp.innerHTML = videoHtml(r.video, r.half);
+          m.parentNode.replaceChild(tmp.firstChild, m);
+        });
+      }
+    });
+    document.addEventListener("click", function (e) { if (!ed.contains(e.target)) { tools.hidden = true; if (picked) picked.classList.remove("is-picked"); picked = null; } });
+
     $$("[data-cmd]", ed).forEach(function (b) {
-      b.addEventListener("mousedown", function (e) { e.preventDefault(); });
+      b.addEventListener("mousedown", function (e) { e.preventDefault(); keepRange(); });
       b.addEventListener("click", function () {
         var c = b.getAttribute("data-cmd");
+        if (c === "video") return addVideo("");
         area.focus();
         if (c === "h3") document.execCommand("formatBlock", false, "h3");
         else if (c === "link") {
           var u = prompt("Bağlantı adresi (https://…)");
-          if (u && /^https?:\/\//i.test(u)) document.execCommand("createLink", false, u);
+          if (u && /^https?:\/\//i.test(u)) {
+            if (parseVideo(u) && confirm("Bu bir video bağlantısı. Metne oynatıcı olarak eklensin mi? (İptal: bağlantı olarak eklenir)")) return addVideo(u);
+            document.execCommand("createLink", false, u);
+          }
         } else if (c === "image") {
           var inp = document.createElement("input"); inp.type = "file"; inp.accept = "image/jpeg,image/png,image/webp";
           inp.onchange = function () {
             if (!inp.files[0]) return;
-            uploadImage(inp.files[0]).then(function (p) { area.focus(); document.execCommand("insertHTML", false, '<p><img src="/' + esc(p) + '" alt=""></p>'); }).catch(fail);
+            uploadImage(inp.files[0]).then(function (p) { insertBlock('<p><img src="/' + esc(p) + '" alt=""></p>'); }).catch(fail);
           };
           inp.click();
         } else document.execCommand(c, false, null);
       });
     });
+    area.addEventListener("keyup", keepRange);
+    area.addEventListener("mouseup", keepRange);
+    markMedia();
+    offerCodeFix();
+  }
+
+  // Form değerlerinden yalnızca değişenleri döndürür (sunucu yalnızca bunları işler; diğer alanlar korunur).
+  function changedValues(base, cur) {
+    var out = {}, n = 0;
+    Object.keys(cur).forEach(function (k) { if (String(cur[k] == null ? "" : cur[k]) !== String(base[k] == null ? "" : base[k])) { out[k] = cur[k]; n++; } });
+    return n ? out : null;
+  }
+  // Kaydettikten sonra site üretimi bitince haber verir ve sayfaya bağlantı gösterir.
+  function watchPublish(pageUrl, startedAt) {
+    var tries = 0;
+    (function poll() {
+      rawApi("GET", "/site/build").then(function (b) {
+        var done = !b.running && !b.queued && b.lastEnd && Date.parse(b.lastEnd) >= startedAt;
+        if (done) {
+          if (b.ok === false) return toast("Kaydedildi ancak site üretilemedi. Lütfen yöneticiye bildirin.", true);
+          var t = document.createElement("div");
+          t.className = "toast"; t.innerHTML = "Sitede yayında. " + (pageUrl ? '<a href="' + esc(pageUrl) + '">Sayfayı görüntüle →</a>' : "");
+          $(".toast-zone").appendChild(t); setTimeout(function () { t.remove(); }, 8000);
+        } else if (++tries < 40) setTimeout(poll, 1500);
+      }).catch(function () {});
+    })();
+  }
+  // Düzenleme ekranlarının ortak kaydetme akışı: değişiklik yoksa istek gönderilmez, sürüm çakışması denetlenir.
+  function editFlow(opts) {
+    var form = opts.form, f = opts.el, base = form.values(), version = opts.version;
+    var dirty = function () { return !!changedValues(base, form.values()); };
+    f.addEventListener("submit", function (e) {
+      e.preventDefault();
+      var cur = form.values(), changes = changedValues(base, cur);
+      if (!changes) return toast("Değişiklik yok.");
+      var b = $("button[type=submit]", f); busy(b, true);
+      var started = Date.now();
+      api("PUT", opts.url, { data: changes, version: version }).then(function (r) {
+        busy(b, false); base = cur; version = r.version || version;
+        toast("Kaydedildi. Site birkaç saniye içinde güncellenecek.");
+        watchPublish(opts.page, started);
+      }).catch(function (err) { busy(b, false); form.showErrors(err.fields); fail(err); });
+    });
+    previewButton(form, f, opts.label);
+    var back = $("[data-back]", f);
+    back && back.addEventListener("click", function (e) {
+      if (dirty() && !confirm("Kaydedilmemiş değişiklikler var. Kaydetmeden sayfaya dönülsün mü?")) e.preventDefault();
+    });
+  }
+  function previewButton(form, f, label) {
+    var pv = $("[data-preview]", f);
+    pv && pv.addEventListener("click", function () { var v = form.values(); previewDialog(v.title || v.name || label, v.body || v.ozet || ""); });
   }
 
   function setupImage(box) {
@@ -461,9 +703,10 @@
       (kind === "work" ? " Onaylandıktan sonra bu eseri kendiniz de güncelleyebilirsiniz (Akademisyen grubundaysanız)." : "") + '</p>' +
       '<form class="form panel" novalidate><div class="form" data-fields><p class="muted">Form yükleniyor…</p></div>' +
       '<div class="field"><label for="s-note">Yöneticiye not (isteğe bağlı)</label><textarea id="s-note" name="note" maxlength="2000" placeholder="Kaynak, açıklama vb."></textarea></div>' +
-      '<div class="form-actions"><button class="btn btn-primary" type="submit">Gönder</button></div></form>';
+      '<div class="form-actions"><button class="btn btn-primary" type="submit">Gönder</button><button class="btn btn-ghost" type="button" data-preview>Önizle</button></div></form>';
     buildForm($("[data-fields]", main), kind, kind === "topic" ? { forum: "haber" } : {}, {}).then(function (form) {
       var f = $("form", main);
+      previewButton(form, f, "");
       f.addEventListener("submit", function (e) {
         e.preventDefault();
         var b = $("button[type=submit]", f); busy(b, true);
@@ -481,18 +724,12 @@
     main.innerHTML = '<p><a class="link-arrow" href="#/eserlerim">← Eserlerim ve profilim</a></p><h1 class="page-title" data-h>Düzenle</h1><div data-body><p class="muted">Yükleniyor…</p></div>';
     api("GET", "/my/items/" + kind + "/" + id).then(function (j) {
       $("[data-h]", main).textContent = j.label;
+      var page = "/" + (kind === "work" ? "eser" : "akademisyen") + "/" + id + ".html";
       $("[data-body]", main).innerHTML = '<p class="page-lead">Değişiklikleriniz kaydettiğinizde birkaç saniye içinde sitede yayınlanır ve işlem kayıtlarına düşer.</p>' +
         '<form class="form panel" novalidate><div class="form" data-fields></div><div class="form-actions"><button class="btn btn-primary" type="submit">Kaydet ve yayınla</button>' +
-        '<a class="btn btn-ghost" target="_blank" href="/' + (kind === "work" ? "eser" : "akademisyen") + "/" + id + '.html">Sayfayı aç</a></div></form>';
+        '<button class="btn btn-ghost" type="button" data-preview>Önizle</button><a class="btn btn-ghost" data-back href="' + page + '">Sayfaya dön</a></div></form>';
       return buildForm($("[data-fields]", main), kind, j.values, {}).then(function (form) {
-        var f = $("form", main);
-        f.addEventListener("submit", function (e) {
-          e.preventDefault();
-          var b = $("button[type=submit]", f); busy(b, true);
-          api("PUT", "/my/items/" + kind + "/" + id, { data: form.values() })
-            .then(function () { busy(b, false); toast("Kaydedildi. Site birkaç saniye içinde güncellenecek."); })
-            .catch(function (err) { busy(b, false); form.showErrors(err.fields); fail(err); });
-        });
+        editFlow({ form: form, el: $("form", main), url: "/my/items/" + kind + "/" + id, version: j.version, page: page, label: j.label });
       });
     }).catch(function (err) {
       $("[data-body]", main).innerHTML = '<div class="notice warn">' + esc(err.message) + '</div><p><a class="btn btn-ghost" href="#/profil">Akademik profilim</a></p>';
@@ -909,21 +1146,27 @@
     if (!CONTENT[kind]) return viewNotFound();
     var isNew = id === "yeni";
     setTitle(isNew ? "Yeni kayıt" : "Düzenle");
+    var page = isNew ? "" : "/" + CONTENT[kind][1] + "/" + id + ".html";
     main.innerHTML = '<p><a class="link-arrow" href="#/yonetim/icerik/' + kind + '">← ' + CONTENT[kind][0] + '</a></p><h1 class="page-title" data-h>' + (isNew ? "Yeni kayıt" : "Düzenle") + "</h1>" +
       '<form class="form panel" novalidate><div class="form" data-fields><p class="muted">Yükleniyor…</p></div><div class="form-actions"><button class="btn btn-primary" type="submit">Kaydet ve yayınla</button>' +
-      (isNew ? "" : '<a class="btn btn-ghost" target="_blank" href="/' + CONTENT[kind][1] + "/" + id + '.html">Sayfayı aç</a>' + (can("icerik.sil") ? '<button class="btn btn-danger" type="button" data-del>Sil</button>' : "")) + "</div></form>";
+      '<button class="btn btn-ghost" type="button" data-preview>Önizle</button>' +
+      (isNew ? "" : '<a class="btn btn-ghost" data-back href="' + page + '">Sayfaya dön</a>' + (can("icerik.sil") ? '<button class="btn btn-danger" type="button" data-del>Sil</button>' : "")) + "</div></form>";
     var load = isNew ? Promise.resolve({ values: kind === "topic" ? { forum: "haber" } : kind === "member" ? { group: "Öğretim Elemanları" } : {} }) : api("GET", "/items/" + kind + "/" + id);
     load.then(function (j) {
       if (!isNew) $("[data-h]", main).textContent = j.label;
       return buildForm($("[data-fields]", main), kind, j.values, { admin: true }).then(function (form) {
         var f = $("form", main);
-        f.addEventListener("submit", function (e) {
-          e.preventDefault();
-          var b = $("button[type=submit]", f); busy(b, true);
-          (isNew ? api("POST", "/admin/items/" + kind, { data: form.values() }) : api("PUT", "/admin/items/" + kind + "/" + id, { data: form.values() }))
-            .then(function (r) { busy(b, false); toast("Kaydedildi. Site birkaç saniye içinde güncellenecek."); if (isNew) go("#/yonetim/icerik/" + kind + "/" + r.id); })
-            .catch(function (err) { busy(b, false); form.showErrors(err.fields); fail(err); });
-        });
+        if (!isNew) editFlow({ form: form, el: f, url: "/admin/items/" + kind + "/" + id, version: j.version, page: page, label: j.label });
+        else {
+          f.addEventListener("submit", function (e) {
+            e.preventDefault();
+            var b = $("button[type=submit]", f); busy(b, true);
+            api("POST", "/admin/items/" + kind, { data: form.values() })
+              .then(function (r) { busy(b, false); toast("Kaydedildi. Site birkaç saniye içinde güncellenecek."); go("#/yonetim/icerik/" + kind + "/" + r.id); })
+              .catch(function (err) { busy(b, false); form.showErrors(err.fields); fail(err); });
+          });
+          previewButton(form, f, "");
+        }
         var del = $("[data-del]", main);
         del && del.addEventListener("click", function () {
           confirmBox("Bu kayıt siteden kaldırılacak.", "Sil", true).then(function (y) {
@@ -978,6 +1221,7 @@
   var REASON_LABEL = { hiz: "Dakikalık hız sınırı", "gunluk-istek": "Günlük soru kotası", "gunluk-token": "Günlük token kotası", "aylik-butce": "Aylık bütçe", "toplam-butce": "Toplam bütçe",
     "esz-kullanici": "Kullanıcı eşzamanlılık", "esz-genel": "Genel eşzamanlılık" };
 
+  var TASK_LABEL = { kisa: "Basit soru", soru: "Gerekçeli soru", terimler: "Arapça terim", fetva: "Hanefî · fetva üslubu", akademik: "Hanefî · akademik üslup" };
   function viewAiUsage(days) {
     days = [7, 30, 90].indexOf(+days) >= 0 ? +days : 30;
     setTitle("Yapay zekâ kullanımı");
@@ -1015,7 +1259,7 @@
         '<div class="p-card"><h3>Bütçe</h3><dl class="dl"><dt>' + esc(b.month) + "</dt><dd>" + bar(b.monthSpent, b.monthlyBudget) + "</dd><dt>Toplam</dt><dd>" + bar(b.totalSpent, b.totalBudget) + "</dd></dl></div>" +
         '<div class="p-card"><h3>Sınırlar</h3><dl class="dl"><dt>Kişi/gün</dt><dd>' + nf(c.limits.dailyRequestsPerUser) + " soru · " + nf(c.limits.dailyTokensPerUser) + " token</dd><dt>Hız</dt><dd>" + nf(c.limits.ratePerMinute) +
         " soru/dk</dd><dt>Girdi</dt><dd>" + nf(c.limits.maxInputChars) + " karakter</dd><dt>Eşzamanlı</dt><dd>" + nf(c.limits.maxConcurrent) + " genel · " + nf(c.limits.maxConcurrentPerUser) + " kişi başı</dd></dl></div>" +
-        '<div class="p-card"><h3>Görev profilleri</h3><dl class="dl">' + Object.keys(c.tasks).map(function (k) { var x = c.tasks[k]; return "<dt>" + ({ kisa: "Basit", soru: "Gerekçeli", terimler: "Arapça terim" })[k] + "</dt><dd>effort " + esc(x.effort) + " · en çok " + nf(x.maxOutput) + " çıktı token</dd>"; }).join("") +
+        '<div class="p-card"><h3>Görev profilleri</h3><dl class="dl">' + Object.keys(c.tasks).map(function (k) { var x = c.tasks[k]; return "<dt>" + (TASK_LABEL[k] || k) + "</dt><dd>effort " + esc(x.effort) + " · en çok " + nf(x.maxOutput) + " çıktı token</dd>"; }).join("") +
         "<dt>Fiyat</dt><dd>1M token: girdi " + usd(c.price.input) + " · önbellek " + usd(c.price.cachedInput) + " · çıktı " + usd(c.price.output) + "</dd></dl></div></div>" +
         tabs + '<div class="p-grid">' + stat(nf(t.requests), "İstek", nf(t.ok) + " başarılı · " + nf(t.errors) + " hata · " + nf(t.blocked) + " engellenen") +
         stat(nf(t.input_tokens), "Girdi token", nf(t.cached_tokens) + " önbellekten") + stat(nf(t.output_tokens), "Çıktı token", nf(t.reasoning_tokens) + " akıl yürütme") +
@@ -1028,7 +1272,7 @@
           return "<tr><td><strong>" + esc(u.name || "(silinmiş üye)") + '</strong><div class="sub">' + esc(u.email || "") + "</div></td><td>" + nf(u.requests) + (u.blocked ? ' <span class="sub">(' + nf(u.blocked) + " engellendi)</span>" : "") + "</td><td>" + tokCell(u) + "</td><td>" + usd(u.cost_usd) + "</td></tr>";
         })) +
         '<h3 style="margin-top:22px">Görev türüne göre</h3>' + table(["Görev", "Effort", "İstek", "Token (girdi / çıktı)", "Maliyet"], r.byTask.map(function (x) {
-          return "<tr><td>" + (x.task === "kisa" ? "Basit soru" : "Gerekçeli soru") + "</td><td>" + esc(x.effort) + "</td><td>" + nf(x.requests) + "</td><td>" + tokCell(x) + "</td><td>" + usd(x.cost_usd) + "</td></tr>";
+          return "<tr><td>" + (TASK_LABEL[x.task] || x.task) + "</td><td>" + esc(x.effort) + "</td><td>" + nf(x.requests) + "</td><td>" + tokCell(x) + "</td><td>" + usd(x.cost_usd) + "</td></tr>";
         })) +
         '<h3 style="margin-top:22px">Modele göre</h3>' + table(["Model", "İstek", "Token (girdi / çıktı)", "Maliyet"], r.byModel.map(function (x) {
           return "<tr><td>" + esc(x.model) + "</td><td>" + nf(x.requests) + "</td><td>" + tokCell(x) + "</td><td>" + usd(x.cost_usd) + "</td></tr>";
@@ -1038,6 +1282,13 @@
         })) +
         '<p class="sub" style="margin-top:16px">Maliyetler, OpenAI\'nin döndürdüğü token sayıları ile .env dosyasındaki birim fiyatlardan hesaplanan tahmindir; kesin tutar için OpenAI faturanızı esas alın.</p>';
     }).catch(fail);
+  }
+
+  // Doğrudan bağlantıyla yetkisiz bir yönetim ekranına gelindiğinde (sunucu da aynı isteği 403 ile reddeder)
+  function viewNoAccess() {
+    setTitle("Yetkiniz yok");
+    main.innerHTML = '<h1 class="page-title">Bu ekran için yetkiniz yok</h1><p class="page-lead">Bu içeriği düzenleme yetkisi hesabınıza tanımlı değil. Yetki gerektiğini düşünüyorsanız site yöneticisine başvurun.</p>' +
+      '<p><a class="link-arrow" href="#/">Panel özetine dön</a></p>';
   }
 
   function viewNotFound() {
@@ -1074,7 +1325,7 @@
     if (path[0] === "oneri" && path[1]) return viewSuggest(path[1], /^\d+$/.test(path[2] || "") ? +path[2] : null);
 
     if (path[0] === "yonetim") {
-      if (!isStaff()) return viewNotFound();
+      if (!isStaff()) return viewNoAccess();
       if (!path[1]) return viewAdminHome();
       if (path[1] === "onaylar") return viewQueue(path[2]);
       if (path[1] === "uyeler") return viewUsers(path[2]);
@@ -1085,6 +1336,7 @@
       if (path[1] === "yorumlar") return viewComments(path[2]);
       if (path[1] === "site") return viewSite();
       if (path[1] === "yapay-zeka") return viewAiUsage(path[2]);
+      if (path[1] === "icerik" && path[2] && CONTENT[path[2]] && !can("icerik." + path[2])) return viewNoAccess();
       if (path[1] === "icerik" && path[2]) return path[3] ? viewContentEdit(path[2], path[3] === "yeni" ? "yeni" : +path[3]) : viewContentList(path[2]);
     }
     viewNotFound();

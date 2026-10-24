@@ -94,7 +94,9 @@ function requireActive(req, res, next) {
 
 // Herhangi bir yönetim yetkisi olanlar (yönetim paneline giriş)
 function requireStaff(req, res, next) {
-  if (!req.user || req.user.status !== "active" || !P.isStaff(req.user)) return fail(res, 403, "Bu alan yalnızca yetkili kişilere açıktır.");
+  // oturum yoksa 401 (giriş gerekir), oturum var ama yetki yoksa 403: panel iki durumu ayrı mesajla gösterir
+  if (!req.user) return fail(res, 401, "Bu işlem için giriş yapmalısınız.");
+  if (req.user.status !== "active" || !P.isStaff(req.user)) return fail(res, 403, "Bu alan yalnızca yetkili kişilere açıktır.");
   if (req.user.must_change) return fail(res, 403, "Devam etmeden önce şifrenizi değiştirmelisiniz.");
   next();
 }

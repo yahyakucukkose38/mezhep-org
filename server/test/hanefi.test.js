@@ -133,7 +133,7 @@ test("durum: iki asistan da listelenir", async () => {
   const st = await uye.call("GET", "/ai/status");
   assert.equal(st.body.enabled, true);
   assert.deepEqual(st.body.assistants.map((a) => a.key), ["hanefi"]);
-  assert.match(st.body.assistants[0].welcome, /Hanefî/);
+  assert.match(st.body.assistants[0].welcome, /hangi üslupla/);
   assert.ok(st.body.assistants[0].suggestions.length >= 1);
 });
 
@@ -149,7 +149,15 @@ test("Hanefî sorusu: önce düşünmesiz terim çağrısı, sonra kaynaklı yan
   assert.equal(terms.max_output_tokens, 200);
   assert.equal(terms.text.format.type, "json_schema");
   assert.equal(terms.store, false);
-  assert.match(answer.instructions, /Hanefî Fıkhı Asistanı/);
+  // yönetimin talimat dosyası (src/ai/talimat/hanefi.md) + site uygulama notları; arayüze ait son satır alınmaz
+  assert.match(answer.instructions, /Hanefî Fıkhı Chatbotu — Sistem Talimatları/);
+  assert.match(answer.instructions, /Bu sitedeki uygulama notları/);
+  assert.ok(!/şimdi uygula/.test(answer.instructions));
+  // üslup seçilmeden: fetva üslubu varsayılır, basit soru → "fetva" profili (effort none, 700 token)
+  assert.equal(r.body.task, "fetva");
+  assert.deepEqual(answer.reasoning, { effort: "none" });
+  assert.equal(answer.max_output_tokens, 700);
+  assert.match(answer.input.at(-1).content, /ÜSLUP: belirtilmedi\nFetva üslubu:/);
   assert.match(answer.input.at(-1).content, /\[1\] el-Hidâye \(Merğînânî, ö\. 593\) — .*باب المسح.* — c\. 1, s\. 28[\s\S]*يوما وليلة/);
   assert.equal(r.body.sources[0].cite.startsWith("c. 1, s. 28"), true);
   assert.match(r.body.sources[0].title, /el-Hidâye — Merğînânî/);
@@ -196,4 +204,21 @@ test("varsayılan asistan Akaid'dir (indeksi yoksa 503)", async () => {
   assert.equal(r.status, 503);
   assert.equal(r.body.reason, "indeks");
   assert.equal(typeof ai.chat, "function");
+});
+
+test("üslup seçimi: akademik üslup ayrıntılı profil (effort low, daha uzun yanıt, daha çok kaynak); geçersiz üslup 400", async () => {
+  calls.length = 0;
+  const r = await uye.call("POST", "/ai/chat", { assistant: "hanefi", style: "akademik", message: "Mest üzerine mesh süresi ne kadardır?" });
+  assert.equal(r.status, 200, r.text);
+  assert.equal(r.body.task, "akademik");
+  const answer = calls.at(-1);
+  assert.deepEqual(answer.reasoning, { effort: "low" });
+  assert.equal(answer.max_output_tokens, 2000);
+  assert.match(answer.input.at(-1).content, /ÜSLUP: Akademik üslup\nAkademik üslup:/);
+  const f = await uye.call("POST", "/ai/chat", { assistant: "hanefi", style: "fetva", message: "Mest üzerine mesh süresi ne kadardır?" });
+  assert.equal(f.body.task, "fetva");
+  assert.match(calls.at(-1).input.at(-1).content, /ÜSLUP: Fetva üslubu/);
+  assert.equal((await uye.call("POST", "/ai/chat", { assistant: "hanefi", style: "serbest", message: "mesh nedir" })).status, 400);
+  // Akaid asistanı üslup alanından etkilenmez
+  assert.equal(require("../src/ai/service").classify("Hudûs nedir?", []), "kisa");
 });

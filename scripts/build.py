@@ -43,6 +43,7 @@ ST = {
     "footer_note": "Ahmet İshak DEMİR adına", "contact_person": "Prof. Dr. Ahmet İshak DEMİR",
     "contact_institution": "Recep Tayyip Erdoğan Üniversitesi İlahiyat Fakültesi", "contact_email": "",
     "facebook_url": "https://www.facebook.com/Mezhep.Org/", "youtube_url": "https://www.youtube.com/@mezheporg",
+    "x_url": "https://x.com/MezhepOrg",
     "banner_enabled": False, "banner_text": "", "banner_link": "", "banner_style": "bilgi",
     "home_eyebrow": "İslam Mezhepleri Tarihi Anabilim Dalı", "home_title": "Mezhepler tarihi çalışmalarının *ortak hafızası*",
     "home_lead": "Türkiye'deki İlahiyat ve İslami İlimler fakültelerinin İslam Mezhepleri Tarihi akademisyenlerini, tezlerini, kitaplarını ve makalelerini tek çatı altında, özetleriyle birlikte derliyoruz.",
@@ -51,7 +52,7 @@ ST = {
     "home_show_coord": True, "home_show_works": True, "home_show_members": True,
     "home_show_youtube": True, "home_show_videos": True, "videos_eyebrow": "Prof. Dr. Ahmet İshak Demir",
     "videos_title": "Konuşmalar ve videolar", "videos_more_url": "https://www.ahmetishak.com/galeri/videolar/",
-    "videos_channel_url": "https://www.youtube.com/@AhmetishakDemir",
+    "videos_channel_url": "https://www.youtube.com/@mezheporg",
 }
 if os.path.exists(os.path.join(DATA, "settings.json")):
     ST.update({k: v for k, v in load("settings").items() if v is not None})
@@ -128,6 +129,7 @@ I = {
     "file": '<path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/>',
     "grad": '<path d="M22 10 12 5 2 10l10 5 10-5Z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/>',
     "pin": '<path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/>',
+    "edit": '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
     "copy": '<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
     "mail": '<rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 5L2 7"/>',
     "yt": '<rect x="2" y="5" width="20" height="14" rx="4"/><path d="m10 9 5 3-5 3z" fill="currentColor"/>',
@@ -215,13 +217,14 @@ def layout(path, title, body, desc="", active="", data=None):
 <main id="main">
 {body}
 </main>
+{social_rail()}
 <footer class="site-footer">
   <div class="container">
     <div class="footer-grid">
       <div>
         <a class="brand" href="{r}index.html"><img class="brand-logo" src="{r}assets/img/logo.jpg" alt="Mezhep.Org logosu" width="59" height="40"><span>{E(SITE)}<small>{E(ST["site_tagline"])}</small></span></a>
         <p>{E(ST["footer_about"])}</p>
-        <div class="socials">{('<a class="icon-btn" href="%s" target="_blank" rel="noopener" aria-label="YouTube kanalımız">%s</a>' % (E(ST["youtube_url"]), ic("yt"))) if ST["youtube_url"] else ""}{('<a class="icon-btn" href="%s" target="_blank" rel="noopener" aria-label="Facebook">%s</a>' % (E(ST["facebook_url"]), ic("fb"))) if ST["facebook_url"] else ""}</div>
+        <div class="socials">{social_links()}</div>
       </div>
       <div><h4>Keşfet</h4><ul><li><a href="{r}akademisyenler.html">Akademisyenler</a></li><li><a href="{r}eserler.html">Eserler</a></li><li><a href="{r}eserler.html#tur=Doktora">Doktora Tezleri</a></li><li><a href="{r}eserler.html#tur=Yüksek Lisans">Yüksek Lisans Tezleri</a></li></ul></div>
       <div><h4>Güncel</h4><ul><li><a href="{r}haberler.html">Haberler</a></li><li><a href="{r}etkinlikler.html">Etkinlikler</a></li><li><a href="{r}galeri.html">Fotoğraf Galerisi</a></li><li><a href="{r}kaynaklar.html">Kaynaklar</a></li></ul></div>
@@ -307,6 +310,30 @@ def video_module():
             f'<div class="vid-foot">{sub}</div></div></section>')
 
 
+# Sosyal medya: markaların özgün logoları (Facebook mavisi, YouTube kırmızısı, X siyah/beyaz).
+BRAND = {
+    "facebook": ("Facebook", '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#0866FF" d="M9.101 23.691v-7.98H6.627v-3.667h2.474v-1.58c0-4.085 1.848-5.978 5.858-5.978.401 0 .955.042 1.468.103a8.68 8.68 0 0 1 1.141.195v3.325a8.623 8.623 0 0 0-.653-.036 26.805 26.805 0 0 0-.733-.009c-.707 0-1.259.096-1.675.309a1.686 1.686 0 0 0-.679.622c-.258.42-.374.995-.374 1.752v1.297h3.919l-.386 2.103-.287 1.564h-3.246v8.245C19.396 23.238 24 18.179 24 12.044c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.628 3.874 10.35 9.101 11.647Z"/></svg>'),
+    "youtube": ("YouTube", '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#FF0000" d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814Z"/><path fill="#fff" d="M9.545 15.568V8.432L15.818 12z"/></svg>'),
+    "x": ("X", '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M18.901 1.153h3.68l-8.04 9.19L24 22.846h-7.406l-5.8-7.584-6.638 7.584H.474l8.6-9.83L0 1.154h7.594l5.243 6.932ZM17.61 20.644h2.039L6.486 3.24H4.298Z"/></svg>'),
+}
+
+
+def social_list():
+    return [(k, BRAND[k][0], ST[k + "_url"]) for k in ("facebook", "youtube", "x") if ST.get(k + "_url")]
+
+
+def social_links(cls="social-btn"):
+    """Alt bilgi ve yan şerit için özgün logolu sosyal medya bağlantıları (Ayarlar → Genel'den yönetilir)."""
+    return "".join(f'<a class="{cls} is-{k}" href="{E(url)}" target="_blank" rel="noopener" aria-label="{E(SITE)} {label}" title="{label}">{BRAND[k][1]}</a>'
+                   for k, label, url in social_list())
+
+
+def social_rail():
+    """Geniş ekranlarda sayfanın sol kenarında sabit sosyal medya şeridi."""
+    links = social_links("rail-btn")
+    return f'<nav class="social-rail" aria-label="Sosyal medya hesaplarımız">{links}</nav>' if links else ""
+
+
 def emph(t):
     """'*vurgu*' → <em>vurgu</em> (önce kaçışlanır)."""
     return re.sub(r"\*(.+?)\*", r"<em>\1</em>", E(t))
@@ -320,11 +347,12 @@ def dyn_button(href, label, icon="star", primary=False):
 
 
 def own_button(kind, oid):
-    """Düzenle düğmesi: varsayılan gizli; tarayıcı, kayıt sahibine (akademisyen) ya da yetkili yöneticiye gösterir."""
+    """Düzenle düğmesi (başlığın altında): varsayılan gizli; tarayıcı, kayıt sahibine (akademisyen) ya da
+    o içerik türünü düzenleme yetkisi olan yöneticiye gösterir. Sunucu kaydederken yetkiyi ayrıca denetler."""
     if not DYNAMIC:
         return ""
-    return ('<a class="btn btn-ghost btn-sm" href="/panel/#/duzenle/%s/%d" data-own="%s:%d" hidden>%s Düzenle</a>'
-            % (kind, oid, kind, oid, ic("copy")))
+    return ('<a class="btn btn-primary btn-sm" href="/panel/#/duzenle/%s/%d" data-own="%s:%d" hidden>%s Düzenle</a>'
+            % (kind, oid, kind, oid, ic("edit")))
 
 
 def claim_button(mid):
@@ -586,7 +614,7 @@ def build_members():
             ("Şehir", E(m["city"])), ("Web", '<a href="%s" target="_blank" rel="noopener">Kişisel sayfa</a>' % E(m["web"]) if m["web"] else ""),
             ("E-posta", '<a href="mailto:%s">%s</a>' % (E(m["email"]), E(m["email"])) if m["email"] else ""),
             ("Eklenme", tr_date(m["added"]))] if v)
-        body = page_hero(m["name"], "", [("index.html", "Ana Sayfa"), ("akademisyenler.html", "Akademisyenler"), ("", m["name"])], m["title"])
+        body = page_hero(m["name"], "", [("index.html", "Ana Sayfa"), ("akademisyenler.html", "Akademisyenler"), ("", m["name"])], m["title"], own_button("member", m["id"]))
         body += f'''<div class="container detail">
   <div>
     <div class="panel" style="display:flex;gap:22px;align-items:center;flex-wrap:wrap">{avatar(m, "lg")}<div><div class="badge b-brand">{E(m["filter"])}</div><h2 style="margin:10px 0 4px">{E(m["display"])}</h2><div style="color:var(--muted)">{ic("pin").replace('class=""', 'style="width:16px;height:16px;vertical-align:-3px"')} {E(m["university"])}{(" · " + E(m["city"])) if m["city"] else ""}</div></div></div>
@@ -595,7 +623,7 @@ def build_members():
     {news_html}
     {"" if (bio or ws or rel) else '<div class="panel empty">Bu akademisyen için henüz özgeçmiş veya eser bilgisi eklenmemiş. Katkıda bulunmak için <a href="{ROOT}hakkinda.html#iletisim">bize ulaşın</a>.</div>'}
   </div>
-  <aside><div class="panel"><h3>Bilgiler</h3><dl class="dl">{info}</dl></div>{claim_button(m["id"])}{own_button("member", m["id"])}<a class="btn btn-ghost" href="{{ROOT}}akademisyenler.html">{ic("left")} Tüm akademisyenler</a></aside>
+  <aside><div class="panel"><h3>Bilgiler</h3><dl class="dl">{info}</dl></div>{claim_button(m["id"])}<a class="btn btn-ghost" href="{{ROOT}}akademisyenler.html">{ic("left")} Tüm akademisyenler</a></aside>
 </div>'''
         layout(m["slug"], m["name"], body, "%s — %s" % (m["display"], m["university"]), "akademisyenler.html")
 
@@ -683,7 +711,7 @@ def build_works():
         similar = [x for x in works if x["kind"] == w["kind"] and x["id"] != w["id"]]
         random.Random(w["id"]).shuffle(similar)
         btn = '<a class="btn btn-primary" href="%s" target="_blank" rel="noopener">%s Tam metne git</a>' % (E(w["url"]), ic("ext")) if w["url"] else ""
-        body = page_hero(w["title"], E(w["author"]) + ((" · %d" % w["year"]) if w["year"] else ""), [("index.html", "Ana Sayfa"), ("eserler.html", "Eserler"), ("eserler.html#tur=" + w["kind"], w["kind"])], w["kind"])
+        body = page_hero(w["title"], E(w["author"]) + ((" · %d" % w["year"]) if w["year"] else ""), [("index.html", "Ana Sayfa"), ("eserler.html", "Eserler"), ("eserler.html#tur=" + w["kind"], w["kind"])], w["kind"], own_button("work", w["id"]))
         body += f'''<div class="container detail">
   <div>
     <div class="panel">{tabs}</div>
@@ -691,7 +719,7 @@ def build_works():
     {comments_block("work:%d" % w["id"])}
     <div class="panel"><h3>Benzer eserler</h3><div class="feed" style="margin-top:14px">{"".join(work_item(x) for x in similar[:4])}</div></div>
   </div>
-  <aside><div class="panel"><h3>Künye</h3><dl class="dl">{info}</dl></div>{btn}{own_button("work", w["id"])}<a class="btn btn-ghost" href="{{ROOT}}eserler.html">{ic("left")} Tüm eserler</a></aside>
+  <aside><div class="panel"><h3>Künye</h3><dl class="dl">{info}</dl></div>{btn}<a class="btn btn-ghost" href="{{ROOT}}eserler.html">{ic("left")} Tüm eserler</a></aside>
 </div>'''
         layout(w["slug"], w["title"], body, strip_tags(w["ozet"] or w["abstract"])[:160] or "%s — %s" % (w["title"], w["author"]), "eserler.html")
 
@@ -733,7 +761,7 @@ def build_news():
             if x: nav += f'<a class="card hover" href="{{ROOT}}{x["slug"]}"><div class="meta">{lbl}</div><h3 class="clamp-2" style="font-size:1rem">{E(x["title"])}</h3></a>'
         more = [x for x in lst if x["id"] != t["id"]][:5]
         info = "".join(f"<dt>{k}</dt><dd>{v}</dd>" for k, v in [("Kategori", E(t["tag"])), ("Tarih", tr_date(t.get("date"))), ("Yazan", E(t.get("author"))), ("Mesaj", len(t["posts"]) if len(t["posts"]) > 1 else "")] if v)
-        body = page_hero(t["title"], "", [("index.html", "Ana Sayfa"), (href, label), ("", t["tag"])], tr_date(t.get("date")))
+        body = page_hero(t["title"], "", [("index.html", "Ana Sayfa"), (href, label), ("", t["tag"])], tr_date(t.get("date")), own_button("topic", t["id"]))
         body += f'''<div class="container detail">
   <div><article class="panel">{posts}</article>{comments_block("topic:%d" % t["id"])}{('<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(240px,1fr));margin-top:18px">%s</div>' % nav) if nav else ""}</div>
   <aside><div class="panel"><h3>Ayrıntılar</h3><dl class="dl">{info}</dl></div><div class="panel"><h3>Diğer {label.lower()}</h3><div class="feed" style="margin-top:12px">{"".join(feed_topic(x) for x in more)}</div></div><a class="btn btn-ghost" href="{{ROOT}}{href}">{ic("left")} {label}</a></aside>
@@ -845,6 +873,7 @@ def build_about():
       <dl class="dl"><dt>Yönetici</dt><dd>{E(ST["contact_person"])}</dd><dt>Kurum</dt><dd>{E(ST["contact_institution"])}</dd>{('<dt>E-posta</dt><dd><a href="mailto:%s">%s</a></dd>' % (E(ST["contact_email"]), E(ST["contact_email"]))) if ST["contact_email"] else ""}</dl></div>
     {('<a class="btn btn-primary" href="%s" target="_blank" rel="noopener">%s YouTube kanalımız</a>' % (E(ST["youtube_url"]), ic("yt"))) if ST["youtube_url"] else ""}
     {('<a class="btn btn-ghost" href="%s" target="_blank" rel="noopener">%s Facebook sayfamız</a>' % (E(ST["facebook_url"]), ic("fb"))) if ST["facebook_url"] else ""}
+    {('<a class="btn btn-ghost brand-x" href="%s" target="_blank" rel="noopener">%s X (Twitter) hesabımız</a>' % (E(ST["x_url"]), BRAND["x"][1])) if ST["x_url"] else ""}
     <a class="btn btn-ghost" href="{{ROOT}}akademisyen/10.html">{ic("users")} Yönetici profili</a>
   </aside>
 </div>'''

@@ -52,14 +52,29 @@ api.get("/lookup/members", (req, res) => {
   ok(res, { items: rows });
 });
 
+// Site üretim durumu (yalnızca zaman ve sonuç; günlük metni yok): düzenleme ekranı "Sitede yayında" bildirimini buna göre verir.
+api.get("/site/build", (_req, res) => {
+  const s = rebuild.state;
+  ok(res, { running: s.running, queued: s.queued, lastEnd: s.lastEnd, ok: s.ok });
+});
+
 // Panel formlarını doldurmak için (sitede zaten herkese açık olan veri).
 api.get("/items/:kind/:id", (req, res) => {
   const { kind } = req.params, id = int(req.params.id);
   if (!C.KINDS.includes(kind) || id == null) return A.fail(res, 404, "Bulunamadı.");
   const item = C.getItem(kind, id);
   if (!item) return A.fail(res, 404, "Bulunamadı.");
-  ok(res, { id, values: C.formValues(kind, item), label: item.name || item.title });
+  ok(res, { id, values: C.formValues(kind, item), label: item.name || item.title, version: C.itemVersion(kind, id) });
 });
+
+// Düzenleme ekranı açıldıktan sonra kayıt başkası tarafından değiştirildiyse 409 (üzerine yazma koruması).
+// Sürüm gönderilmeyen eski istemciler için denetim atlanır.
+function staleEdit(req, res, kind, id) {
+  const sent = req.body?.version;
+  if (sent == null || sent === C.itemVersion(kind, id)) return false;
+  A.fail(res, 409, "Bu kayıt siz düzenlerken başka biri tarafından değiştirildi. Değişikliklerinizi kaybetmemek için metni kopyalayın, sayfayı yenileyip yeniden deneyin.");
+  return true;
+}
 
 // ================================================================ hesap
 const authLimit = A.rateLimit({ windowMs: 15 * 60e3, max: 12 });
@@ -230,18 +245,19 @@ api.get("/my/items/:kind/:id", A.requireActive, (req, res) => {
   const t = ownCheck(req, res);
   if (!t) return;
   const item = C.getItem(t.kind, t.id);
-  ok(res, { id: t.id, values: C.formValues(t.kind, item), label: item.name || item.title });
+  ok(res, { id: t.id, values: C.formValues(t.kind, item), label: item.name || item.title, version: C.itemVersion(t.kind, t.id) });
 });
 
 api.put("/my/items/:kind/:id", A.requireActive, A.rateLimit({ windowMs: 60 * 60e3, max: 60, key: (r) => "o" + r.user.id }), wrap((req, res) => {
   const t = ownCheck(req, res);
   if (!t) return;
+  if (staleEdit(req, res, t.kind, t.id)) return;
   const existing = C.getItem(t.kind, t.id);
   const fields = C.normalize(t.kind, req.body?.data || {}, { partial: true });
   C.saveItem(t.kind, t.id, C.applyFields(t.kind, existing, fields, req.user), req.user.id);
   log(req.user.id, "kendi-guncelle", `${t.kind}:${t.id} (${Object.keys(fields).join(",")})`);
-  rebuild.schedule(`${t.kind}:${t.id} sahibi güncelledi`);
-  ok(res, { id: t.id });
+  rebuild.schedule(`${t.kind}:${t.id} sahibi güncelledi`, 800);
+  ok(res, { id: t.id, version: C.itemVersion(t.kind, t.id) });
 }));
 
 // ================================================================ yorumlar
@@ -610,11 +626,13 @@ admin.put("/items/:kind/:id", kindPerm, wrap((req, res) => {
   const { kind } = req.params, id = int(req.params.id);
   const existing = id != null ? C.getItem(kind, id) : null;
   if (!existing) return A.fail(res, 404, "Bulunamadı.");
-  const fields = C.normalize(kind, req.body?.data || {}, { isAdmin: true });
+  if (staleEdit(req, res, kind, id)) return;
+  // Yalnızca gönderilen (değiştirilen) alanlar işlenir; diğer alanlar, görseller ve videolar olduğu gibi kalır.
+  const fields = C.normalize(kind, req.body?.data || {}, { isAdmin: true, partial: true });
   C.saveItem(kind, id, C.applyFields(kind, existing, fields, req.user), req.user.id);
-  log(req.user.id, "icerik-duzenle", `${kind}:${id}`);
-  rebuild.schedule(`${kind}:${id} düzenlendi`);
-  ok(res, { id });
+  log(req.user.id, "icerik-duzenle", `${kind}:${id} (${Object.keys(fields).join(",")})`);
+  rebuild.schedule(`${kind}:${id} düzenlendi`, 800);
+  ok(res, { id, version: C.itemVersion(kind, id) });
 }));
 
 admin.delete("/items/:kind/:id", need("icerik.sil"), (req, res) => {

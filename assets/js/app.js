@@ -164,6 +164,14 @@
           "</span><span>" + trDate(d.d) + '</span></div><h3 class="clamp-2">' + esc(d.t) + '</h3><p class="clamp-3">' + esc(d.m) + "</p></a>";
       }
     };
+    // Yetkili kullanıcıya kartlarda "Düzenle" kısayolu (kural, oturum bilgisi gelince aşağıda atanır)
+    var editKind = { members: "member", works: "work", news: "topic" }[kind], editRule = null;
+    var EDIT_IC = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
+    var card = function (d) {
+      var html = tpl[kind](d), href = editRule && editRule(editKind, d.id);
+      return href ? '<div class="card-wrap">' + html + '<a class="card-edit" href="' + href + '" aria-label="' + esc(d.t || d.n) + ' kaydını düzenle">' + EDIT_IC + "Düzenle</a></div>" : html;
+    };
+    window.mzSetEditRule = function (fn) { editRule = fn; render(); };
     var dkey = function (d) { var m = /(\d+)\.(\d+)\.(\d{4})/.exec(d || ""); return m ? m[3] * 10000 + m[2] * 100 + +m[1] : 0; };
     var render = function () {
       var words = fold(state.q).split(" ").filter(Boolean);
@@ -188,7 +196,7 @@
         out.sort(function (a, b) { return a.n.localeCompare(b.n, "tr"); });
       }
       var page = out.slice(0, state.shown);
-      list.innerHTML = page.length ? page.map(tpl[kind]).join("") : '<div class="empty" style="grid-column:1/-1">Aramanızla eşleşen kayıt bulunamadı.</div>';
+      list.innerHTML = page.length ? page.map(card).join("") : '<div class="empty" style="grid-column:1/-1">Aramanızla eşleşen kayıt bulunamadı.</div>';
       info.textContent = out.length + " kayıt" + (out.length > page.length ? " · " + page.length + " gösteriliyor" : "");
       more.hidden = out.length <= page.length;
     };
@@ -308,24 +316,36 @@
       akaid: { welcome: "Selâmün aleyküm! Ehl-i Sünnet (Mâtürîdî ve Eş'arî) itikadına dair sorularınızı arşivdeki kaynaklara dayanarak yanıtlıyorum.",
         note: "Yanıtlar yapay zekâ ile derlenir ve hata içerebilir; önemli konularda kaynaklara ve hocalarımıza başvurun. Fetva verilmez.",
         suggestions: ["Hudûs delili nedir?", "Mâtürîdî ile Eş'arî arasındaki farklar nelerdir?", "Kesb nazariyesi nedir?", "Allah'ın varlığının delilleri nelerdir?"], tab: "Akaid" },
-      hanefi: { welcome: "Selâmün aleyküm! Hanefî fıkhına dair sorularınızı klasik kaynaklara dayanarak, cilt ve sayfa göstererek yanıtlıyorum.",
+      hanefi: { welcome: "Hoş geldiniz. Sorularınızı hangi üslupla cevaplamamı istersiniz?",
         note: "Yanıtlar yapay zekâ ile Arapça klasik metinlerden derlenir ve hata içerebilir; gösterilen cilt ve sayfadan kontrol edin. Bu bir fetva değildir; kişisel durumunuz için müftülüğe danışın.",
         suggestions: ["Mest üzerine mesh süresi ne kadardır?", "Abdesti bozan şeyler nelerdir?"], tab: "Hanefî Fıkhı" },
+    };
+    // Hanefî asistanı: sohbetin başında seçilen üslup (talimat: önce üslup sorulur, tercih sohbet boyunca korunur)
+    var STYLES = { fetva: ["Fetva üslubu", "Kısa, sade ve doğrudan uygulanabilir cevap."],
+      akademik: ["Akademik üslup", "Istılahlar, mezhep içi görüş ayrılıkları ve ayrıntılı kaynak değerlendirmesi."] };
+    var style = {
+      get: function () { try { var v = sessionStorage.getItem("mz-hanefi-uslup"); return STYLES[v] ? v : ""; } catch (e) { return ""; } },
+      set: function (v) { try { v ? sessionStorage.setItem("mz-hanefi-uslup", v) : sessionStorage.removeItem("mz-hanefi-uslup"); } catch (e) {} }
     };
     var aiStore = function (key) {
       var k = key === "akaid" ? "mz-asistan" : "mz-asistan-" + key;
       return { get: function () { try { return JSON.parse(sessionStorage.getItem(k) || "[]"); } catch (e) { return []; } },
         set: function (v) { try { sessionStorage.setItem(k, JSON.stringify(v.slice(-20))); } catch (e) {} } };
     };
+    // Basit Markdown: ara başlık (### Kısa cevap…), madde listesi, paragraf, kalın yazı ve [n] kaynak numaraları
     var md = function (t) {
-      var blocks = esc(t).split(/\n{2,}/).map(function (b) {
-        var lines = b.split("\n");
-        if (lines.every(function (l) { return /^\s*([-*•]|\d+[.)])\s+/.test(l); })) {
-          return "<ul>" + lines.map(function (l) { return "<li>" + l.replace(/^\s*([-*•]|\d+[.)])\s+/, "") + "</li>"; }).join("") + "</ul>";
-        }
-        return "<p>" + b.replace(/\n/g, "<br>") + "</p>";
-      }).join("");
-      return blocks.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>").replace(/\[(\d{1,2})\]/g, '<sup class="cite">$1</sup>');
+      var html = "", para = [], items = [];
+      var flushP = function () { if (para.length) html += "<p>" + para.join("<br>") + "</p>"; para = []; };
+      var flushL = function () { if (items.length) html += "<ul>" + items.map(function (x) { return "<li>" + x + "</li>"; }).join("") + "</ul>"; items = []; };
+      esc(t).split("\n").forEach(function (l) {
+        var h = /^\s*#{1,4}\s+(.+?)\s*#*\s*$/.exec(l), it = /^\s*(?:[-*•]|\d+[.)])\s+(.+)$/.exec(l);
+        if (!l.trim()) { flushP(); flushL(); }
+        else if (h) { flushP(); flushL(); html += "<h4>" + h[1] + "</h4>"; }
+        else if (it) { flushP(); items.push(it[1]); }
+        else { flushL(); para.push(l); }
+      });
+      flushP(); flushL();
+      return html.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>").replace(/\[(\d{1,2})\]/g, '<sup class="cite">$1</sup>');
     };
     var setupAssistant = function (st) {
       var list = (st.assistants && st.assistants.length) ? st.assistants
@@ -368,11 +388,21 @@
         $("[data-ai-name]", box).textContent = a.name;
         $("[data-ai-sub]", box).textContent = a.subtitle || "";
         $$("[data-ai-tab]", box).forEach(function (t) { t.setAttribute("aria-selected", t.getAttribute("data-ai-tab") === cur); });
-        var intro = '<div class="ai-msg"><div class="ai-bubble prose"><p>' + esc(a.welcome || d.welcome) + '</p><p class="ai-note">' + esc(d.note) + "</p></div></div>";
+        var st2 = cur === "hanefi" ? style.get() : "", needStyle = cur === "hanefi" && !st2;
+        var styleUi = cur !== "hanefi" ? "" : needStyle
+          ? '<div class="ai-styles" role="group" aria-label="Cevap üslubu">' + Object.keys(STYLES).map(function (k, i) {
+              return '<button type="button" data-style="' + k + '"><strong>' + (i + 1) + ". " + STYLES[k][0] + "</strong><span>" + STYLES[k][1] + "</span></button>";
+            }).join("") + "</div>"
+          : '<p class="ai-style">Üslup: <strong>' + STYLES[st2][0] + '</strong> · <button type="button" class="linklike" data-style="' + (st2 === "fetva" ? "akademik" : "fetva") + '">' +
+            (st2 === "fetva" ? "Akademik üsluba geç" : "Fetva üslubuna geç") + "</button></p>";
+        var intro = '<div class="ai-msg"><div class="ai-bubble prose"><p>' + esc(a.welcome || d.welcome) + "</p>" + styleUi + '<p class="ai-note">' + esc(d.note) + "</p></div></div>";
         var sugg = (a.suggestions && a.suggestions.length) ? a.suggestions : d.suggestions;
-        var chips = !c.history.length && me && me.status === "active" ? '<div class="ai-chips">' + sugg.map(function (q) { return '<button type="button" class="chip" data-q="' + esc(q) + '">' + esc(q) + "</button>"; }).join("") + "</div>" : "";
+        var chips = !c.history.length && !needStyle && me && me.status === "active" ? '<div class="ai-chips">' + sugg.map(function (q) { return '<button type="button" class="chip" data-q="' + esc(q) + '">' + esc(q) + "</button>"; }).join("") + "</div>" : "";
         log.innerHTML = intro + chips + c.history.map(bubble).join("") + (c.sending ? '<div class="ai-msg"><div class="ai-bubble ai-typing"><span></span><span></span><span></span></div></div>' : "");
         $$("[data-q]", log).forEach(function (b) { b.addEventListener("click", function () { send(b.getAttribute("data-q")); }); });
+        $$("[data-style]", log).forEach(function (b) {
+          b.addEventListener("click", function () { style.set(b.getAttribute("data-style")); draw(); var t3 = $("textarea", foot); if (t3) t3.focus(); });
+        });
         log.scrollTop = log.scrollHeight;
         var ta = $("textarea", foot);
         if (ta) { ta.disabled = c.sending; ta.placeholder = cur === "hanefi" ? "Fıkhî sorunuzu yazın…" : "Sorunuzu yazın…"; }
@@ -397,7 +427,9 @@
         var past = c.history.filter(function (m) { return !m.error; }).map(function (m) { return { role: m.role, content: m.content }; }).slice(-12);
         c.history.push({ role: "user", content: text }); c.sending = true; draw();
         var ta = $("textarea", foot); if (ta) { ta.value = ""; ta.style.height = "auto"; }
-        apiCall("POST", "/ai/chat", { assistant: key, message: text, history: past }).then(function (j) {
+        var payload = { assistant: key, message: text, history: past };
+        if (key === "hanefi" && style.get()) payload.style = style.get();
+        apiCall("POST", "/ai/chat", payload).then(function (j) {
           c.history.push({ role: "assistant", content: j.answer, sources: j.sources });
           meta(j.remaining);
         }).catch(function (err) {
@@ -420,7 +452,8 @@
       });
       fab.addEventListener("click", function () { open(box.hidden); });
       $("[data-close]", box).addEventListener("click", function () { open(false); });
-      $("[data-new]", box).addEventListener("click", function () { var c = chats[cur]; if (c.sending) return; c.history = []; c.store.set(c.history); draw(); });
+      // Yeni sohbet: geçmiş silinir; Hanefî asistanında üslup yeniden sorulur
+      $("[data-new]", box).addEventListener("click", function () { var c = chats[cur]; if (c.sending) return; c.history = []; c.store.set(c.history); if (cur === "hanefi") style.set(""); draw(); });
       box.addEventListener("keydown", function (e) { if (e.key === "Escape") open(false); });
       drawFoot(st.remaining);
     };
@@ -433,15 +466,24 @@
           .then(function () { $$("[data-comments]").forEach(loadComments); });
         // "Bu profil benim": profili zaten bir hesaba bağlı kişiye gösterilmez
         $$("[data-claim]").forEach(function (b) { if (me && me.member_id != null) b.hidden = true; });
-        // "Düzenle": yetkili yöneticiye ya da kaydın sahibi olan akademisyene gösterilir
+        // "Düzenle": o içerik türünü düzenleme yetkisi olan yöneticiye/editöre ya da kaydın sahibi olan akademisyene gösterilir.
+        // Yalnızca görünürlük içindir; kaydetme yetkisi sunucuda her istekte ayrıca denetlenir.
         var owns = $$("[data-own]");
-        if (me && owns.length) {
+        if (me && me.status === "active") {
+          var editHref = function (keys) {
+            return function (kind, id) {
+              if (can("icerik." + kind)) return "/panel/#/yonetim/icerik/" + kind + "/" + id;
+              if (keys.indexOf(kind + ":" + id) > -1) return "/panel/#/duzenle/" + kind + "/" + id;
+              return "";
+            };
+          };
           var showFor = function (keys) {
+            var rule = editHref(keys);
             owns.forEach(function (b) {
-              var t = b.getAttribute("data-own").split(":");
-              if (can("icerik." + t[0])) { b.href = "/panel/#/yonetim/icerik/" + t[0] + "/" + t[1]; b.hidden = false; }
-              else if (keys.indexOf(t[0] + ":" + t[1]) > -1) b.hidden = false;
+              var t = b.getAttribute("data-own").split(":"), href = rule(t[0], +t[1]);
+              if (href) { b.href = href; b.hidden = false; }
             });
+            if (window.mzSetEditRule && (["icerik.member", "icerik.work", "icerik.topic"].some(can) || keys.length)) window.mzSetEditRule(rule);
           };
           if (can("kendi.profil") || can("kendi.eser")) {
             apiCall("GET", "/my/items").then(function (j) { showFor(j.items.map(function (i) { return i.kind + ":" + i.id; })); }).catch(function () { showFor([]); });

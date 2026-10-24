@@ -87,7 +87,7 @@ test("yanlış şifreyle giriş başarısız, doğrusuyla başarılı", async ()
 
 test("üye yönetim uçlarına erişemez", async () => {
   assert.equal((await uye.call("GET", "/admin/stats")).status, 403);
-  assert.equal((await new Client().call("GET", "/admin/users")).status, 403);
+  assert.equal((await new Client().call("GET", "/admin/users")).status, 401); // oturum yok: giriş gerekir
 });
 
 test("yönetici üyeyi onaylar; kayıttaki profil talebi kuyruğa düşer", async () => {
