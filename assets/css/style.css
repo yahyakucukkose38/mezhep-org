@@ -101,6 +101,20 @@ h3 { font-size: 1.25rem; }
 .nav a { padding: 8px 12px; border-radius: 999px; font-size: .92rem; font-weight: 500; color: var(--ink-2); transition: background .2s, color .2s; white-space: nowrap; }
 .nav a:hover { background: var(--bg-2); color: var(--ink); }
 .nav a[aria-current="page"] { background: var(--brand-soft); color: var(--brand); }
+.nav a[aria-current="true"] { color: var(--brand); }
+/* alt menü (panelde üst kategorisi seçilmiş kategoriler) */
+.nav-item { position: relative; display: flex; align-items: center; }
+.nav-item > a { padding-right: 4px; }
+.nav-sub-btn { width: 22px; height: 30px; display: grid; place-items: center; border: 0; background: none; color: var(--muted); border-radius: 8px; cursor: pointer; padding: 0; }
+.nav-sub-btn svg { width: 14px; height: 14px; transform: rotate(90deg); transition: transform .2s; }
+.nav-sub-btn:hover { color: var(--ink); background: var(--bg-2); }
+.nav-sub { position: absolute; top: 100%; left: 0; z-index: 60; min-width: 230px; display: flex; flex-direction: column; gap: 2px; padding: 8px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-sm); box-shadow: var(--shadow);
+  opacity: 0; visibility: hidden; transform: translateY(6px); transition: opacity .18s, transform .18s, visibility .18s; }
+.nav-sub::before { content: ""; position: absolute; left: 0; right: 0; top: -10px; height: 10px; }
+.nav-sub a { border-radius: var(--radius-xs); padding: 9px 12px; white-space: normal; }
+.nav-item:hover .nav-sub, .nav-item:focus-within .nav-sub, .nav-item.open .nav-sub { opacity: 1; visibility: visible; transform: none; }
+.nav-item.open .nav-sub-btn svg, .nav-item:hover .nav-sub-btn svg { transform: rotate(-90deg); }
 .header-actions { display: flex; align-items: center; gap: 8px; }
 .icon-btn { width: 40px; height: 40px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); display: grid; place-items: center; cursor: pointer; transition: transform .2s var(--ease), border-color .2s; }
 .icon-btn:hover { border-color: var(--line-2); transform: translateY(-1px); }
@@ -140,6 +154,15 @@ h3 { font-size: 1.25rem; }
   }
   .nav a { padding: 12px 14px; font-size: 1rem; border-radius: 12px; }
   body.menu-open .nav { transform: none; opacity: 1; pointer-events: auto; }
+  .nav { max-height: calc(100dvh - var(--header-h)); overflow-y: auto; overscroll-behavior: contain; }
+  /* tablet ve telefonda alt kategoriler üst öğenin altında, girintili ve her zaman açık */
+  .nav-item { flex-direction: column; align-items: stretch; }
+  .nav-item > a { padding-right: 14px; }
+  .nav-sub-btn { display: none; }
+  .nav-sub { position: static; opacity: 1; visibility: visible; transform: none; min-width: 0; padding: 0 0 4px 14px; margin-left: 14px;
+    border: 0; border-left: 2px solid var(--line); border-radius: 0; box-shadow: none; background: none; }
+  .nav-sub::before { display: none; }
+  .nav-sub a { font-size: .95rem; color: var(--muted); }
   .header-actions { margin-left: auto; }
 }
 

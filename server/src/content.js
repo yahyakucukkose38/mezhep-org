@@ -3,6 +3,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const sanitizeHtml = require("sanitize-html");
 const { db, plain, SEED_FILES } = require("./db");
+const CAT = require("./categories");
 
 const RANKS = ["Prof. Dr.", "Doç. Dr.", "Dr. Öğr. Üyesi", "Dr.", "Arş. Gör. Dr.", "Arş. Gör.", "Öğr. Gör. Dr.", "Öğr. Gör.", "Dr. Öğrencisi", "YL. Öğrencisi"];
 const GROUPS = ["Öğretim Elemanları", "Üniversite Dışı Elemanlar", "Emekliler", "Rahmetle Andıklarımız"];
@@ -12,9 +13,6 @@ const WORK_TYPES = {
   Makaleler: ["Telif", "Tercüme"],
   Tebliğler: ["Ulusal", "Uluslararası"],
 };
-const FORUMS = { haber: "Haber", etkinlik: "Etkinlik", sempozyum: "Sempozyum", koordinasyon: "Koordinasyon", kitap: "Kitap Haberi" };
-// Yalnızca yöneticinin seçebildiği eski forum bölümleri
-const ADMIN_FORUMS = { ...FORUMS, "eser-tr": "Türkçe Eser Tanıtımı", "eser-ar": "Arapça Eser Tanıtımı", "eser-en": "Yabancı Dilde Eser Tanıtımı", sss: "Sık Sorulan Soru", anket: "Anket" };
 
 // Alan tanımları: tür, zorunluluk, uzunluk ve seçenekler. Panel formları da bu tanımla çizilir (GET /api/schema).
 const SCHEMAS = {
@@ -46,8 +44,12 @@ const SCHEMAS = {
   ],
   topic: [
     { key: "title", label: "Başlık", type: "text", required: true, max: 300 },
-    { key: "forum", label: "Bölüm", type: "select", options: Object.keys(ADMIN_FORUMS), memberOptions: Object.keys(FORUMS), labels: ADMIN_FORUMS, required: true },
+    // Kategoriler panelden yönetilir (categories.js): seçenekler her istekte veritabanından okunur.
+    // Üyeler yalnızca "Üyeler bu kategoride önerebilir" işaretli kategorileri seçebilir.
+    { key: "forum", label: "Kategori", type: "select", get options() { return CAT.topicChoices().options; },
+      get memberOptions() { return CAT.topicChoices().memberOptions; }, get labels() { return CAT.topicChoices().labels; }, required: true },
     { key: "date", label: "Tarih", type: "date" },
+    { key: "order", label: "Sıra (isteğe bağlı; kategori “özel sıra” ile sıralanıyorsa küçük sayı önce gelir)", type: "int", min: 1, max: 9999, admin: true },
     { key: "image", label: "Kapak görseli", type: "image" },
     { key: "body", label: "Metin", type: "html", required: true, max: 60000 },
   ],
@@ -164,6 +166,12 @@ function normalize(kind, input, { partial = false, isAdmin = false } = {}) {
         v = String(v).trim();
         if (v === "") { v = null; break; }
         if (!/^\d{4}$/.test(v) || +v < 600 || +v > new Date().getFullYear() + 1) { errors[f.key] = "Geçerli bir yıl girin."; continue; }
+        v = +v; break;
+      }
+      case "int": {
+        v = String(v).trim();
+        if (v === "") { v = null; break; }
+        if (!/^\d{1,6}$/.test(v) || +v < f.min || +v > f.max) { errors[f.key] = `${f.min} ile ${f.max} arasında bir tam sayı girin.`; continue; }
         v = +v; break;
       }
       case "date": {
@@ -390,12 +398,14 @@ function exportAll(dir) {
     else rows.sort((a, b) => a.id - b.id);
     write(file, rows);
   }
+  CAT.adoptOrphans(); // kategorisi tanımlı olmayan haber kalmasın
+  write("categories", CAT.exportData()); // kategoriler, kategori sayfaları ve menü
   write("pages", getItem("page", 1) || { welcome: "", policy: "" });
   write("settings", require("./site-settings").all()); // site üreteci için panel ayarları
   write("videos", require("./videos").load()); // ana sayfa video modülü
 }
 
 module.exports = {
-  SCHEMAS, KINDS, RANKS, GROUPS, WORK_TYPES, FORUMS, ValidationError, normalize, cleanHtml, htmlText,
+  SCHEMAS, KINDS, RANKS, GROUPS, WORK_TYPES, ValidationError, normalize, cleanHtml, htmlText,
   getItem, itemVersion, listItems, applyFields, parseVideo, videoFigure, fixEmbedCodes, splitEventForums, eventKind, saveItem, deleteItem, ownsItem, ownItems, formValues, exportAll, trDate, plain,
 };

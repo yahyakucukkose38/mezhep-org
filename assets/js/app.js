@@ -42,6 +42,24 @@
     var open = document.body.classList.toggle("menu-open");
     menuBtn.setAttribute("aria-expanded", open);
   });
+  // Alt menüler (kategoriler): masaüstünde üzerine gelince ya da düğmeyle açılır; dar ekranda alt alta zaten görünür.
+  var subBtns = $$(".nav-sub-btn");
+  var closeSubs = function (except) {
+    subBtns.forEach(function (b) { if (b !== except) { b.setAttribute("aria-expanded", "false"); b.parentNode.classList.remove("open"); } });
+  };
+  subBtns.forEach(function (b) {
+    b.addEventListener("click", function (e) {
+      e.stopPropagation();
+      var open = !b.parentNode.classList.contains("open");
+      closeSubs(b);
+      b.parentNode.classList.toggle("open", open);
+      b.setAttribute("aria-expanded", open);
+    });
+  });
+  if (subBtns.length) {
+    document.addEventListener("click", function (e) { if (!e.target.closest(".nav-item")) closeSubs(); });
+    document.addEventListener("keydown", function (e) { if (e.key === "Escape") closeSubs(); });
+  }
   var header = $(".site-header"), toTop = $(".to-top");
   var onScroll = function () {
     var y = window.scrollY;
@@ -141,8 +159,9 @@
     var DATA = JSON.parse(dataEl.textContent);
     var kind = list.getAttribute("data-list");
     var PAGE = kind === "works" ? 40 : kind === "news" ? 24 : 48;
-    var state = { q: "", tur: "", uni: "", decade: "", year: "", sort: "new", shown: PAGE };
     var qIn = $("[data-q]"), info = $("[data-info]"), more = $("[data-more]"), sortSel = $("[data-sort]");
+    // kategori sayfalarında başlangıç sıralaması kategorinin ayarıdır (seçili seçenek)
+    var state = { q: "", tur: "", uni: "", decade: "", year: "", sort: sortSel ? sortSel.value : "new", shown: PAGE };
     DATA.forEach(function (d) { d._f = fold([d.n, d.t, d.u, d.c, d.a, d.i, d.p, d.d, d.m, d.g].join(" ")); });
     var badge = { "Doktora": "b-brand", "Yüksek Lisans": "b-indigo", "Doçentlik": "b-gold", "Kitap": "b-gold", "Makale": "b-rose",
       "Yeni Doktor": "b-brand", "Profesörlük": "b-gold", "Atama": "b-indigo", "Vefat": "b-rose", "Etkinlik": "b-brand", "Yayın": "b-indigo" };
@@ -191,12 +210,20 @@
           return s === "new" ? (by - ay || b.id - a.id) : (ay - by || a.id - b.id);
         });
       } else if (kind === "news") {
-        out.sort(function (a, b) { return dkey(b.d) - dkey(a.d) || b.id - a.id; });
+        var ns = state.sort;
+        out.sort(function (a, b) {
+          if (ns === "title") return a.t.localeCompare(b.t, "tr");
+          if (ns === "old") return dkey(a.d) - dkey(b.d) || a.id - b.id;
+          // özel sıra: "Sıra" verilmiş içerikler önce (küçükten büyüğe), sonra en yeni
+          if (ns === "manual" && (a.o != null || b.o != null)) return a.o == null ? 1 : b.o == null ? -1 : a.o - b.o;
+          return dkey(b.d) - dkey(a.d) || b.id - a.id;
+        });
       } else {
         out.sort(function (a, b) { return a.n.localeCompare(b.n, "tr"); });
       }
       var page = out.slice(0, state.shown);
-      list.innerHTML = page.length ? page.map(card).join("") : '<div class="empty" style="grid-column:1/-1">Aramanızla eşleşen kayıt bulunamadı.</div>';
+      var none = DATA.length ? "Aramanızla eşleşen kayıt bulunamadı." : (list.getAttribute("data-empty") || "Henüz kayıt yok.");
+      list.innerHTML = page.length ? page.map(card).join("") : '<div class="empty" style="grid-column:1/-1">' + esc(none) + "</div>";
       info.textContent = out.length + " kayıt" + (out.length > page.length ? " · " + page.length + " gösteriliyor" : "");
       more.hidden = out.length <= page.length;
     };
@@ -210,7 +237,7 @@
     $$("[data-filter-select]").forEach(function (s) {
       s.addEventListener("change", function () { state[s.getAttribute("data-filter-select")] = s.value; state.shown = PAGE; render(); });
     });
-    if (sortSel) sortSel.addEventListener("change", function () { state.sort = sortSel.value; render(); });
+    if (sortSel) sortSel.addEventListener("change", function () { state.sort = sortSel.value; state.shown = PAGE; render(); });
     var t;
     qIn && qIn.addEventListener("input", function () { clearTimeout(t); t = setTimeout(function () { state.q = qIn.value; state.shown = PAGE; render(); }, 120); });
     more && more.addEventListener("click", function () { state.shown += PAGE; render(); });
@@ -557,31 +584,39 @@
       });
   }
 
-  /* ---------- Etkinlikler: kategori menüsü (Etkinlik / Sempozyum / Koordinasyon); adres #tur=… ile paylaşılabilir ---------- */
+  /* ---------- Etkinlikler: alt kategori menüsü (panelden yönetilir); adres #tur=… ile paylaşılabilir ---------- */
   var evChips = $$("[data-ev-filter]");
   if (evChips.length) {
-    var evItems = $$("[data-ev-list] .tl-item"), evInfo = $("[data-ev-info]"), coordSec = $("#koordinasyon");
-    var TITLES = { "": "Etkinlik, sempozyum ve koordinasyon duyuruları", Etkinlik: "Etkinlik duyuruları", Sempozyum: "Sempozyumlar", Koordinasyon: "Koordinasyon toplantıları" };
+    var evItems = $$("[data-ev-list] .tl-item"), evInfo = $("[data-ev-info]"), evFor = $$("[data-ev-for]"), evLink = $("[data-ev-link]");
+    var evTitle = $("[data-ev-title]"), evTitle0 = evTitle ? evTitle.textContent : "";
+    // #tur= değeri kısa ad (Koordinasyon), kategori anahtarı (koordinasyon) ya da adres (sempozyumlar) olabilir
+    var evFind = function (v) {
+      v = fold(v);
+      return v ? evChips.filter(function (c) {
+        return ["data-ev-filter", "data-ev-key", "data-ev-slug"].some(function (a) { return fold(c.getAttribute(a)) === v; });
+      })[0] || null : null;
+    };
     var evShow = function (tur, push) {
-      if (!evChips.some(function (c) { return c.getAttribute("data-ev-filter") === tur; })) tur = "";
-      evChips.forEach(function (c) { c.setAttribute("aria-pressed", c.getAttribute("data-ev-filter") === tur); });
+      var chip = evFind(tur), key = chip ? chip.getAttribute("data-ev-key") : "";
+      evChips.forEach(function (c) { c.setAttribute("aria-pressed", c === chip || (!chip && !c.getAttribute("data-ev-filter"))); });
       var n = 0;
-      evItems.forEach(function (it) { var on = !tur || it.getAttribute("data-tur") === tur; it.hidden = !on; if (on) { n++; it.classList.add("in"); } });
+      evItems.forEach(function (it) { var on = !key || it.getAttribute("data-cat") === key; it.hidden = !on; if (on) { n++; it.classList.add("in"); } });
       // boş kalan yıl başlıklarını gizle
       $$("[data-ev-list] [data-year]").forEach(function (y) {
         var el = y.nextElementSibling, any = false;
         while (el && !el.hasAttribute("data-year")) { if (!el.hidden) any = true; el = el.nextElementSibling; }
         y.hidden = !any;
       });
-      if (coordSec) coordSec.hidden = !!tur && tur !== "Koordinasyon";
-      var h = $("[data-ev-title]"); if (h) h.textContent = TITLES[tur] || TITLES[""];
+      evFor.forEach(function (sec) { sec.hidden = !!key && sec.getAttribute("data-ev-for") !== key; });
+      if (evTitle) evTitle.textContent = chip ? chip.getAttribute("data-ev-heading") : evTitle0;
+      if (evLink) { evLink.hidden = !chip; if (chip) evLink.href = root + chip.getAttribute("data-ev-url"); }
       if (evInfo) evInfo.textContent = n + " kayıt";
-      if (push) history.replaceState(null, "", tur ? "#tur=" + encodeURIComponent(tur) : location.pathname);
+      if (push) history.replaceState(null, "", chip ? "#tur=" + encodeURIComponent(chip.getAttribute("data-ev-filter")) : location.pathname);
     };
     evChips.forEach(function (c) { c.addEventListener("click", function () { evShow(c.getAttribute("data-ev-filter"), true); }); });
     var fromHash = function () {
       var m = /tur=([^&]+)/.exec(location.hash);
-      evShow(m ? decodeURIComponent(m[1]) : location.hash === "#koordinasyon" ? "Koordinasyon" : "", false);
+      evShow(m ? decodeURIComponent(m[1]) : location.hash === "#koordinasyon" ? "koordinasyon" : "", false);
     };
     window.addEventListener("hashchange", fromHash);
     fromHash();

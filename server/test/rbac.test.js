@@ -146,9 +146,9 @@ test("akademisyen: kendi eserini ve kendi eklediği eseri düzenler, başkasın�
 
 test("site ayarları: yetki, doğrulama ve etkisi", async () => {
   assert.equal((await U.editor.call("PUT", "/admin/settings", { values: { registration_open: false } })).status, 403);
-  const bad = await U.super.call("PUT", "/admin/settings", { values: { banner_link: "javascript:alert(1)", home_news_count: 99 } });
+  const bad = await U.super.call("PUT", "/admin/settings", { values: { banner_link: "javascript:alert(1)", home_quote: "x".repeat(400) } });
   assert.equal(bad.status, 400);
-  assert.ok(bad.body.fields.banner_link && bad.body.fields.home_news_count);
+  assert.ok(bad.body.fields.banner_link && bad.body.fields.home_quote);
   assert.equal((await U.super.call("PUT", "/admin/settings", { values: { registration_open: false, comments_require_approval: false, banner_enabled: true, banner_text: "Duyuru" } })).status, 200);
   assert.equal((await new Client().call("POST", "/auth/register", { name: "Kapalı Kayıt", email: "k@t.local", password: PW, accept: true })).status, 403);
   const c = await U.uye.call("POST", "/comments", { target: "work:656", body: "Onaysız yorum" });

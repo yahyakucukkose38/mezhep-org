@@ -16,6 +16,7 @@ Sunucu gerektirmez: `index.html` dosyasını çift tıklayarak açabilir ya da k
 | Galeri | `galeri.html`, `galeri/<albüm>.html` | fotoğraf albümleri, ışık kutusu |
 | Kaynaklar | `kaynaklar.html` | bağlantılar, kitap haberleri, dosyalar |
 | Hakkında | `hakkinda.html` | amaç, SSS, kullanım koşulları, iletişim |
+| Kategoriler | `kategori/<adres>.html` | her haber/yazı kategorisinin bütün içerikleri (ör. `kategori/koordinasyon.html`) |
 
 Özellikler: Ctrl+K (veya `/`) ile site geneli anlık arama, açık/koyu tema, listelerde filtre/sıralama,
 kaynak gösterimi kopyalama, mobil menü, erişilebilir yapı ve yazdırma görünümü.
@@ -38,6 +39,20 @@ scripts/       build.py (siteyi üretir), crawl.py / parse.py / media.py (canlı
    ```
    python scripts/build.py
    ```
+
+## Kategoriler ve menü
+
+Haber ve yazıların kategorisi `topics.json` içindeki `forum` alanıdır; kategorilerin kendisi `data/categories.json`'da
+(sunucu sürümünde veritabanında, Panel → Yönetim → **Kategoriler ve menü**) tanımlıdır. Bir içeriğin kategorisini
+seçmek yeterlidir; site üretilirken içerik
+
+1. kategorinin sayfasına (`kategori/<adres>.html`; Haberler ve Etkinlikler için `haberler.html`, `etkinlikler.html`),
+2. kategorinin "Ana sayfada göster" / "Diğer sayfalarda göster" ile eklendiği sayfalardaki bölüme (ayarlanan sayıda ve sırada),
+3. menüdeki kategori bağlantısının açtığı sayfaya
+
+kendiliğinden yerleşir. Sayfalardaki bölümler (ör. ana sayfada 6 içerik) arşivden bağımsızdır: kategori sayfası her zaman
+bütün içerikleri listeler. Alt kategoriler menüde üst kategorinin altında açılır; adresi değişen kategorinin eski
+adresi yeni sayfaya yönlendirilir.
 
 ## Canlı siteden yeniden veri çekme (isteğe bağlı)
 

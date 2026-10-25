@@ -157,9 +157,10 @@ PATTERN = '''<svg class="hero-pattern" width="100%" height="100%" aria-hidden="t
 
 BIG_STAR = '<svg class="pattern" viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M50 4l13 33 33 13-33 13-13 33-13-33L4 50l33-13z"/><rect x="21" y="21" width="58" height="58" transform="rotate(45 50 50)"/><rect x="21" y="21" width="58" height="58"/><circle cx="50" cy="50" r="14"/><circle cx="50" cy="50" r="30"/></svg>'
 
-NAV = [("index.html", "Ana Sayfa"), ("akademisyenler.html", "Akademisyenler"), ("eserler.html", "Eserler"),
-       ("haberler.html", "Haberler"), ("etkinlikler.html", "Etkinlikler"), ("galeri.html", "Galeri"),
-       ("kaynaklar.html", "Kaynaklar"), ("hakkinda.html", "Hakkında")]
+# Menüdeki sabit sayfalar (categories.json "pages" yoksa); Haberler ve Etkinlikler birer kategoridir (bkz. kategoriler ve menü).
+FIXED_PAGES = [dict(name="Ana Sayfa", href="index.html", menu_order=10), dict(name="Akademisyenler", href="akademisyenler.html", menu_order=20),
+               dict(name="Eserler", href="eserler.html", menu_order=30), dict(name="Galeri", href="galeri.html", menu_order=60),
+               dict(name="Kaynaklar", href="kaynaklar.html", menu_order=70), dict(name="Hakkında", href="hakkinda.html", menu_order=80)]
 
 
 WRITTEN = set()
@@ -168,7 +169,7 @@ WRITTEN = set()
 def remove_stale():
     """Silinen kayıtların eski detay sayfalarını kaldırır (ör. birleştirilen ya da panelden silinen eserler)."""
     removed = 0
-    for d in ("akademisyen", "eser", "haber", "galeri"):
+    for d in ("akademisyen", "eser", "haber", "galeri", "kategori"):
         folder = os.path.join(ROOT, d)
         if not os.path.isdir(folder):
             continue
@@ -268,10 +269,33 @@ def share_block(path, title, desc="", image="", target=""):
             f'<button type="button" class="share-btn is-copy" data-share-copy data-share="kopyala" aria-label="Bağlantıyı kopyala">{ic("link")}<span>Bağlantıyı kopyala</span></button></div></section>')
 
 
+def nav_html(r, active):
+    """Ana menü: masaüstünde açılır alt menü, tablet ve telefonda aynı yapı alt alta (style.css .nav-item)."""
+    out = ""
+    for e in MENU:
+        here = bool(active) and (e["href"] == active or any(x["href"] == active for x in e["children"]))
+        cur = (' aria-current="page"' if e["href"] == active else ' aria-current="true"') if here else ""
+        a = '<a href="%s%s"%s>%s</a>' % (r, e["href"], cur, E(e["name"]))
+        if not e["children"]:
+            out += a
+            continue
+        subs = "".join('<a href="%s%s"%s>%s</a>' % (r, x["href"], ' aria-current="page"' if x["href"] == active else "", E(x["name"])) for x in e["children"])
+        out += (f'<div class="nav-item">{a}<button class="nav-sub-btn" type="button" aria-expanded="false" aria-label="{E(e["name"])}: alt menü">{ic("chev")}</button>'
+                f'<div class="nav-sub">{subs}</div></div>')
+    return out
+
+
+def footer_current(r):
+    """Alt bilgi "Güncel" sütunu: menüdeki kategoriler (alt kategorileriyle), galeri ve kaynaklar."""
+    links = [(cat_url(c), c["name"]) for c in CAT_LIST if in_menu(c)]
+    links += [("galeri.html", "Fotoğraf Galerisi"), ("kaynaklar.html", "Kaynaklar")]
+    return "".join('<li><a href="%s%s">%s</a></li>' % (r, h, E(t)) for h, t in links)
+
+
 def layout(path, title, body, desc="", active="", data=None, share=None):
     depth = path.count("/")
     r = "../" * depth
-    nav = "".join('<a href="%s%s"%s>%s</a>' % (r, h, ' aria-current="page"' if h == active else "", t) for h, t in NAV)
+    nav = nav_html(r, active)
     data_tag = ""
     if data is not None:
         data_tag = '<script type="application/json" id="page-data">%s</script>' % json.dumps(data, ensure_ascii=False).replace("</", "<\\/")
@@ -320,7 +344,7 @@ def layout(path, title, body, desc="", active="", data=None, share=None):
         <div class="socials">{social_links()}</div>
       </div>
       <div><h4>Keşfet</h4><ul><li><a href="{r}akademisyenler.html">Akademisyenler</a></li><li><a href="{r}eserler.html">Eserler</a></li><li><a href="{r}eserler.html#tur=Doktora">Doktora Tezleri</a></li><li><a href="{r}eserler.html#tur=Yüksek Lisans">Yüksek Lisans Tezleri</a></li></ul></div>
-      <div><h4>Güncel</h4><ul><li><a href="{r}haberler.html">Haberler</a></li><li><a href="{r}etkinlikler.html">Etkinlikler</a></li><li><a href="{r}etkinlikler.html#tur=Sempozyum">Sempozyumlar</a></li><li><a href="{r}etkinlikler.html#tur=Koordinasyon">Koordinasyon toplantıları</a></li><li><a href="{r}galeri.html">Fotoğraf Galerisi</a></li><li><a href="{r}kaynaklar.html">Kaynaklar</a></li></ul></div>
+      <div><h4>Güncel</h4><ul>{footer_current(r)}</ul></div>
       <div><h4>Site</h4><ul><li><a href="{r}hakkinda.html">Hakkında</a></li><li><a href="{r}hakkinda.html#sss">Sık Sorulanlar</a></li><li><a href="{r}hakkinda.html#kosullar">Kullanım Koşulları</a></li><li><a href="{r}hakkinda.html#iletisim">İletişim</a></li>{'<li><a href="/panel/#/kayit">Üye ol</a></li><li><a href="/panel/">Üye paneli</a></li>' if DYNAMIC else ""}</ul></div>
     </div>
     <div class="footer-bottom"><span>© 2006–{TODAY.year} {E(SITE)} · Tüm hakları saklıdır.</span><span>{E(ST["footer_note"])}</span></div>
@@ -513,13 +537,85 @@ for w in works:
     if ck in mkeys: by_member_works[mkeys[ck]["id"]].append((w, "Danışman" if "Dan" in w["contribType"] else (w["contribType"] or "Katkı")))
 
 
-# Etkinlik bölümünün alt kategorileri (panelde "Bölüm" seçimi; Etkinlikler sayfasında menü)
-EVENT_FORUMS = {"etkinlik": "Etkinlik", "sempozyum": "Sempozyum", "koordinasyon": "Koordinasyon"}
+# ---------------------------------------------------------------- kategoriler ve menü
+# Haberin "forum" alanı kategori anahtarıdır. Kategoriler, menü ve sayfalardaki kategori bölümleri panelden yönetilir
+# (sunucu categories.json'u dışa aktarır; statik sürümde data/categories.json). Bir haberin kategorisini seçmek onu
+# kategori sayfasına, bölümü eklenmiş sayfalara ve menüye kendiliğinden taşır; içerikleri elle seçmek gerekmez.
+CAT_DEF = dict(name="", label="", slug="", parent="", description="", menu_show=False, menu_order=100, home_show=False, count=6,
+               sort="new", style="kart", pages=[], block_eyebrow="", block_title="", seo_title="", seo_desc="", page="", old_slugs=[])
+_CJ = load("categories") if os.path.exists(os.path.join(DATA, "categories.json")) else {}
+CATS = {c["key"]: dict(CAT_DEF, **c) for c in _CJ.get("categories", [])}
+
+
+def slugify(s):
+    return re.sub(r"[^a-z0-9]+", "-", fold(s)).strip("-")[:60].strip("-")
+
+
+# Tanımsız kategorideki haberler kaybolmasın: gizli bir kategori olarak sayfası üretilir (sunucu da aynısını yapar).
+for _t in topics:
+    if _t["forum"] not in CATS:
+        _s, _i = slugify(_t["forum"]) or "kategori", 2
+        while any(c["slug"] == _s for c in CATS.values()):
+            _s, _i = "%s-%d" % (slugify(_t["forum"]) or "kategori", _i), _i + 1
+        CATS[_t["forum"]] = dict(CAT_DEF, key=_t["forum"], name=_t["forum"], slug=_s, menu_order=200)
+for _c in CATS.values():
+    if _c["parent"] not in CATS or _c["parent"] == _c["key"] or CATS[_c["parent"]]["parent"]:
+        _c["parent"] = ""  # menü iki düzeylidir
+_corder = lambda c: (c["menu_order"], fold(c["name"]))
+CAT_LIST = []  # ağaç sırası: üst kategori, ardından alt kategorileri
+for _c in sorted((c for c in CATS.values() if not c["parent"]), key=_corder):
+    CAT_LIST += [_c] + sorted((c for c in CATS.values() if c["parent"] == _c["key"]), key=_corder)
+
+
+def children(key):
+    return [c for c in CAT_LIST if c["parent"] == key]
+
+
+def cat_url(c):
+    """Kategori sayfası: haberler.html ve etkinlikler.html sitenin ana bölümleri; diğerleri kategori/<slug>.html."""
+    return c["page"] or "kategori/%s.html" % c["slug"]
+
+
+def cat_label(c):
+    return c["label"] or c["name"]
+
+
+def cat_root(c):
+    return CATS[c["parent"]] if c["parent"] else c
+
+
+def in_menu(c):
+    return c["menu_show"] and (not c["parent"] or CATS[c["parent"]]["menu_show"])
+
+
+def nav_active(c):
+    """Menüde işaretlenecek adres: kategori ya da üst kategorisi menüdeyse o; değilse bölümünün gösterildiği sayfa."""
+    for x in (c, cat_root(c)):
+        if in_menu(x): return cat_url(x)
+    for x in (c, cat_root(c)):
+        if x["pages"]: return x["pages"][0] + ".html"
+    return ""
+
+
+def tr_lower(s):
+    return (s or "").replace("I", "ı").replace("İ", "i").lower()
+
+
+def _menu():
+    entries = [dict(name=p["name"], href=p["href"], order=p.get("menu_order", 0), children=[])
+               for p in (_CJ.get("pages") or FIXED_PAGES) if p.get("menu_show", True)]
+    for c in CAT_LIST:
+        if not c["parent"] and c["menu_show"]:
+            entries.append(dict(name=c["name"], href=cat_url(c), order=c["menu_order"],
+                                children=[dict(name=x["name"], href=cat_url(x)) for x in children(c["key"]) if x["menu_show"]]))
+    return sorted(entries, key=lambda e: e["order"])
+
+
+MENU = _menu()
 
 
 def topic_tag(t):
-    if t["forum"] in EVENT_FORUMS: return EVENT_FORUMS[t["forum"]]
-    if t["forum"] == "kitap": return "Kitap"
+    if t["forum"] != "haber" and t["forum"] in CATS: return cat_label(CATS[t["forum"]])
     m = re.match(r"^\s*([^:]{3,28}):", t["title"])
     if m:
         tag = m.group(1).strip()
@@ -537,7 +633,7 @@ def topic_tag(t):
 
 
 TAG_BADGE = {"Yeni Doktor": "b-brand", "Doçentlik": "b-gold", "Profesörlük": "b-gold", "Atama": "b-indigo", "Vefat": "b-rose", "Etkinlik": "b-brand", "Yayın": "b-indigo", "Kitap": "b-gold",
-             "Sempozyum": "b-indigo", "Koordinasyon": "b-gold"}
+             "Sempozyum": "b-indigo", "Koordinasyon": "b-gold", "Yeni Kitap": "b-gold"}
 for t in topics:
     t["tag"] = topic_tag(t)
     t["slug"] = "haber/%d.html" % t["id"]
@@ -546,9 +642,28 @@ for t in topics:
     img = (t.get("image") or "").replace("{ROOT}", "")
     t["image"] = img if img.startswith(("media/", "uploads/")) and exists(img) else ""
     t["sort"] = parse_date(t.get("date", ""))
-news = sorted([t for t in topics if t["forum"] == "haber"], key=lambda t: (t["sort"], t["id"]), reverse=True)
-events = sorted([t for t in topics if t["forum"] in EVENT_FORUMS], key=lambda t: (t["sort"], t["id"]), reverse=True)
-others = [t for t in topics if t["forum"] != "haber" and t["forum"] not in EVENT_FORUMS]
+    t["order"] = t["order"] if isinstance(t.get("order"), int) and not isinstance(t.get("order"), bool) else None
+BY_CAT = defaultdict(list)
+for t in topics:
+    BY_CAT[t["forum"]].append(t)
+
+
+def sort_topics(items, how="new"):
+    newest = sorted(items, key=lambda t: (t["sort"], t["id"]), reverse=True)
+    if how == "old": return newest[::-1]
+    if how == "title": return sorted(items, key=lambda t: fold(t["title"]))
+    if how == "manual": return sorted(newest, key=lambda t: (t["order"] is None, t["order"] or 0))  # sıra verilenler önce
+    return newest
+
+
+def cat_items(key, how=None):
+    """Kategorinin (alt kategorileri dahil) bütün yayımlanmış içerikleri, kategorinin sıralama ayarıyla."""
+    keys = [key] + [c["key"] for c in children(key)]
+    return sort_topics([t for k in keys for t in BY_CAT[k]], how or CATS[key]["sort"])
+
+
+news = cat_items("haber", "new") if "haber" in CATS else []
+events = cat_items("etkinlikler", "new") if "etkinlikler" in CATS else []
 
 COORD = [(1, "Ankara", 2007), (2, "Elazığ", 2010), (3, "Isparta", 2012), (4, "Çorum", 2013), (5, "Sivas", 2014),
          (6, "Konya", 2015), (7, "Antalya", 2019), (8, "Rize", 2023), (9, "İstanbul", 2025)]
@@ -586,27 +701,44 @@ def work_item(w):
     return f'''<a class="feed-item" href="{{ROOT}}{w["slug"]}"><div class="body"><span class="badge {TYPE_BADGE.get(w["kind"], "")}">{E(w["kind"])}</span><h3>{E(w["title"])}</h3><p>{' · '.join(bits)}</p></div><span class="chev">{ic("chev")}</span></a>'''
 
 
+# ---------------------------------------------------------------- KATEGORİ BÖLÜMLERİ
+def cat_block(c):
+    """Bir sayfadaki kategori bölümü: kategorinin ilk N içeriği (sıralama kategori ayarından) ve kategori sayfasına bağlantı.
+    Bölümde gösterilmeyen içerikler kategori sayfasında listelenmeye devam eder; bölüm ile arşiv birbirinden bağımsızdır."""
+    items = cat_items(c["key"])
+    if not items:
+        return ""
+    shown = items[:c["count"]] if c["count"] else items
+    eyebrow = c["block_eyebrow"] or (CATS[c["parent"]]["name"] if c["parent"] else "")
+    eyebrow = '<div class="eyebrow">%s</div>' % E(eyebrow) if eyebrow else ""
+    lead = "<p>%s</p>" % E(c["description"]) if c["description"] else ""
+    more = "Tümünü gör" + (" (%d)" % len(items) if len(shown) < len(items) else "")
+    if c["style"] == "liste":
+        inner = '<div class="feed reveal">%s</div>' % "".join(feed_topic(t) for t in shown)
+    else:
+        inner = '<div class="grid grid-3">%s</div>' % "".join(news_card(t, "reveal") for t in shown)
+    return (f'<section class="section{{ALT}}" data-category="{E(c["key"])}"><div class="container">'
+            f'<div class="section-head reveal"><div>{eyebrow}<h2>{E(c["block_title"] or c["name"])}</h2>{lead}</div>'
+            f'<a class="link-arrow" href="{{ROOT}}{cat_url(c)}">{more} {ic("arrow")}</a></div>{inner}</div></section>')
+
+
+def page_blocks(page):
+    """Sayfaya eklenmiş kategori bölümleri (panel: Kategoriler → "Ana sayfada göster" / "Diğer sayfalarda göster"), menü sırasıyla."""
+    return [h for h in (cat_block(c) for c in CAT_LIST if (c["home_show"] if page == "index" else page in c["pages"])) if h]
+
+
+def with_blocks(body, page):
+    return body + "".join(h.replace("{ALT}", " alt" if n % 2 == 0 else "") for n, h in enumerate(page_blocks(page)))
+
+
 # ---------------------------------------------------------------- ANA SAYFA
 def build_home():
-    latest = news[:max(3, min(12, int(ST["home_news_count"] or 6)))]
     pop = sorted(works, key=lambda w: -w["hits"])[:6]
     recent_members = sorted(members, key=lambda m: (parse_date(m["added"]), m["id"]), reverse=True)[:8]
     s = STATS
-    coord = "".join(f'<a class="coord reveal" href="{{ROOT}}etkinlikler.html#tur=Koordinasyon"><div class="no">{n:02d}</div><div class="city">{c}</div><div class="yr">{y} · Koordinasyon</div></a>' for n, c, y in COORD)
     people = "".join(f'''<a class="card person reveal" href="{{ROOT}}{m["slug"]}">{avatar(m)}<div class="info"><div class="rank">{E(m["title"])}</div><h3>{E(m["name"])}</h3><div class="uni">{E(m["university"])}</div></div></a>''' for m in recent_members)
-    optional = [
-        (ST['home_show_news'], f'''<section class="section{{ALT}}">
-  <div class="container">
-    <div class="section-head reveal"><div><div class="eyebrow">Güncel</div><h2>Son haberler</h2><p>Bilim dalımızdan yeni doktorlar, unvan ve atamalar, vefat haberleri ve duyurular.</p></div><a class="link-arrow" href="{{ROOT}}haberler.html">Tüm haberler {ic("arrow")}</a></div>
-    <div class="grid grid-3">{"".join(news_card(t, "reveal") for t in latest)}</div>
-  </div>
-</section>'''),
-        (ST['home_show_coord'], f'''<section class="section{{ALT}}">
-  <div class="container">
-    <div class="section-head reveal"><div><div class="eyebrow">Koordinasyon Toplantıları</div><h2>2007'den bugüne dokuz buluşma</h2><p>Anabilim dalının ülke çapındaki öğretim elemanlarını bir araya getiren geleneksel koordinasyon toplantıları.</p></div><a class="link-arrow" href="{{ROOT}}etkinlikler.html">Tüm etkinlikler {ic("arrow")}</a></div>
-    <div class="coord-strip">{coord}</div>
-  </div>
-</section>'''),
+    # Kategori bölümleri (Son haberler, Koordinasyon toplantıları…) panelden; ardından eserler ve akademisyenler
+    optional = [(True, h) for h in page_blocks("index")] + [
         (ST['home_show_works'], f'''<section class="section{{ALT}}">
   <div class="container">
     <div class="section-head reveal"><div><div class="eyebrow">En çok okunanlar</div><h2>Öne çıkan eserler</h2></div><a class="link-arrow" href="{{ROOT}}eserler.html">Tüm eserler {ic("arrow")}</a></div>
@@ -620,7 +752,7 @@ def build_home():
   </div>
 </section>''')
     ]
-    optional.insert(1, (True, video_module()))
+    optional.insert(min(1, len(optional)), (True, video_module()))
     shown = [h for on, h in optional if on and h]
     optional_sections = "\n\n".join(h.replace("{ALT}", " alt" if n % 2 == 0 else "") for n, h in enumerate(shown))
     body = f'''
@@ -696,7 +828,7 @@ def build_members():
   <div class="chips">{chips}</div>
 </div></div>
 <div class="container" style="padding-bottom:80px"><p class="result-info" data-info></p><div class="grid grid-4" data-list="members"></div><div class="load-more"><button class="btn btn-ghost" data-more hidden>Daha fazla göster</button></div></div>'''
-    layout("akademisyenler.html", "Akademisyenler", body, "İslam Mezhepleri Tarihi akademisyenleri listesi", "akademisyenler.html", data)
+    layout("akademisyenler.html", "Akademisyenler", with_blocks(body, "akademisyenler"), "İslam Mezhepleri Tarihi akademisyenleri listesi", "akademisyenler.html", data)
 
     for m in members:
         ws = by_member_works[m["id"]]
@@ -791,7 +923,7 @@ def build_works():
   <div class="chips">{chips}</div>
 </div></div>
 <div class="container" style="padding-bottom:80px"><p class="result-info" data-info></p><div class="feed" data-list="works"></div><div class="load-more"><button class="btn btn-ghost" data-more hidden>Daha fazla göster</button></div></div>'''
-    layout("eserler.html", "Eserler", body, "İslam Mezhepleri Tarihi tezleri, kitapları, makaleleri ve tebliğleri", "eserler.html", data)
+    layout("eserler.html", "Eserler", with_blocks(body, "eserler"), "İslam Mezhepleri Tarihi tezleri, kitapları, makaleleri ve tebliğleri", "eserler.html", data)
 
     mbyname = {m["key"]: m for m in members}
     for w in works:
@@ -832,14 +964,16 @@ def build_works():
 
 # ---------------------------------------------------------------- HABERLER & KONULAR
 def build_news():
+    H = CATS.get("haber") or dict(CAT_DEF, name="Haberler")
     order = ["Yeni Doktor", "Doçentlik", "Profesörlük", "Atama", "Vefat", "Etkinlik", "Yayın", "Duyuru"]
+    order += [cat_label(x) for x in children("haber") if cat_label(x) not in order]  # Haberler'in alt kategorileri
     cnt = Counter(t["tag"] for t in news)
     chips = '<button class="chip" data-filter="tur" data-value="" aria-pressed="true">Tümü <span class="n">%d</span></button>' % len(news)
     chips += "".join('<button class="chip" data-filter="tur" data-value="%s" aria-pressed="false">%s <span class="n">%d</span></button>' % (E(k), E(k), cnt[k]) for k in order if cnt[k])
     years = sorted({t["sort"][0] for t in news if t["sort"][0]}, reverse=True)
     yopts = '<option value="">Tüm yıllar</option>' + "".join("<option>%d</option>" % y for y in years)
     data = [dict(id=t["id"], t=t["title"], g=t["tag"], d=t.get("date", ""), y=t["sort"][0], m=t.get("summary", "")[:200], s=t["slug"], i=(t.get("image") or "").replace("{ROOT}", "")) for t in news]
-    body = page_hero("Haberler", "Bilim dalımızdan yeni doktorlar, doçentlik ve profesörlük unvanları, atamalar, vefat haberleri ve duyurular.", [("index.html", "Ana Sayfa"), ("", "Haberler")], "%d haber" % len(news),
+    body = page_hero(H["name"], E(H["description"]), [("index.html", "Ana Sayfa"), ("", H["name"])], "%d haber" % len(news),
                      dyn_button("oneri/topic", "Haber gönderin", "news", True))
     body += f'''
 <div class="toolbar"><div class="container">
@@ -847,18 +981,22 @@ def build_news():
   <div class="chips">{chips}</div>
 </div></div>
 <div class="container" style="padding-bottom:80px"><p class="result-info" data-info></p><div class="grid grid-3" data-list="news"></div><div class="load-more"><button class="btn btn-ghost" data-more hidden>Daha fazla göster</button></div></div>'''
-    layout("haberler.html", "Haberler", body, "İslam Mezhepleri Tarihi haberleri", "haberler.html", data)
+    layout("haberler.html", H["seo_title"] or H["name"], with_blocks(body, "haberler"), H["seo_desc"] or H["description"][:160], "haberler.html", data)
 
-    section = {"haber": ("haberler.html", "Haberler"), **{f: ("etkinlikler.html", "Etkinlikler") for f in EVENT_FORUMS}, "kitap": ("kaynaklar.html", "Kaynaklar"),
-               "sss": ("hakkinda.html", "Hakkında"), "anket": ("hakkinda.html", "Hakkında")}
-    pool = {"haber": news, **{f: events for f in EVENT_FORUMS}}
     for t in topics:
-        href, label = section.get(t["forum"], ("kaynaklar.html", "Kaynaklar"))
+        # Konum, menü işareti ve "Diğer …" listesi haberin kategorisinden gelir (kategori panelden seçilir).
+        c = CATS[t["forum"]]
+        root = cat_root(c)
+        href, label = cat_url(root), root["name"]
+        crumbs = [("index.html", "Ana Sayfa")] + ([(href, label)] if c["parent"] else []) + [(cat_url(c), c["name"])]
+        if c["key"] == "haber":
+            crumbs.append(("", t["tag"]))
+        pool_cat = c if len(BY_CAT[c["key"]]) > 1 or not c["parent"] else root
         posts = ""
         for i, p in enumerate(t["posts"]):
             head = "" if i == 0 else f'<div class="post-head"><span class="avatar">{initials(p["author"])}</span><div><strong>{E(p["author"])}</strong><br>{tr_date(p["date"])} · {E(p["time"])}</div></div>'
             posts += f'<div class="{"post" if i else ""}">{head}<div class="prose">{p["html"]}</div></div>'
-        lst = pool.get(t["forum"], others)
+        lst = cat_items(pool_cat["key"], "new")
         idx = next((i for i, x in enumerate(lst) if x["id"] == t["id"]), 0)
         prev_t = lst[idx + 1] if idx + 1 < len(lst) else None
         next_t = lst[idx - 1] if idx > 0 else None
@@ -867,13 +1005,13 @@ def build_news():
             if x: nav += f'<a class="card hover" href="{{ROOT}}{x["slug"]}"><div class="meta">{lbl}</div><h3 class="clamp-2" style="font-size:1rem">{E(x["title"])}</h3></a>'
         more = [x for x in lst if x["id"] != t["id"]][:5]
         info = "".join(f"<dt>{k}</dt><dd>{v}</dd>" for k, v in [("Kategori", E(t["tag"])), ("Tarih", tr_date(t.get("date"))), ("Yazan", E(t.get("author"))), ("Mesaj", len(t["posts"]) if len(t["posts"]) > 1 else "")] if v)
-        body = page_hero(t["title"], "", [("index.html", "Ana Sayfa"), (href, label), ("", t["tag"])], tr_date(t.get("date")), own_button("topic", t["id"]))
+        body = page_hero(t["title"], "", crumbs, tr_date(t.get("date")), own_button("topic", t["id"]))
         body += f'''<div class="container detail">
   <div><article class="panel">{posts}</article>{share_block(t["slug"], t["title"], t.get("summary", "")[:200], abs_url(t.get("image")), "topic:%d" % t["id"])}{comments_block("topic:%d" % t["id"])}{('<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(240px,1fr));margin-top:18px">%s</div>' % nav) if nav else ""}</div>
-  <aside><div class="panel"><h3>Ayrıntılar</h3><dl class="dl">{info}</dl></div><div class="panel"><h3>Diğer {label.lower()}</h3><div class="feed" style="margin-top:12px">{"".join(feed_topic(x) for x in more)}</div></div><a class="btn btn-ghost" href="{{ROOT}}{href}">{ic("left")} {label}</a></aside>
+  <aside><div class="panel"><h3>Ayrıntılar</h3><dl class="dl">{info}</dl></div><div class="panel"><h3>Diğer {E(tr_lower(pool_cat["name"]))}</h3><div class="feed" style="margin-top:12px">{"".join(feed_topic(x) for x in more)}</div></div><a class="btn btn-ghost" href="{{ROOT}}{href}">{ic("left")} {label}</a></aside>
 </div>'''
-        layout(t["slug"], t["title"], body, t.get("summary", "")[:160], href,
-               share={"og": "etkinlik" if t["forum"] in EVENT_FORUMS else "haber", "article": True, "image": abs_url(t.get("image")), "published": iso_date(t.get("date"))})
+        layout(t["slug"], t["title"], body, t.get("summary", "")[:160], nav_active(c),
+               share={"og": "etkinlik" if root["key"] == "etkinlikler" else "haber", "article": True, "image": abs_url(t.get("image")), "published": iso_date(t.get("date"))})
 
 
 # ---------------------------------------------------------------- ETKİNLİKLER
@@ -892,16 +1030,19 @@ def build_events():
     for y in sorted(by_year, reverse=True):
         tl += '<div class="year-label" data-year>%s</div>' % (y or "Tarihsiz")
         for e in by_year[y]:
-            tl += f'<div class="tl-item reveal" data-tur="{E(e["tag"])}"><a class="card hover" href="{{ROOT}}{e["slug"]}"><div class="meta"><span class="badge {TAG_BADGE.get(e["tag"], "")}">{E(e["tag"])}</span><span>{tr_date(e.get("date"))}</span>{("<span class=dot></span><span>%d mesaj</span>" % len(e["posts"])) if len(e["posts"]) > 1 else ""}</div><h3>{E(e["title"])}</h3><p class="clamp-2">{E(e.get("summary", ""))}</p></a></div>'
-    body = page_hero("Etkinlikler", "Sempozyumlar, çalıştaylar, paneller ve İslam Mezhepleri Tarihi koordinasyon / istişare toplantıları.", [("index.html", "Ana Sayfa"), ("", "Etkinlikler")], "%d duyuru" % len(events))
-    cnt = Counter(e["tag"] for e in events)
+            tl += f'<div class="tl-item reveal" data-tur="{E(e["tag"])}" data-cat="{E(e["forum"])}"><a class="card hover" href="{{ROOT}}{e["slug"]}"><div class="meta"><span class="badge {TAG_BADGE.get(e["tag"], "")}">{E(e["tag"])}</span><span>{tr_date(e.get("date"))}</span>{("<span class=dot></span><span>%d mesaj</span>" % len(e["posts"])) if len(e["posts"]) > 1 else ""}</div><h3>{E(e["title"])}</h3><p class="clamp-2">{E(e.get("summary", ""))}</p></a></div>'
+    EV = CATS.get("etkinlikler") or dict(CAT_DEF, name="Etkinlikler")
+    body = page_hero(EV["name"], E(EV["description"]), [("index.html", "Ana Sayfa"), ("", EV["name"])], "%d duyuru" % len(events))
+    # Kategori menüsü: Etkinlikler'in alt kategorileri (panelden eklenen yeni alt kategoriler de kendiliğinden gelir).
+    # #tur=Koordinasyon (kısa ad), #tur=koordinasyon (anahtar ya da adres) bağlantılarının hepsi çalışır.
+    cnt = Counter(e["forum"] for e in events)
     menu = '<button class="chip" type="button" data-ev-filter="" aria-pressed="true">Tümü <span class="n">%d</span></button>' % len(events)
-    menu += "".join('<button class="chip" type="button" data-ev-filter="%s" aria-pressed="false">%s <span class="n">%d</span></button>' % (E(l), E(l), cnt[l])
-                    for l in EVENT_FORUMS.values() if cnt[l])
+    menu += "".join('<button class="chip" type="button" data-ev-filter="%s" data-ev-key="%s" data-ev-slug="%s" data-ev-heading="%s" data-ev-url="%s" aria-pressed="false">%s <span class="n">%d</span></button>'
+                    % (E(cat_label(x)), E(x["key"]), E(x["slug"]), E(x["name"]), E(cat_url(x)), E(cat_label(x)), cnt[x["key"]]) for x in children("etkinlikler") if cnt[x["key"]])
     body += f'<div class="toolbar"><div class="container"><nav class="chips" aria-label="Etkinlik kategorileri">{menu}</nav></div></div>'
-    body += f'''<section class="section" id="koordinasyon"><div class="container"><div class="section-head"><div><div class="eyebrow">Gelenek</div><h2>Koordinasyon toplantıları</h2><p>Anabilim dalı öğretim elemanlarının düzenli olarak bir araya geldiği ulusal buluşmalar.</p></div></div><div class="coord-strip">{coord_cards}</div></div></section>
-<section class="section alt"><div class="container" style="max-width:900px"><div class="section-head"><div><div class="eyebrow">Arşiv</div><h2 data-ev-title>Etkinlik, sempozyum ve koordinasyon duyuruları</h2></div></div><p class="result-info" data-ev-info></p><div class="timeline" data-ev-list>{tl}</div></div></section>'''
-    layout("etkinlikler.html", "Etkinlikler", body, "İslam Mezhepleri Tarihi sempozyumları ve koordinasyon toplantıları", "etkinlikler.html")
+    body += f'''<section class="section" id="koordinasyon" data-ev-for="koordinasyon"><div class="container"><div class="section-head"><div><div class="eyebrow">Gelenek</div><h2>Koordinasyon toplantıları</h2><p>Anabilim dalı öğretim elemanlarının düzenli olarak bir araya geldiği ulusal buluşmalar.</p></div></div><div class="coord-strip">{coord_cards}</div></div></section>
+<section class="section alt"><div class="container" style="max-width:900px"><div class="section-head"><div><div class="eyebrow">Arşiv</div><h2 data-ev-title>Etkinlik, sempozyum ve koordinasyon duyuruları</h2></div><a class="link-arrow" href="#" data-ev-link hidden>Kategori sayfası {ic("arrow")}</a></div><p class="result-info" data-ev-info></p><div class="timeline" data-ev-list>{tl}</div></div></section>'''
+    layout("etkinlikler.html", EV["seo_title"] or EV["name"], with_blocks(body, "etkinlikler"), EV["seo_desc"] or EV["description"][:160], "etkinlikler.html")
 
 
 # ---------------------------------------------------------------- GALERİ
@@ -931,7 +1072,7 @@ def build_gallery():
                  f'<div class="vid-grid gal-vids">{"".join(vid_card(v) for v in vids)}</div></div>')
     else:
         body += f'<div class="container" style="padding-bottom:80px">{sec}</div>'
-    layout("galeri.html", "Galeri", body, "Mezhep.Org fotoğraf ve video galerisi", "galeri.html", share={"og": "galeri"})
+    layout("galeri.html", "Galeri", with_blocks(body, "galeri"), "Mezhep.Org fotoğraf ve video galerisi", "galeri.html", share={"og": "galeri"})
     for a in albums:
         figs = "".join(f'<figure data-full="{{ROOT}}{E(p["src"])}" data-cap="{E(p["title"])}"><img src="{{ROOT}}{E(p["src"])}" alt="{E(p["title"])}" loading="lazy"><figcaption>{E(p["title"])}</figcaption></figure>' for p in a["photos"])
         others_ = "".join(f'<a class="chip" href="{{ROOT}}{x["slug"]}">{E(x["name"])}</a>' for x in album_groups[a["event"]] if x is not a)
@@ -962,19 +1103,18 @@ def build_resources():
             items += f'<{tag} class="card{" hover" if url else ""}"{attr}><div class="meta"><span class="badge">{E(l["sub"])}</span></div><h3>{E(l["name"])}</h3><p>{E(l["desc"])}</p>{foot}</{tag}>'
         lk += f'<h3 style="margin:28px 0 14px">{E(cat)}</h3><div class="grid grid-3">{items}</div>'
     fl = "".join(f'<div class="card"><span class="ic" style="width:44px;height:44px;border-radius:12px;display:grid;place-items:center;background:var(--gold-soft);color:var(--gold)">{ic("file")}</span><h3>{E(f["name"])}</h3><p>{E(f["desc"])}</p><div class="foot"><span>{E(f["category"])}</span><span>{tr_date(f["date"])}</span></div></div>' for f in files)
-    bk = sorted([t for t in others if t["forum"] in ("kitap", "eser-tr", "eser-ar", "eser-en")], key=lambda t: t["sort"], reverse=True)
-    lab = {"kitap": "Yeni Kitap", "eser-tr": "Türkçe Eser", "eser-ar": "Arapça Eser", "eser-en": "Yabancı Dilde Eser"}
-    for t in bk: t["tag"] = lab[t["forum"]]
+    # "Yayınlar" ve kaynaklar sayfasına eklenen diğer kategoriler (panel: Kategoriler → Diğer sayfalarda göster → Kaynaklar)
+    blocks = "".join(h.replace("{ALT}", " alt") for h in page_blocks("kaynaklar"))
     body = page_hero("Kaynaklar", "Mezhepler tarihçisinin bilmesi gereken siteler, dergiler, yeni kitap tanıtımları ve indirilebilir araçlar.", [("index.html", "Ana Sayfa"), ("", "Kaynaklar")])
     body += f'''<section class="section"><div class="container"><div class="section-head"><div><div class="eyebrow">Bağlantılar</div><h2>Önerilen siteler ve dergiler</h2><p>“Mezhepler tarihçisi bunu görmeli!” dediğiniz siteleri bize iletin.</p></div></div>{lk}</div></section>
-<section class="section alt"><div class="container"><div class="section-head"><div><div class="eyebrow">Yayınlar</div><h2>Kitap haberleri ve eser tanıtımları</h2></div></div><div class="feed">{"".join(feed_topic(t) for t in bk)}</div></div></section>
+{blocks}
 <section class="section"><div class="container"><div class="section-head"><div><div class="eyebrow">Araçlar</div><h2>İndirilebilir dosyalar</h2><p>Transkripsiyon yazı tipleri ve yardımcı belgeler. Dosyaların kendisi için lütfen site yöneticisiyle iletişime geçin.</p></div></div><div class="grid grid-3">{fl}</div></div></section>'''
     layout("kaynaklar.html", "Kaynaklar", body, "Mezhepler tarihi kaynakları, bağlantılar ve dosyalar", "kaynaklar.html")
 
 
 # ---------------------------------------------------------------- HAKKINDA
 def build_about():
-    sss = [t for t in others if t["forum"] == "sss"]
+    sss = cat_items("sss") if "sss" in CATS else []
     faq = "".join(f'<details class="panel"><summary style="cursor:pointer;font-weight:600;font-family:var(--serif);font-size:1.1rem">{E(t["title"])}</summary><div class="prose" style="margin-top:14px">{t["posts"][0]["html"]}</div></details>' for t in sss)
     body = page_hero("Hakkında", "www.mezhep.org, İlahiyat ve İslami İlimler Fakülteleri İslam Mezhepleri Tarihi Anabilim Dalı Koordinasyon Sitesi olarak hizmet vermektedir.", [("index.html", "Ana Sayfa"), ("", "Hakkında")], "2006'dan beri")
     body += f'''<div class="container detail">
@@ -1005,7 +1145,64 @@ def build_about():
     <a class="btn btn-ghost" href="{{ROOT}}akademisyen/10.html">{ic("users")} Yönetici profili</a>
   </aside>
 </div>'''
-    layout("hakkinda.html", "Hakkında", body, "Mezhep.Org hakkında", "hakkinda.html")
+    layout("hakkinda.html", "Hakkında", with_blocks(body, "hakkinda"), "Mezhep.Org hakkında", "hakkinda.html")
+
+
+# ---------------------------------------------------------------- KATEGORİ SAYFALARI
+def write_redirect(path, target):
+    """Adresi değiştirilen kategorinin eski adresi: eski bağlantılar ve arama motorları yeni adrese yönlenir."""
+    r = "../" * path.count("/")
+    doc = (f'<!doctype html>\n<html lang="tr"><head><meta charset="utf-8"><title>{E(SITE)}</title>'
+           f'<link rel="canonical" href="{E(SITE_URL + quote(target, safe="/"))}"><meta name="robots" content="noindex">'
+           f'<meta http-equiv="refresh" content="0; url={r}{E(target)}"></head><body><p>Bu sayfa taşındı: <a href="{r}{E(target)}">{E(target)}</a></p></body></html>')
+    WRITTEN.add(path)
+    out = os.path.join(ROOT, path)
+    os.makedirs(os.path.dirname(out), exist_ok=True)
+    with open(out, "w", encoding="utf-8") as f:
+        f.write(doc)
+
+
+def build_categories():
+    """Her kategori için arşiv sayfası: kategorideki (alt kategorileri dahil) bütün yayımlanmış içerikler, arama, yıl
+    süzgeci, sıralama ve "Daha fazla göster" ile. İçerikler HTML'de de yer alır (JavaScript'siz ziyaretçi ve arama motorları)."""
+    for c in CAT_LIST:
+        if c["page"]:
+            continue  # haberler.html ve etkinlikler.html kendi sayfalarında üretilir
+        items = cat_items(c["key"])
+        path = cat_url(c)
+        cnt = Counter(t["tag"] for t in items)
+        chips = ""
+        if len(cnt) > 1:
+            kids = [cat_label(x) for x in children(c["key"])]
+            chips = '<button class="chip" data-filter="tur" data-value="" aria-pressed="true">Tümü <span class="n">%d</span></button>' % len(items)
+            chips += "".join('<button class="chip" data-filter="tur" data-value="%s" aria-pressed="false">%s <span class="n">%d</span></button>' % (E(k), E(k), cnt[k])
+                             for k in kids + sorted(k for k in cnt if k not in kids) if cnt[k])
+        years = sorted({t["sort"][0] for t in items if t["sort"][0]}, reverse=True)
+        yopts = '<option value="">Tüm yıllar</option>' + "".join("<option>%d</option>" % y for y in years)
+        sorts = [("new", "En yeni"), ("old", "En eski"), ("title", "Başlık (A–Z)")] + ([("manual", "Önerilen sıra")] if c["sort"] == "manual" else [])
+        sopts = "".join('<option value="%s"%s>%s</option>' % (k, " selected" if k == c["sort"] else "", l) for k, l in sorts)
+        data = [dict(id=t["id"], t=t["title"], g=t["tag"], d=t.get("date", ""), y=t["sort"][0], m=t.get("summary", "")[:200], s=t["slug"],
+                     i=(t.get("image") or "").replace("{ROOT}", ""), o=t["order"]) for t in items]
+        crumbs = [("index.html", "Ana Sayfa")] + ([(cat_url(CATS[c["parent"]]), CATS[c["parent"]]["name"])] if c["parent"] else []) + [("", c["name"])]
+        body = page_hero(c["name"], E(c["description"]), crumbs, "%d içerik" % len(items),
+                         dyn_button("oneri/topic", "İçerik gönderin", "news", True) if c.get("open_submit") else "")
+        if items:
+            body += f'''
+<div class="toolbar"><div class="container">
+  <div class="row"><label class="input">{ic("search")}<input type="search" data-q placeholder="Bu kategoride ara…" aria-label="Kategoride ara"></label><select class="select" data-filter-select="year" aria-label="Yıl">{yopts}</select><select class="select" data-sort aria-label="Sıralama">{sopts}</select></div>
+  {('<div class="chips">%s</div>' % chips) if chips else ""}
+</div></div>'''
+        cards = "".join(news_card(t) for t in items) or '<div class="empty" style="grid-column:1/-1">Bu kategoride henüz yayımlanmış içerik bulunmuyor.</div>'
+        body += (f'<div class="container" style="padding:{"0" if items else "32px"} 24px 80px"><p class="result-info" data-info>{len(items)} kayıt</p>'
+                 f'<div class="grid grid-3" data-list="news" data-empty="Bu kategoride henüz yayımlanmış içerik bulunmuyor.">{cards}</div>'
+                 f'<div class="load-more"><button class="btn btn-ghost" data-more hidden>Daha fazla göster</button></div></div>')
+        og = "etkinlik" if cat_root(c)["key"] == "etkinlikler" else "haber"
+        layout(path, c["seo_title"] or c["name"], body, (c["seo_desc"] or c["description"] or "%s — %s" % (c["name"], SITE))[:160], nav_active(c), data, share={"og": og})
+    live = {c["slug"] for c in CATS.values() if not c["page"]}
+    for c in CATS.values():
+        for old in c["old_slugs"]:
+            if old not in live:
+                write_redirect("kategori/%s.html" % old, cat_url(c))
 
 
 # ---------------------------------------------------------------- ARAMA DİZİNİ
@@ -1034,7 +1231,7 @@ def build_404():
         f.write(doc)
 
 
-build_home(); build_members(); build_works(); build_news(); build_events(); build_gallery(); build_resources(); build_about(); build_index(); build_404()
+build_home(); build_members(); build_works(); build_news(); build_events(); build_gallery(); build_resources(); build_about(); build_categories(); build_index(); build_404()
 _stale = remove_stale()
 if _stale:
     print("Eski sayfa silindi:", _stale)

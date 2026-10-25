@@ -125,10 +125,10 @@
         '<button type="button" class="btn btn-ghost btn-sm" data-clear' + (v ? "" : " hidden") + ">Kaldır</button></div></div>" +
         '<span class="hint">JPG, PNG ya da WEBP; en fazla 5 MB.</span>';
     } else {
-      var type = { url: "url", email: "email", year: "number", date: "date" }[f.type] || "text";
+      var type = { url: "url", email: "email", year: "number", int: "number", date: "date" }[f.type] || "text";
       if (f.type === "date") { var m = String(v).match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/); v = m ? m[3] + "-" + ("0" + m[2]).slice(-2) + "-" + ("0" + m[1]).slice(-2) : v; }
       input = '<input type="' + type + '" id="' + id + '" name="' + f.key + '" value="' + esc(v) + '"' + (f.max ? ' maxlength="' + f.max + '"' : "") +
-        (f.required ? " required" : "") + (f.type === "year" ? ' min="600" max="2100"' : "") + (f.suggest ? ' list="' + id + '-list"' : "") + ">" +
+        (f.required ? " required" : "") + (f.type === "year" ? ' min="600" max="2100"' : "") + (f.type === "int" ? ' min="' + f.min + '" max="' + f.max + '" step="1"' : "") + (f.suggest ? ' list="' + id + '-list"' : "") + ">" +
         (f.suggest ? '<datalist id="' + id + '-list">' + f.suggest.map(function (o) { return '<option value="' + esc(o) + '">'; }).join("") + "</datalist>" : "");
     }
     return '<div class="field" data-field="' + f.key + '">' + lbl + input + '<span class="err" hidden></span></div>';
@@ -510,6 +510,7 @@
       if (can("icerik.member")) html += link("#/yonetim/icerik/member", "Akademisyenler");
       if (can("icerik.work")) html += link("#/yonetim/icerik/work", "Eserler");
       if (can("icerik.topic")) html += link("#/yonetim/icerik/topic", "Haber ve etkinlikler");
+      if (can("site.ayar")) html += link("#/yonetim/kategoriler", "Kategoriler ve menü");
       if (can("icerik.sil")) html += link("#/yonetim/cop", "Geri dönüşüm kutusu");
       if (can("site.ayar") || can("ai.ayar")) html += link("#/yonetim/ayarlar", "Site ayarları");
       if (can("kayit.gor")) html += link("#/yonetim/kayitlar", "İşlem kayıtları");
@@ -1038,7 +1039,8 @@
         return '<div class="field" data-field="' + f.key + '">' + lbl + '<input type="' + type + '" id="' + id + '" name="' + f.key + '" value="' + esc(v == null ? "" : v) + '"' +
           (f.max && type !== "number" ? ' maxlength="' + f.max + '"' : "") + (type === "number" ? ' min="' + f.min + '" max="' + f.max + '" step="' + (f.step || 1) + '"' : "") + '><span class="err" hidden></span></div>';
       };
-      $("[data-s]", main).innerHTML = tabs + '<form class="form panel" novalidate>' + g.fields.map(field).join("") +
+      $("[data-s]", main).innerHTML = tabs + (g.note ? '<div class="notice info">' + esc(g.note) + (can("site.ayar") ? ' <a href="#/yonetim/kategoriler">Kategoriler ve menü →</a>' : "") + "</div>" : "") +
+        '<form class="form panel" novalidate>' + g.fields.map(field).join("") +
         '<div class="form-actions"><button class="btn btn-primary" type="submit">Kaydet</button>' + (g.key === "duyuru" || g.key === "anasayfa" || g.key === "genel" ? '<a class="btn btn-ghost" href="/index.html" target="_blank">Siteyi aç</a>' : "") + "</div></form>";
       var f = $("form", main);
       f.addEventListener("submit", function (e) {
@@ -1060,7 +1062,8 @@
     "sifre-sifirla": "Şifre sıfırladı", "rol-ekle": "Rol ekledi", "rol-duzenle": "Rolü düzenledi", "rol-sil": "Rolü sildi", ayar: "Ayar değiştirdi",
     "icerik-ekle": "Kayıt ekledi", "icerik-duzenle": "Kaydı düzenledi", "icerik-sil": "Kaydı sildi", "icerik-geri-getir": "Kaydı geri getirdi",
     "kendi-guncelle": "Kendi kaydını güncelledi", "yorum-visible": "Yorumu yayınladı", "yorum-hidden": "Yorumu gizledi", "yorum-sil": "Yorumu sildi",
-    "site-uret": "Siteyi yeniden üretti", "disa-aktar": "Dışa aktardı", "icerik-yenile": "İçerik yenilendi", "ilk-yonetici": "İlk yönetici oluşturuldu"
+    "site-uret": "Siteyi yeniden üretti", "disa-aktar": "Dışa aktardı", "icerik-yenile": "İçerik yenilendi", "ilk-yonetici": "İlk yönetici oluşturuldu",
+    "kategori-ekle": "Kategori ekledi", "kategori-duzenle": "Kategoriyi düzenledi", "kategori-sil": "Kategoriyi sildi", "menu-duzenle": "Menüyü düzenledi", "kategori-geri-al": "Kategori tabloları kaldırıldı"
   };
 
   function viewLogs() {
@@ -1113,21 +1116,233 @@
     load();
   }
 
+  /* ---------------------------------------------------------------- kategoriler ve menü */
+  // Haberin kategorisini seçmek yeterlidir: kategori sayfası, kategori bölümü eklenmiş sayfalar ve menü site üretilirken dolar.
+  // Bu ekranlar yalnızca "hangi kategori, hangi sayfada, kaç içerikle, hangi sırayla" sorularını yönetir.
+  function catTabs(cur) {
+    return '<nav class="tabs">' + [["", "Kategoriler"], ["menu", "Menü"]].map(function (t) {
+      return '<a href="#/yonetim/kategoriler' + (t[0] ? "/" + t[0] : "") + '"' + (t[0] === cur ? ' aria-current="page"' : "") + ">" + t[1] + "</a>";
+    }).join("") + "</nav>";
+  }
+  function catUrl(c) { return "/" + (c.page || "kategori/" + c.slug + ".html"); }
+  // Kategorinin kendisi ve alt kategorilerindeki içerik sayısı (üst kategorinin sayfası hepsini listeler)
+  function catCount(j, c) {
+    var out = { live: 0, trash: 0 };
+    j.items.forEach(function (x) { if (x.key === c.key || x.parent === c.key) { var n = j.counts[x.key] || {}; out.live += n.live || 0; out.trash += n.trash || 0; } });
+    return out;
+  }
+  var CAT_LEAD = '<p class="page-lead">Haber ya da yazı yayımlarken yalnızca kategorisini seçmeniz yeterli: içerik kategori sayfasına, kategorinin gösterildiği sayfalara ve menüdeki bağlantısına kendiliğinden yansır. Buradan hangi kategorinin hangi sayfada, kaç içerikle ve hangi sırayla gösterileceğini belirleyin.</p>';
+
+  function viewCategories() {
+    setTitle("Kategoriler");
+    main.innerHTML = '<h1 class="page-title">Kategoriler ve menü</h1>' + CAT_LEAD + catTabs("") +
+      '<div class="toolbar-row"><a class="btn btn-primary btn-sm" href="#/yonetim/kategoriler/yeni">Yeni kategori</a></div><div data-l><p class="muted">Yükleniyor…</p></div>';
+    api("GET", "/admin/categories").then(function (j) {
+      var pageLabels = j.fields.filter(function (f) { return f.key === "pages"; })[0].labels;
+      var known = {}; j.items.forEach(function (c) { known[c.key] = 1; });
+      var lost = Object.keys(j.counts).filter(function (k) { return !known[k]; });
+      $("[data-l]", main).innerHTML = (lost.length ? '<div class="notice warn">Kategorisi tanımlı olmayan kayıtlar var (' + esc(lost.join(", ")) + '). Site yeniden üretildiğinde bunlar için gizli kategori açılır.</div>' : "") +
+        '<div class="p-list">' + j.items.map(function (c) {
+          var n = catCount(j, c), tags = [], kids = j.items.some(function (x) { return x.parent === c.key; });
+          if (c.menu_show) tags.push('<span class="badge b-brand">Menüde</span>');
+          if (c.home_show) tags.push('<span class="badge b-gold">Ana sayfada · ' + (c.count ? c.count + " içerik" : "tümü") + "</span>");
+          (c.pages || []).forEach(function (p) { tags.push('<span class="badge">' + esc(pageLabels[p] || p) + "</span>"); });
+          return '<div class="p-item' + (c.parent ? " is-child" : "") + '"><div class="grow"><div class="t">' + (c.parent ? "└ " : "") + esc(c.name) + '</div><div class="s">' +
+            esc(catUrl(c)) + " · " + n.live + " yayımlanmış içerik" + (kids ? " (alt kategorilerle)" : "") + (n.trash ? " · " + n.trash + " geri dönüşüm kutusunda" : "") + "</div>" +
+            (tags.length ? '<div class="tags">' + tags.join("") + "</div>" : "") + '</div><div class="form-actions" style="padding:0">' +
+            '<a class="btn btn-ghost btn-sm" href="#/yonetim/icerik/topic?kat=' + encodeURIComponent(c.key) + '">İçerikler</a>' +
+            '<a class="btn btn-ghost btn-sm" href="' + esc(catUrl(c)) + '" target="_blank" rel="noopener">Sayfayı aç</a>' +
+            '<a class="btn btn-primary btn-sm" href="#/yonetim/kategoriler/' + encodeURIComponent(c.key) + '">Düzenle</a></div></div>';
+        }).join("") + "</div>";
+    }).catch(fail);
+  }
+
+  // Yeni kategori kaydedilirken menüye eklenip eklenmeyeceği sorulur: true / false; pencere kapatılırsa null (kaydetme).
+  function askMenu(name) {
+    return new Promise(function (resolve) {
+      var answer = null;
+      dialog('<h3>Menüye eklensin mi?</h3><p>“' + esc(name) + '” kategorisini ana menüye de eklemek ister misiniz? Daha sonra Menü sekmesinden değiştirebilirsiniz.</p>' +
+        '<div class="form-actions"><button class="btn btn-primary" data-yes>Evet, menüye ekle</button><button class="btn btn-ghost" data-no>Hayır, eklemeyin</button></div>', function (d) {
+        $("[data-yes]", d).addEventListener("click", function () { answer = true; d.close(); });
+        $("[data-no]", d).addEventListener("click", function () { answer = false; d.close(); });
+        d.addEventListener("close", function () { resolve(answer); }, { once: true });
+      });
+    });
+  }
+
+  function viewCategoryEdit(key) {
+    var isNew = key === "yeni";
+    setTitle(isNew ? "Yeni kategori" : "Kategoriyi düzenle");
+    main.innerHTML = '<p><a class="link-arrow" href="#/yonetim/kategoriler">← Kategoriler</a></p><h1 class="page-title" data-h>' + (isNew ? "Yeni kategori" : "Kategoriyi düzenle") + '</h1><div data-f><p class="muted">Yükleniyor…</p></div>';
+    api("GET", "/admin/categories").then(function (j) {
+      var maxOrder = j.items.reduce(function (m, x) { return x.parent ? m : Math.max(m, x.menu_order); }, 0);
+      var c = isNew ? { name: "", label: "", slug: "", parent: "", description: "", menu_show: false, menu_order: maxOrder + 10, home_show: false, pages: [], count: 6, sort: "new", style: "kart",
+        block_eyebrow: "", block_title: "", seo_title: "", seo_desc: "", open_submit: false } : j.items.filter(function (x) { return x.key === key; })[0];
+      if (!c) return viewNotFound();
+      if (!isNew) $("[data-h]", main).textContent = c.name;
+      var own = j.counts[c.key] || { live: 0, trash: 0 }, n = isNew ? own : catCount(j, c);
+      var hasKids = !isNew && j.items.some(function (x) { return x.parent === c.key; });
+      var field = function (f) {
+        var v = c[f.key], id = "c-" + f.key, lbl = '<label for="' + id + '">' + esc(f.label) + (f.required ? '<span class="req" aria-hidden="true">*</span>' : "") + "</label>", input, hint = "";
+        if (f.type === "bool") return '<div class="field" data-field="' + f.key + '"><label class="check"><input type="checkbox" id="' + id + '" name="' + f.key + '"' + (v ? " checked" : "") + "> <span>" + esc(f.label) + '</span></label><span class="err" hidden></span></div>';
+        if (f.type === "pages") {
+          return '<fieldset class="perm-group" data-field="pages"><legend>' + esc(f.label) + "</legend>" + f.options.map(function (p) {
+            return '<label class="check"><input type="checkbox" name="pages" value="' + esc(p) + '"' + ((v || []).indexOf(p) > -1 ? " checked" : "") + "> <span>" + esc(f.labels[p]) + "</span></label>";
+          }).join("") + '<span class="hint">Bölüm, seçilen sayfaların sonunda (Kaynaklar\'da yayınlar bölümünün yerinde) görünür.</span><span class="err" hidden></span></fieldset>';
+        }
+        if (f.type === "textarea") input = '<textarea id="' + id + '" name="' + f.key + '" maxlength="' + f.max + '" rows="3">' + esc(v) + "</textarea>";
+        else if (f.type === "choice") {
+          input = '<select id="' + id + '" name="' + f.key + '">' + f.options.map(function (o) {
+            return '<option value="' + esc(o) + '"' + (String(o) === String(v) ? " selected" : "") + ">" + esc((f.labels || {})[o] || o) + "</option>"; }).join("") + "</select>";
+        } else if (f.type === "parent") {
+          var tops = j.items.filter(function (x) { return !x.parent && x.key !== c.key; });
+          input = '<select id="' + id + '" name="parent"' + (hasKids ? " disabled" : "") + '><option value="">— Yok (üst düzey kategori) —</option>' + tops.map(function (x) {
+            return '<option value="' + esc(x.key) + '"' + (x.key === v ? " selected" : "") + ">" + esc(x.name) + "</option>"; }).join("") + "</select>";
+          hint = hasKids ? "Bu kategorinin alt kategorileri var; başka bir kategorinin altına taşınamaz." : "Alt kategori, menüde üst kategorinin altında açılır; üst kategorinin sayfası alt kategorilerin içeriklerini de listeler.";
+        } else if (f.type === "slug") {
+          input = '<input type="text" id="' + id + '" name="slug" value="' + esc(v) + '" maxlength="' + f.max + '"' + (c.page ? " disabled" : "") + ' pattern="[a-z0-9-]*" spellcheck="false" autocomplete="off">';
+          hint = c.page ? "Bu kategori sitenin ana bölümlerinden biri; adresi sabittir: /" + esc(c.page) : 'Sayfa adresi: <code data-slug-preview>/kategori/' + esc(v || "…") + '.html</code>. Boş bırakırsanız addan üretilir. Adres değişirse eski adres yeni sayfaya yönlendirilir.';
+        } else if (f.type === "int") input = '<input type="number" id="' + id + '" name="' + f.key + '" value="' + esc(v) + '" min="' + f.min + '" max="' + f.max + '" step="1">';
+        else input = '<input type="text" id="' + id + '" name="' + f.key + '" value="' + esc(v) + '"' + (f.max ? ' maxlength="' + f.max + '"' : "") + ">";
+        return '<div class="field" data-field="' + f.key + '">' + lbl + input + (hint ? '<span class="hint">' + hint + "</span>" : "") + '<span class="err" hidden></span></div>';
+      };
+      var groups = Object.keys(j.groups).map(function (g) {
+        return '<fieldset class="perm-group cat-group"><legend>' + esc(j.groups[g]) + "</legend>" + j.fields.filter(function (f) { return f.group === g; }).map(field).join("") + "</fieldset>";
+      }).join("");
+      var info = isNew ? '<div class="notice info">Kategori oluşturulduğunda sayfası kendiliğinden açılır. Bir haberi bu kategoriye almak için haberin “Kategori” alanında seçmeniz yeterlidir.</div>'
+        : '<div class="notice info">Bu kategoride <strong>' + n.live + "</strong> yayımlanmış içerik var" + (hasKids ? " (alt kategorilerle)" : "") + (n.trash ? " (" + n.trash + " içerik geri dönüşüm kutusunda)" : "") +
+          ' · Sayfa: <a href="' + esc(catUrl(c)) + '" target="_blank" rel="noopener">' + esc(catUrl(c)) + '</a> · <a href="#/yonetim/icerik/topic?kat=' + encodeURIComponent(c.key) + '">İçerikleri listele</a></div>';
+      var canDel = !isNew && !c.page && !hasKids && !(own.live + own.trash);
+      $("[data-f]", main).innerHTML = info + '<form class="form panel" novalidate>' + groups + '<div class="form-actions"><button class="btn btn-primary" type="submit">' + (isNew ? "Kategoriyi oluştur" : "Kaydet ve yayınla") + "</button>" +
+        '<a class="btn btn-ghost" href="#/yonetim/kategoriler">Vazgeç</a>' + (canDel ? '<button class="btn btn-danger" type="button" data-del>Kategoriyi sil</button>' : "") + "</div></form>";
+      var f = $("form", main), slugEl = f.elements.slug, nameEl = f.elements.name, preview = $("[data-slug-preview]", f), slugTouched = !isNew;
+      var slugify = function (s) {
+        return String(s || "").replace(/İ/g, "i").replace(/I/g, "ı").toLocaleLowerCase("tr").replace(/ı/g, "i").normalize("NFKD").replace(/[̀-ͯ]/g, "")
+          .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60);
+      };
+      var showSlug = function () { if (preview) preview.textContent = "/kategori/" + (slugify(slugEl.value || nameEl.value) || "…") + ".html"; };
+      if (slugEl && !c.page) {
+        slugEl.addEventListener("input", function () { slugTouched = true; showSlug(); });
+        nameEl.addEventListener("input", function () { if (!slugTouched) slugEl.value = slugify(nameEl.value); showSlug(); });
+      }
+      f.addEventListener("submit", function (e) {
+        e.preventDefault();
+        var data = {};
+        j.fields.forEach(function (fd) {
+          if (fd.type === "pages") { data.pages = $$('input[name="pages"]:checked', f).map(function (x) { return x.value; }); return; }
+          var el = f.elements[fd.key];
+          if (!el || el.disabled) return;
+          data[fd.key] = fd.type === "bool" ? el.checked : el.value;
+        });
+        var b = $("button[type=submit]", f);
+        var send = function () {
+          busy(b, true);
+          (isNew ? api("POST", "/admin/categories", { data: data }) : api("PUT", "/admin/categories/" + encodeURIComponent(key), { data: data })).then(function () {
+            busy(b, false);
+            toast(isNew ? "Kategori oluşturuldu. Sayfası birkaç saniye içinde yayında." : "Kaydedildi. Site birkaç saniye içinde güncellenecek.");
+            go("#/yonetim/kategoriler");
+          }).catch(function (err) { busy(b, false); showFieldErrors(f, err.fields); fail(err); });
+        };
+        if (isNew && !data.menu_show && String(data.name || "").trim()) {
+          askMenu(data.name.trim()).then(function (yes) { if (yes === null) return; data.menu_show = yes; send(); });
+        } else send();
+      });
+      var del = $("[data-del]", main);
+      del && del.addEventListener("click", function () {
+        confirmBox("“" + c.name + "” kategorisi silinecek. Kategoride içerik olmadığı için hiçbir haber etkilenmez.", "Sil", true).then(function (y) {
+          if (y) api("DELETE", "/admin/categories/" + encodeURIComponent(key)).then(function () { toast("Kategori silindi."); go("#/yonetim/kategoriler"); }).catch(fail);
+        });
+      });
+    }).catch(fail);
+  }
+
+  // Menü: sabit sayfalar ve kategoriler; görünürlük ve sıra. Menüden kaldırmak içerikleri ya da kategori sayfasını silmez.
+  function viewMenu() {
+    setTitle("Menü");
+    main.innerHTML = '<h1 class="page-title">Kategoriler ve menü</h1>' + CAT_LEAD + catTabs("menu") +
+      '<div class="notice info">Masaüstünde alt kategoriler üst öğenin altında açılır menü olarak, tablet ve telefonda alt alta görünür. Bir kategoriyi menüden kaldırmak içeriklerini silmez; kategori sayfası yayında kalır. Sıra, ana sayfa ve diğer sayfalardaki kategori bölümlerinin sırasını da belirler.</div><div data-m><p class="muted">Yükleniyor…</p></div>';
+    api("GET", "/admin/categories").then(function (j) {
+      var byOrder = function (a, b) { return a.menu_order - b.menu_order; };
+      var top = j.pages.map(function (p) { return { type: "page", key: p.key, name: p.name, href: "/" + p.href, menu_show: p.menu_show !== false, menu_order: p.menu_order, kids: [] }; })
+        .concat(j.items.filter(function (c) { return !c.parent; }).map(function (c) {
+          return { type: "category", key: c.key, name: c.name, href: catUrl(c), menu_show: c.menu_show, menu_order: c.menu_order,
+            kids: j.items.filter(function (x) { return x.parent === c.key; }).sort(byOrder).map(function (x) { return { type: "category", key: x.key, name: x.name, href: catUrl(x), menu_show: x.menu_show, menu_order: x.menu_order }; }) };
+        })).sort(byOrder);
+      var box = $("[data-m]", main);
+      var row = function (it, list, i, child, parentOn) {
+        return '<div class="p-item' + (child ? " is-child" : "") + (it.menu_show && parentOn !== false ? "" : " is-off") + '"><label class="check" style="flex:1;min-width:0"><input type="checkbox" data-show="' + it.type + ":" + esc(it.key) + '"' + (it.menu_show ? " checked" : "") + '> <span><strong>' +
+          (child ? "└ " : "") + esc(it.name) + '</strong><br><span class="s">' + esc(it.href) + " · " + (it.type === "page" ? "Sayfa" : child ? "Alt kategori" : "Kategori") + (child && parentOn === false ? " · üst öğe menüde gizli" : "") + "</span></span></label>" +
+          '<div class="form-actions" style="padding:0"><button type="button" class="btn btn-ghost btn-sm" data-move="' + (child ? "k" : "t") + ":" + it.type + ":" + esc(it.key) + ':-1"' + (i === 0 ? " disabled" : "") + ' aria-label="Yukarı taşı">↑</button>' +
+          '<button type="button" class="btn btn-ghost btn-sm" data-move="' + (child ? "k" : "t") + ":" + it.type + ":" + esc(it.key) + ':1"' + (i === list.length - 1 ? " disabled" : "") + ' aria-label="Aşağı taşı">↓</button></div></div>';
+      };
+      var draw = function () {
+        box.innerHTML = '<div class="p-list">' + top.map(function (it, i) {
+          return row(it, top, i, false) + (it.kids || []).map(function (k, ki) { return row(k, it.kids, ki, true, it.menu_show); }).join("");
+        }).join("") + '</div><div class="form-actions" style="margin-top:16px"><button class="btn btn-primary" type="button" data-save>Menüyü kaydet ve yayınla</button><a class="btn btn-ghost" href="/index.html" target="_blank" rel="noopener">Siteyi aç</a></div>';
+        $$("[data-show]", box).forEach(function (cb) {
+          cb.addEventListener("change", function () {
+            var t = cb.dataset.show.split(":"), it = find(t[0], t.slice(1).join(":"));
+            if (it) it.menu_show = cb.checked;
+            draw();
+          });
+        });
+        $$("[data-move]", box).forEach(function (b) {
+          b.addEventListener("click", function () {
+            var t = b.dataset.move.split(":"), dir = +t.pop(), type = t[1], k = t.slice(2).join(":");
+            var list = t[0] === "t" ? top : ((top.filter(function (x) { return (x.kids || []).some(function (c) { return c.key === k; }); })[0] || {}).kids || []);
+            var i = list.findIndex(function (x) { return x.key === k && x.type === type; }), jx = i + dir;
+            if (i < 0 || jx < 0 || jx >= list.length) return;
+            var tmp = list[i]; list[i] = list[jx]; list[jx] = tmp;
+            draw();
+          });
+        });
+        $("[data-save]", box).addEventListener("click", function () {
+          var items = [];
+          top.forEach(function (it, i) {
+            items.push({ type: it.type, key: it.key, menu_show: it.menu_show, menu_order: (i + 1) * 10 });
+            (it.kids || []).forEach(function (k, ki) { items.push({ type: "category", key: k.key, menu_show: k.menu_show, menu_order: (ki + 1) * 10 }); });
+          });
+          var b = $("[data-save]", box); busy(b, true);
+          api("PUT", "/admin/menu", { items: items }).then(function () { busy(b, false); toast("Menü kaydedildi. Site birkaç saniye içinde güncellenecek."); }).catch(function (err) { busy(b, false); fail(err); });
+        });
+      };
+      var find = function (type, key) {
+        for (var i = 0; i < top.length; i++) {
+          if (top[i].type === type && top[i].key === key) return top[i];
+          var k = (top[i].kids || []).filter(function (x) { return x.key === key; })[0];
+          if (k && type === "category") return k;
+        }
+        return null;
+      };
+      draw();
+    }).catch(fail);
+  }
+
   var CONTENT = { member: ["Akademisyenler", "akademisyen"], work: ["Eserler", "eser"], topic: ["Haber ve etkinlikler", "haber"] };
 
-  function viewContentList(kind, q, offset) {
+  function viewContentList(kind, q, offset, kat) {
     if (!CONTENT[kind]) return viewNotFound();
     setTitle(CONTENT[kind][0]);
     offset = offset || 0;
+    kat = kat ? decodeURIComponent(kat) : "";
     var exp = { member: "akademisyenler", work: "eserler" }[kind];
-    main.innerHTML = '<h1 class="page-title">' + CONTENT[kind][0] + '</h1><p class="page-lead">Kayıtları doğrudan düzenleyin; değişiklikler kaydedince sitede yayınlanır.</p>' +
+    main.innerHTML = '<h1 class="page-title">' + CONTENT[kind][0] + '</h1><p class="page-lead">Kayıtları doğrudan düzenleyin; değişiklikler kaydedince sitede yayınlanır.' +
+      (kind === "topic" ? " Bir içeriğin nerede görüneceğini kategorisi belirler; kategorileri <a href=\"#/yonetim/kategoriler\">Kategoriler ve menü</a> ekranından yönetin." : "") + "</p>" +
       '<div class="toolbar-row"><label class="input">' + svg('<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>') + '<input type="search" placeholder="Ara…" value="' + esc(q || "") + '" aria-label="Ara"></label>' +
+      (kind === "topic" ? '<select class="select" data-kat aria-label="Kategori"><option value="">Tüm kategoriler</option></select>' : "") +
       '<a class="btn btn-primary btn-sm" href="#/yonetim/icerik/' + kind + '/yeni">Yeni ekle</a>' + (exp && can("disa.aktar") ? '<a class="btn btn-ghost btn-sm" href="/api/admin/export/' + exp + '" download>CSV indir</a>' : "") +
       '</div><div data-l><p class="muted">Yükleniyor…</p></div>';
-    var input = $("input", main), t;
+    var input = $("input", main), katSel = $("[data-kat]", main), t;
     input.addEventListener("input", function () { clearTimeout(t); t = setTimeout(function () { load(input.value, 0); }, 250); });
+    if (katSel) {
+      getSchema().then(function (s) {
+        var fd = s.schemas.topic.filter(function (x) { return x.key === "forum"; })[0];
+        katSel.insertAdjacentHTML("beforeend", fd.options.map(function (o) { return '<option value="' + esc(o) + '"' + (o === kat ? " selected" : "") + ">" + esc(fd.labels[o] || o) + "</option>"; }).join(""));
+      });
+      katSel.addEventListener("change", function () { kat = katSel.value; load(input.value, 0); });
+    }
     function load(query, off) {
-      api("GET", "/admin/items/" + kind + "?q=" + encodeURIComponent(query || "") + "&offset=" + off).then(function (j) {
+      api("GET", "/admin/items/" + kind + "?q=" + encodeURIComponent(query || "") + "&offset=" + off + (kat ? "&kat=" + encodeURIComponent(kat) : "")).then(function (j) {
         var box = $("[data-l]", main);
         if (!j.items.length) { box.innerHTML = '<div class="empty">Kayıt bulunamadı.</div>'; return; }
         box.innerHTML = '<p class="muted">' + j.total + " kayıt" + (j.total > 50 ? " · " + (off + 1) + "–" + Math.min(off + 50, j.total) + " gösteriliyor" : "") + '</p><div class="p-list">' +
@@ -1375,7 +1590,8 @@
       if (path[1] === "site") return viewSite();
       if (path[1] === "yapay-zeka") return viewAiUsage(path[2]);
       if (path[1] === "icerik" && path[2] && CONTENT[path[2]] && !can("icerik." + path[2])) return viewNoAccess();
-      if (path[1] === "icerik" && path[2]) return path[3] ? viewContentEdit(path[2], path[3] === "yeni" ? "yeni" : +path[3]) : viewContentList(path[2]);
+      if (path[1] === "kategoriler" && can("site.ayar")) return path[2] === "menu" ? viewMenu() : path[2] ? viewCategoryEdit(decodeURIComponent(path[2])) : viewCategories();
+      if (path[1] === "icerik" && path[2]) return path[3] ? viewContentEdit(path[2], path[3] === "yeni" ? "yeni" : +path[3]) : viewContentList(path[2], "", 0, params.kat);
     }
     viewNotFound();
   }

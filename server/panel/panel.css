@@ -175,3 +175,16 @@ details.edit-before summary { cursor: pointer; font-weight: 600; color: var(--br
 .preview-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
 .preview-title { margin: 6px 0 12px; font-family: var(--serif); }
 .preview-body { max-height: 68vh; overflow-y: auto; }
+
+/* kategoriler ve menü */
+.p-item.is-child { padding-left: 42px; background: var(--surface-2); }
+.p-item.is-off { opacity: .6; }
+.p-item .tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.cat-group { margin-bottom: 14px; gap: 14px; padding: 14px 16px 16px; }
+.cat-group .perm-group { margin-top: 2px; }
+@media (max-width: 640px) {
+  .p-item:has(.tags) { flex-wrap: wrap; }
+  .p-item.is-child { padding-left: 28px; }
+}
+.perm-group .hint { color: var(--muted); font-size: .82rem; }
+.notice a { color: var(--brand); text-decoration: underline; text-underline-offset: 2px; }

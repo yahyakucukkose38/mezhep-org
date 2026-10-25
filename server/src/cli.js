@@ -4,6 +4,8 @@
 //   liste                            yöneticileri listeler
 //   icerik-yenile                    data/*.json'daki düzeltilmiş içeriği veritabanına işler; panelden
 //                                    düzenlenmiş/eklenmiş kayıtlara dokunmaz, seed'den çıkarılan kayıtları kaldırır
+//   kategori-durum                   kategori başına yayındaki / çöpteki haber sayısı
+//   kategori-geri-al                 kategori tablolarını kaldırır (önceki sürüme dönmeden önce); haberlere dokunmaz
 const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
@@ -63,7 +65,20 @@ if (cmd === "olustur" && email) {
   console.log("İçerik yenilendi:", stats, "\nSiteyi yeniden üretmek için uygulamayı yeniden başlatın ya da panelden 'Siteyi şimdi yeniden üret'.");
 } else if (cmd === "liste") {
   for (const r of db.prepare("SELECT email, name, status FROM users WHERE role_key = 'super'").all()) console.log(`${r.email}\t${r.name}\t${r.status}`);
+} else if (cmd === "kategori-durum") {
+  const CAT = require("./categories");
+  CAT.adoptOrphans();
+  const n = CAT.counts();
+  for (const c of CAT.list()) {
+    const k = n[c.key] || { live: 0, trash: 0 };
+    console.log(`${c.parent ? "  └ " : ""}${c.name} [${c.key}]\t/${c.page || "kategori/" + c.slug + ".html"}\tyayında: ${k.live}\tçöpte: ${k.trash}${c.menu_show ? "\tmenüde" : ""}${c.home_show ? "\tana sayfada" : ""}`);
+  }
+} else if (cmd === "kategori-geri-al") {
+  // Yalnızca kategori ve menü tablolarını kaldırır; haber kayıtları ve eski ana sayfa ayarları olduğu gibi kalır.
+  require("./categories").rollback();
+  log(null, "kategori-geri-al", "categories ve menu_pages kaldırıldı");
+  console.log("Kategori tabloları kaldırıldı. Haber kayıtlarına dokunulmadı. Önceki sürümü başlatabilirsiniz;\nyeni sürüm yeniden açılırsa varsayılan kategoriler tekrar oluşturulur.");
 } else {
-  console.log('Kullanım: npm run yonetici -- olustur <e-posta> "<Ad Soyad>" | sifre <e-posta> | liste | icerik-yenile');
+  console.log('Kullanım: npm run yonetici -- olustur <e-posta> "<Ad Soyad>" | sifre <e-posta> | liste | icerik-yenile | kategori-durum | kategori-geri-al');
   process.exit(1);
 }

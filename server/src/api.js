@@ -12,6 +12,7 @@ const rebuild = require("./rebuild");
 const ai = require("./ai/service");
 const P = require("./perms");
 const SS = require("./site-settings");
+const CAT = require("./categories");
 
 const api = express.Router();
 const ok = (res, data = {}) => res.json(data);
@@ -31,7 +32,7 @@ const userRow = (id) => A.withPerms(plain(db.prepare(`SELECT ${A.PUBLIC_USER} FR
 // ================================================================ genel
 api.get("/health", (_req, res) => ok(res, { ok: true }));
 
-api.get("/schema", (_req, res) => ok(res, { schemas: C.SCHEMAS, ranks: C.RANKS, groups: C.GROUPS, workTypes: C.WORK_TYPES, forums: C.FORUMS }));
+api.get("/schema", (_req, res) => ok(res, { schemas: C.SCHEMAS, ranks: C.RANKS, groups: C.GROUPS, workTypes: C.WORK_TYPES, forums: CAT.topicChoices().labels }));
 
 api.get("/me", (req, res) => {
   if (!req.user) return ok(res, { user: null });
@@ -602,6 +603,52 @@ admin.put("/settings", need("site.ayar", "ai.ayar"), (req, res) => {
   }
 });
 
+// ---- kategoriler ve menü
+// Bir haberin kategorisini seçmek yeterlidir: kategori sayfası, sayfalardaki bölümler ve menü site üretilirken kendiliğinden dolar.
+const catBad = (res, e) => (e instanceof CAT.CategoryError ? bad(res, e.message, e.fields) : null);
+
+admin.get("/categories", need("site.ayar"), (_req, res) => {
+  ok(res, { items: CAT.list(), counts: CAT.counts(), fields: CAT.FIELDS, groups: CAT.GROUPS, pages: CAT.menuPages() });
+});
+
+admin.post("/categories", need("site.ayar"), (req, res) => {
+  try {
+    const c = CAT.create(req.body?.data, req.user);
+    log(req.user.id, "kategori-ekle", `${c.key} (${c.name})${c.menu_show ? " · menüde" : ""}`);
+    rebuild.schedule(`kategori ${c.key} eklendi`, 500);
+    ok(res, { item: c });
+  } catch (e) { if (!catBad(res, e)) throw e; }
+});
+
+admin.put("/categories/:key", need("site.ayar"), (req, res) => {
+  try {
+    const before = CAT.get(req.params.key);
+    const c = CAT.update(req.params.key, req.body?.data, req.user);
+    if (!c) return A.fail(res, 404, "Kategori bulunamadı.");
+    const changed = Object.keys(req.body?.data || {}).filter((k) => JSON.stringify(before[k]) !== JSON.stringify(c[k]));
+    log(req.user.id, "kategori-duzenle", `${c.key} (${changed.join(",") || "değişiklik yok"})`);
+    if (changed.length) rebuild.schedule(`kategori ${c.key} düzenlendi`, 500);
+    ok(res, { item: c, changed });
+  } catch (e) { if (!catBad(res, e)) throw e; }
+});
+
+admin.delete("/categories/:key", need("site.ayar"), (req, res) => {
+  const r = CAT.remove(req.params.key);
+  if (r.error) return A.fail(res, r.status, r.error);
+  log(req.user.id, "kategori-sil", req.params.key);
+  rebuild.schedule(`kategori ${req.params.key} silindi`, 500);
+  ok(res);
+});
+
+admin.put("/menu", need("site.ayar"), (req, res) => {
+  try {
+    CAT.saveMenu(req.body?.items, req.user);
+    log(req.user.id, "menu-duzenle", `${(req.body.items || []).filter((i) => i.menu_show).length} öğe menüde`);
+    rebuild.schedule("menü düzenlendi", 500);
+    ok(res, { items: CAT.list(), pages: CAT.menuPages() });
+  } catch (e) { if (!catBad(res, e)) throw e; }
+});
+
 // ---- işlem kayıtları
 // Paylaşım tıklaması istatistikleri (işlem kayıtlarını görme yetkisiyle)
 admin.get("/shares", need("kayit.gor"), (req, res) => {
@@ -642,16 +689,25 @@ admin.get("/logs", need("kayit.gor"), (req, res) => {
 // ---- içerik
 const kindPerm = (req, res, next) => (C.KINDS.includes(req.params.kind) ? need("icerik." + req.params.kind)(req, res, next) : A.fail(res, 404, "Bulunamadı."));
 
-function summary(kind, it) {
+// cats: kategori anahtarı → ad (haber listelerinde bir kez okunur)
+function summary(kind, it, cats = CAT.topicChoices().labels) {
   if (kind === "member") return { id: it.id, title: it.name, sub: [it.title, it.university].filter(Boolean).join(" · ") };
   if (kind === "work") return { id: it.id, title: it.title, sub: [it.author, it.year, it.type].filter(Boolean).join(" · ") };
-  return { id: it.id, title: it.title, sub: [C.FORUMS[it.forum] || it.forum, it.date].filter(Boolean).join(" · ") };
+  return { id: it.id, title: it.title, sub: [cats[it.forum] || it.forum, it.date].filter(Boolean).join(" · ") };
 }
 
 admin.get("/items/:kind", kindPerm, (req, res) => {
   const { kind } = req.params;
   const q = String(req.query.q || "").toLocaleLowerCase("tr").trim();
-  let rows = C.listItems(kind).map((it) => summary(kind, it));
+  const cats = CAT.topicChoices().labels;
+  let items = C.listItems(kind);
+  // ?kat=koordinasyon: yalnızca o kategorideki haberler (alt kategoriler dahil)
+  const kat = kind === "topic" ? String(req.query.kat || "") : "";
+  if (kat) {
+    const keys = new Set([kat, ...CAT.list().filter((c) => c.parent === kat).map((c) => c.key)]);
+    items = items.filter((it) => keys.has(it.forum));
+  }
+  let rows = items.map((it) => summary(kind, it, cats));
   if (q) rows = rows.filter((r) => `${r.title} ${r.sub} ${r.id}`.toLocaleLowerCase("tr").includes(q));
   rows.sort(kind === "member" ? (a, b) => a.title.localeCompare(b.title, "tr") : (a, b) => b.id - a.id);
   const offset = int(req.query.offset) || 0;
@@ -692,7 +748,8 @@ admin.delete("/items/:kind/:id", need("icerik.sil"), (req, res) => {
 admin.get("/trash", need("icerik.sil"), (_req, res) => {
   const rows = db.prepare(`SELECT i.kind, i.id, i.data, i.updated_at, u.name AS by_name FROM items i LEFT JOIN users u ON u.id = i.updated_by
     WHERE i.deleted = 1 AND i.kind IN ('member', 'work', 'topic') ORDER BY i.updated_at DESC LIMIT 300`).all();
-  ok(res, { items: rows.map((r) => ({ kind: r.kind, ...summary(r.kind, JSON.parse(r.data)), deleted_at: r.updated_at, by_name: r.by_name })) });
+  const cats = CAT.topicChoices().labels;
+  ok(res, { items: rows.map((r) => ({ kind: r.kind, ...summary(r.kind, JSON.parse(r.data), cats), deleted_at: r.updated_at, by_name: r.by_name })) });
 });
 
 admin.post("/trash/:kind/:id/restore", need("icerik.sil"), (req, res) => {

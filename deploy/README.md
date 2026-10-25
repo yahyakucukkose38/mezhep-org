@@ -71,6 +71,16 @@ docker exec mezhep-app-1 npm --prefix server run yonetici -- sifre <e-posta>    
 docker compose -f /opt/mezhep/src/deploy/docker-compose.yml logs -f app                       # kayıtlar
 ```
 
+## Kategoriler (2026-10 sürümü)
+
+- İlk açılışta `categories` ve `menu_pages` tabloları eklenir, varsayılan kategoriler `data/categories.json`'dan yazılır
+  (bir kez; `migrations` tablosunda `kategoriler-2026-10`). Haber kayıtlarına dokunulmaz; eski "Son haberler" ve
+  "Koordinasyon" ana sayfa ayarları kategorilere aktarılır, eski ayar satırları silinmez.
+- Durum: `docker exec mezhep-app-1 npm --prefix server run yonetici -- kategori-durum` (kategori başına yayındaki/çöpteki içerik).
+- Geri alma: kapsayıcı çalışırken `… run yonetici -- kategori-geri-al` (yalnızca iki kategori tablosunu kaldırır),
+  ardından önceki sürümü yayınlayın. Panelden yeni kategori açılıp içerik eklendiyse, önceki sürümde o içeriklerin
+  sayfaları açık kalır ama listelerde görünmez; hiçbir kayıt silinmez.
+
 ## Yedek
 
 Her gece 03:15 `yedekle.sh`: veritabanı (`VACUUM INTO`, gzip) ve yüklenen dosyalar → `/opt/mezhep/yedekler`

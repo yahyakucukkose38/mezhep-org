@@ -33,15 +33,14 @@ const GROUPS = [
     { key: "banner_style", label: "Görünüm", type: "select", def: "bilgi", options: ["bilgi", "uyari", "onemli"],
       labels: { bilgi: "Bilgi (lacivert)", uyari: "Uyarı (altın)", onemli: "Önemli (kırmızı)" } },
   ] },
-  { key: "anasayfa", label: "Ana sayfa", perm: "site.ayar", fields: [
+  // Haber ve kategori bölümleri (Son haberler, Koordinasyon toplantıları…) Kategoriler ve menü ekranından yönetilir.
+  { key: "anasayfa", label: "Ana sayfa", perm: "site.ayar", note: "Haber ve kategori bölümleri (Son haberler, Koordinasyon toplantıları vb.), kaç içerik gösterileceği ve sıraları Kategoriler ve menü ekranından yönetilir.", fields: [
     { key: "home_eyebrow", label: "Üst etiket", type: "text", def: "İslam Mezhepleri Tarihi Anabilim Dalı", max: 80 },
     { key: "home_title", label: "Başlık (vurgulanacak kısmı *yıldız* içine alın)", type: "text", def: "Mezhepler tarihi çalışmalarının *ortak hafızası*", max: 120 },
     { key: "home_lead", label: "Giriş metni", type: "textarea", max: 400,
       def: "Türkiye'deki İlahiyat ve İslami İlimler fakültelerinin İslam Mezhepleri Tarihi akademisyenlerini, tezlerini, kitaplarını ve makalelerini tek çatı altında, özetleriyle birlikte derliyoruz." },
     { key: "home_quote", label: "Alıntı", type: "textarea", def: "Gelişmesi ve zenginleşmesi için İslam Mezhepleri ile ilgilenen herkesin katkılarını bekliyoruz.", max: 300 },
     { key: "home_quote_sign", label: "Alıntı imzası", type: "text", def: "Ahmet İshak DEMİR", max: 120 },
-    { key: "home_show_news", label: "Son haberler bölümünü göster", type: "bool", def: true },
-    { key: "home_news_count", label: "Gösterilecek haber sayısı", type: "number", def: 6, min: 3, max: 12 },
     { key: "home_show_youtube", label: "YouTube kanalı bölümünü göster", type: "bool", def: true },
     { key: "home_show_videos", label: "Video modülünü göster (Prof. Dr. Ahmet İshak Demir videoları)", type: "bool", def: false },
     { key: "videos_eyebrow", label: "Video modülü: üst etiket", type: "text", def: "Prof. Dr. Ahmet İshak Demir", max: 80 },
@@ -51,7 +50,6 @@ const GROUPS = [
       def: ["PL2dGbrxqbayq3xI8tzCdfaF2SmIYw-sut", "PL2dGbrxqbayr22qpI3k0MAjPYjHV6NRHX"] },
     { key: "videos_more_url", label: "Video modülü: \"Tüm videolar\" bağlantısı", type: "url", def: "https://www.ahmetishak.com/galeri/videolar/", max: 300 },
     { key: "videos_channel_url", label: "Video modülü: abone olunacak kanal", type: "url", def: "https://www.youtube.com/@mezheporg", max: 300 },
-    { key: "home_show_coord", label: "Koordinasyon toplantıları bölümünü göster", type: "bool", def: true },
     { key: "home_show_works", label: "Öne çıkan eserler bölümünü göster", type: "bool", def: true },
     { key: "home_show_members", label: "Yeni eklenen akademisyenler bölümünü göster", type: "bool", def: true },
   ] },

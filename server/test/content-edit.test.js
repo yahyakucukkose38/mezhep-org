@@ -169,7 +169,7 @@ test("etkinlik bölümü üçe ayrıldı: seçenekler, başlığa göre sınıfl
   const s = (await U.editor.call("GET", "/schema")).body;
   const forum = s.schemas.topic.find((f) => f.key === "forum");
   for (const k of ["etkinlik", "sempozyum", "koordinasyon"]) assert.ok(forum.options.includes(k) && forum.memberOptions.includes(k), k);
-  assert.equal(forum.labels.koordinasyon, "Koordinasyon");
+  assert.equal(forum.labels.koordinasyon, "Etkinlikler › Koordinasyon Toplantıları");
   assert.equal(C.eventKind("2023 Rize 8. Koordinasyon Toplantısı"), "koordinasyon");
   assert.equal(C.eventKind("II. İstişare Toplantısı Elazığda Yapıldı"), "koordinasyon");
   assert.equal(C.eventKind("12 Ekim Isparta Mezhepler Çalıştayı Program"), "koordinasyon");
