@@ -85,7 +85,8 @@ done
 }
 cat > /etc/cron.d/mezhep <<'CRON'
 # Mezhep.Org: sertifika yenileme ve gece yedeği
-40 3 * * * root bash /opt/mezhep/src/deploy/sertifika.sh 2>&1 | logger -t mezhep-sertifika
+# sertifika her saat denetlenir: DNS'i yeni yönlendirilen bir alan adı en geç bir saat içinde HTTPS'e kavuşur
+40 * * * * root bash /opt/mezhep/src/deploy/sertifika.sh 2>&1 | logger -t mezhep-sertifika
 15 3 * * * root bash /opt/mezhep/src/deploy/yedekle.sh 2>&1 | logger -t mezhep-yedek
 CRON
 `);

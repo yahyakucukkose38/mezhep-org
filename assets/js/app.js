@@ -273,6 +273,13 @@
     render();
   }
 
+  /* ---------- metin içindeki görseller: başka sitelerden eklenip artık bulunmayan görsel kırık simge yerine gizlenir ---------- */
+  $$(".prose img").forEach(function (img) {
+    var hide = function () { var f = img.closest("figure"); (f && f.children.length === 1 ? f : img).hidden = true; };
+    if (img.complete && img.naturalWidth === 0 && img.getAttribute("src")) hide();
+    else img.addEventListener("error", hide);
+  });
+
   /* ---------- özet sekmeleri ---------- */
   $$(".abstract-tabs").forEach(function (tabs) {
     $$("button", tabs).forEach(function (b) {

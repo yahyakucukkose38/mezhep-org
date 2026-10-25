@@ -18,8 +18,15 @@ certbot() {
     certbot/certbot:latest "$@" --deploy-hook "touch /etc/letsencrypt/mezhep-yenilendi"
 }
 
-# Sertifika ana adresi ve yönlendirilen adları (www, eski alan adı) birlikte kapsar.
-alanlar="$ALAN_ADI ${YONLENDIRILEN_ALANLAR:-}"
+# Sertifika ana adresi ve yönlendirilen adları (www, eski alan adları) birlikte kapsar. Yönlendirilen bir ad,
+# DNS kaydı bu sunucuyu (ana adresin IP'si) gösterene kadar sertifikaya katılmaz: böylece bir alan adı
+# DNS değişikliğinden önce .env'e eklenebilir; kayıt değişince saatlik denetim onu kendiliğinden sertifikaya ekler.
+ip_of() { getent ahostsv4 "$1" 2>/dev/null | awk 'NR==1{print $1}'; }
+bu_sunucu=$(ip_of "$ALAN_ADI")
+alanlar="$ALAN_ADI"
+for a in ${YONLENDIRILEN_ALANLAR:-}; do
+  if [ -n "$bu_sunucu" ] && [ "$(ip_of "$a")" = "$bu_sunucu" ]; then alanlar="$alanlar $a"; else echo "Bekliyor (DNS henüz bu sunucuyu göstermiyor): $a"; fi
+done
 pem="$SERTIFIKA_DIZINI/live/$ALAN_ADI/fullchain.pem"
 eksik=""
 if [ -s "$pem" ]; then
@@ -29,10 +36,15 @@ fi
 if [ -s "$pem" ] && [ -z "$eksik" ]; then
   certbot renew --quiet --cert-name "$ALAN_ADI"
 else
+  # başarısız bir denemeden sonra 6 saat beklenir (Let's Encrypt deneme sınırları)
+  deneme="$SERTIFIKA_DIZINI/mezhep-son-basarisiz"
+  if [ -s "$pem" ] && [ -n "$(find "$deneme" -mmin -360 2>/dev/null)" ]; then echo "Son deneme başarısızdı; 6 saat dolmadan yeniden denenmez."; exit 0; fi
   [ -n "$eksik" ] && echo "Sertifikaya eklenecek alan adları:$eksik"
+  trap 'touch "$deneme"' ERR
   # shellcheck disable=SC2046
   certbot certonly --webroot -w /var/www/certbot $(for a in $alanlar; do printf -- '-d %s ' "$a"; done) --cert-name "$ALAN_ADI" \
     --expand --agree-tos --register-unsafely-without-email --non-interactive
+  trap - ERR; rm -f "$deneme"
 fi
 
 [ -f "$isaret" ] || exit 0

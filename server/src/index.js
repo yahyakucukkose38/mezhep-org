@@ -75,6 +75,9 @@ function createApp() {
   app.use("/panel", express.static(panelDir, { index: "index.html", ...revalidate }));
   app.get(/^\/panel(\/.*)?$/, (_req, res) => res.set("Cache-Control", "no-cache").sendFile(path.join(panelDir, "index.html")));
 
+  // Eski mezhep.org (.asp) bağlantıları yeni sayfalara 301 ile yönlenir (legacy.js).
+  app.use(require("./legacy").legacyRedirects);
+
   // Üretilmiş site önce (search-index.js de oradadır), sonra kaynak varlıklar, eski medya ve yüklemeler.
   app.use(express.static(cfg.SITE_DIR, { extensions: ["html"], ...revalidate }));
   app.use("/assets", express.static(cfg.ASSETS_DIR, revalidate));

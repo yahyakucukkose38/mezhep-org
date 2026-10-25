@@ -528,7 +528,7 @@ a.feed-item:hover { background: var(--surface-2); }
 
 @media (max-width: 560px) {
   .container { padding: 0 16px; }
-  .brand small { display: none; }
+  .site-header .brand small { display: none; } /* yalnızca başlıkta yer kazanmak için; alt bilgide görünür */
   .feed-item { padding: 16px; gap: 14px; }
   .detail { padding-top: 28px; }
 }

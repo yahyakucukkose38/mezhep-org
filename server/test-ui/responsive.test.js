@@ -130,7 +130,8 @@ test("masaüstü: alt menü düğmeyle açılır, Esc ile kapanır; tablet yatay
   const page = await ctx.newPage();
   await open(page, "/index.html");
   await page.locator(".nav-sub-btn").click();
-  assert.equal(await page.locator(".nav-sub").evaluate((el) => getComputedStyle(el).visibility), "visible");
+  // açılış 0,18 sn'lik yumuşak geçişle olur
+  await page.waitForFunction(() => getComputedStyle(document.querySelector(".nav-sub")).visibility === "visible", null, { timeout: 2000 });
   assert.equal(await page.locator(".nav-sub-btn").getAttribute("aria-expanded"), "true");
   await page.keyboard.press("Escape");
   assert.equal(await page.locator(".nav-sub-btn").getAttribute("aria-expanded"), "false");
