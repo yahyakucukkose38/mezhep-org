@@ -37,11 +37,36 @@
   });
 
   /* ---------- menü, header, yukarı ---------- */
-  var menuBtn = $(".menu-btn");
-  if (menuBtn) menuBtn.addEventListener("click", function () {
-    var open = document.body.classList.toggle("menu-open");
+  // Mobil menü: açıkken arka plan kaydırılmaz, odak menüye geçer ve menüde kalır; Esc, dışarı dokunma ya da
+  // bir bağlantı seçmek menüyü kapatır ve odak menü düğmesine döner.
+  var menuBtn = $(".menu-btn"), navEl = $(".nav");
+  var menuOpen = function () { return document.body.classList.contains("menu-open"); };
+  var setMenu = function (open, restoreFocus) {
+    document.body.classList.toggle("menu-open", open);
+    document.documentElement.classList.toggle("menu-lock", open);
     menuBtn.setAttribute("aria-expanded", open);
-  });
+    menuBtn.setAttribute("aria-label", open ? "Menüyü kapat" : "Menüyü aç");
+    if (open) { var first = $("a", navEl); if (first) first.focus({ preventScroll: true }); }
+    else if (restoreFocus) menuBtn.focus({ preventScroll: true });
+  };
+  if (menuBtn && navEl) {
+    menuBtn.setAttribute("aria-controls", navEl.id || (navEl.id = "ana-menu"));
+    menuBtn.addEventListener("click", function () { setMenu(!menuOpen(), true); });
+    navEl.addEventListener("click", function (e) { if (e.target.closest("a") && menuOpen()) setMenu(false, false); });
+    document.addEventListener("click", function (e) { if (menuOpen() && !e.target.closest(".nav, .menu-btn")) setMenu(false, false); });
+    document.addEventListener("keydown", function (e) {
+      if (!menuOpen()) return;
+      if (e.key === "Escape") { setMenu(false, true); return; }
+      if (e.key !== "Tab") return;
+      // odak menü bağlantıları ile menü düğmesi arasında döner
+      var items = $$("a, button", navEl).filter(function (x) { return x.offsetParent !== null; }).concat([menuBtn]);
+      var i = items.indexOf(document.activeElement);
+      e.preventDefault();
+      items[i < 0 ? 0 : (i + (e.shiftKey ? -1 : 1) + items.length) % items.length].focus();
+    });
+    // ekran genişleyip masaüstü menüsüne geçilirse kilit kalmasın
+    window.matchMedia("(min-width: 1101px)").addEventListener("change", function (m) { if (m.matches && menuOpen()) setMenu(false, false); });
+  }
   // Alt menüler (kategoriler): masaüstünde üzerine gelince ya da düğmeyle açılır; dar ekranda alt alta zaten görünür.
   var subBtns = $$(".nav-sub-btn");
   var closeSubs = function (except) {

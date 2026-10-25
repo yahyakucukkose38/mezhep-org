@@ -20,13 +20,14 @@
   <div class="container panel-top">
     <a class="brand" href="/index.html" aria-label="Mezhep.Org ana sayfa"><img class="brand-logo" src="/assets/img/logo.jpg" alt="" width="59" height="40"><span>Mezhep.Org<small>Üye Paneli</small></span></a>
     <div class="header-actions" style="margin-left:auto">
-      <a class="btn btn-ghost btn-sm" href="/index.html">Siteye dön</a>
+      <a class="btn btn-ghost btn-sm panel-back" href="/index.html">Siteye dön</a>
       <div class="panel-user" data-user></div>
+      <button class="icon-btn panel-menu-btn" type="button" aria-label="Panel menüsünü aç" aria-expanded="false" aria-controls="panel-nav" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
     </div>
   </div>
 </header>
 <div class="panel-shell">
-  <nav class="panel-nav" aria-label="Panel menüsü" data-nav hidden></nav>
+  <nav class="panel-nav" id="panel-nav" aria-label="Panel menüsü" data-nav hidden></nav>
   <main id="panel-main" class="panel-main" tabindex="-1">
     <div class="panel-loading">Yükleniyor…</div>
   </main>

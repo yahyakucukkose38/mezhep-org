@@ -490,6 +490,7 @@
 
     var showNav = u && u.status === "active" && !u.must_change;
     navEl.hidden = !showNav;
+    sideBtn.hidden = !showNav;
     shell.classList.toggle("no-nav", !showNav);
     if (!showNav) return;
     var p = state.pending || {};
@@ -498,7 +499,7 @@
       return '<a href="' + h + '"' + (cur ? ' aria-current="page"' : "") + ">" + label + (count ? '<span class="count">' + count + "</span>" : "") + "</a>";
     };
     var own = can("kendi.profil") || can("kendi.eser");
-    var html = "<h4>Üyelik</h4>" + link("#/", "Özet") + link("#/oneri/work", "Eser ekle") + link("#/oneri/topic", "Haber gönder") +
+    var html = '<a class="side-back" href="/index.html">← Siteye dön</a>' + "<h4>Üyelik</h4>" + link("#/", "Özet") + link("#/oneri/work", "Eser ekle") + link("#/oneri/topic", "Haber gönder") +
       (own ? link("#/eserlerim", "Eserlerim ve profilim") : link("#/profil", "Akademik profilim")) +
       link("#/gonderilerim", "Gönderilerim") + link("#/hesap", "Hesap ayarları");
     if (isStaff()) {
@@ -1546,6 +1547,36 @@
   function viewNotFound() {
     main.innerHTML = '<h1 class="page-title">Sayfa bulunamadı</h1><p><a class="link-arrow" href="#/">Panel özetine dön</a></p>';
   }
+
+  /* ---------------------------------------------------------------- tablet / telefon */
+  // Menü çekmecesi: düğmeyle açılır; bağlantı seçilince, Esc'ye basılınca, dışarı dokununca ya da sayfa değişince kapanır.
+  var sideBtn = $(".panel-menu-btn");
+  var sideOpen = function () { return document.body.classList.contains("side-open"); };
+  function setSide(open, focusBack) {
+    document.body.classList.toggle("side-open", open);
+    document.documentElement.classList.toggle("side-lock", open);
+    sideBtn.setAttribute("aria-expanded", open);
+    sideBtn.setAttribute("aria-label", open ? "Panel menüsünü kapat" : "Panel menüsünü aç");
+    if (open) { var a = $('a[aria-current="page"]', navEl) || $("a", navEl); if (a) a.focus({ preventScroll: true }); }
+    else if (focusBack) sideBtn.focus({ preventScroll: true });
+  }
+  sideBtn.addEventListener("click", function (e) { e.stopPropagation(); setSide(!sideOpen(), true); });
+  navEl.addEventListener("click", function (e) { if (e.target.closest("a") && sideOpen()) setSide(false, false); });
+  document.addEventListener("click", function (e) { if (sideOpen() && !e.target.closest(".panel-nav, .panel-menu-btn")) setSide(false, false); });
+  document.addEventListener("keydown", function (e) { if (e.key === "Escape" && sideOpen()) setSide(false, true); });
+  window.addEventListener("hashchange", function () { if (sideOpen()) setSide(false, false); });
+  window.matchMedia("(min-width: 901px)").addEventListener("change", function (m) { if (m.matches && sideOpen()) setSide(false, false); });
+
+  // Telefonda tablolar kartlara dönüşür (panel.css): her hücreye sütun adı yazılır.
+  function labelTables(root) {
+    $$(".p-table", root).forEach(function (t) {
+      var heads = $$("thead th", t).map(function (th) { return th.textContent.trim(); });
+      $$("tbody tr", t).forEach(function (tr) {
+        $$("td", tr).forEach(function (td, i) { if (heads[i] && !td.hasAttribute("data-label")) td.setAttribute("data-label", heads[i]); });
+      });
+    });
+  }
+  new MutationObserver(function () { labelTables(main); }).observe(main, { childList: true, subtree: true });
 
   /* ---------------------------------------------------------------- yönlendirme */
   function render() {

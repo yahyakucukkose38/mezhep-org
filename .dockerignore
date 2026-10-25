@@ -10,6 +10,9 @@ eser
 haber
 galeri
 kategori
+sitemap.xml
+robots.txt
+server/test-ui
 assets/js/search-index.js
 CNAME
 .nojekyll

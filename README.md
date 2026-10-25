@@ -54,6 +54,15 @@ kendiliğinden yerleşir. Sayfalardaki bölümler (ör. ana sayfada 6 içerik) a
 bütün içerikleri listeler. Alt kategoriler menüde üst kategorinin altında açılır; adresi değişen kategorinin eski
 adresi yeni sayfaya yönlendirilir.
 
+## Ekran boyutları
+
+Site ve panel tek kod tabanıyla 320 px telefondan geniş ekrana kadar çalışır (`assets/css/style.css` sonundaki
+responsive katman, `server/panel/panel.css`). Telefonda ve tablette menü açıldığında arka plan kilitlenir, odak menüde
+kalır, Esc ya da dışarı dokunma menüyü kapatır; panelde menü soldan açılan çekmece, tablolar kart görünümündedir.
+`npm run test:ui` 8 ekran ölçüsünde ve gerçek cihaz profillerinde (iPhone, iPad, Pixel, Galaxy Tab) taşma, menü,
+dokunma hedefi, listeleme ve telefondan haber yayımlamayı denetler; `MZ_UI_SHOTS=<klasör>` ekran görüntüsü kaydeder.
+`node test-ui/audit.js <klasör> [chromium|firefox|webkit] --shots` ayrıntılı ölçüm raporu (JSON) üretir.
+
 ## Canlı siteden yeniden veri çekme (isteğe bağlı)
 
 ```
@@ -79,7 +88,9 @@ npm install
 MZ_ADMIN_EMAIL=siz@ornek.com npm start          # http://localhost:3000, panel: /panel/
 npm run kaynak -- "<akaid markdown klasörü>"    # Akaid asistanı kaynak indeksi (isteğe bağlı)
 npm run kaynak-hanefi -- "../HANEFİ FIKHI"      # Hanefî asistanı indeksi (isteğe bağlı)
-npm test                                        # 50 uçtan uca test
+npm test                                        # 72 uçtan uca test
+npm run test:ui                                 # responsive arayüz testleri (Playwright: Chromium, Firefox, WebKit;
+                                                #   ilk seferde: npx playwright install chromium firefox webkit)
 ```
 
 Asistan için `OPENAI_API_KEY` ortam değişkeni gerekir (yalnızca sunucuda; bkz. `deploy/.env.example`).

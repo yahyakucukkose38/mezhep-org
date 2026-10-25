@@ -102,6 +102,69 @@ def avatar(m, cls=""):
     return '<span class="avatar %s">%s</span>' % (cls, inner)
 
 
+def _local_file(p):
+    for prefix, base in FILE_ROOTS.items():
+        if p.startswith(prefix):
+            return os.path.join(base, *p[len(prefix):].split("/"))
+    return os.path.join(ROOT, *p.split("/"))
+
+
+_SIZES = {}
+
+
+def img_size(p):
+    """Yerel görselin piksel ölçüsü (genişlik, yükseklik) ya da None. Dosyanın yalnızca başlığı okunur."""
+    if p in _SIZES:
+        return _SIZES[p]
+    size = None
+    try:
+        with open(_local_file(p), "rb") as f:
+            head = f.read(32)
+            if head[:8] == b"\x89PNG\r\n\x1a\n":
+                size = (int.from_bytes(head[16:20], "big"), int.from_bytes(head[20:24], "big"))
+            elif head[:6] in (b"GIF87a", b"GIF89a"):
+                size = (int.from_bytes(head[6:8], "little"), int.from_bytes(head[8:10], "little"))
+            elif head[:4] == b"RIFF" and head[8:12] == b"WEBP":
+                f.seek(12); chunk = f.read(30)
+                if chunk[:4] == b"VP8 ":
+                    size = (int.from_bytes(chunk[14:16], "little") & 0x3FFF, int.from_bytes(chunk[16:18], "little") & 0x3FFF)
+                elif chunk[:4] == b"VP8L":
+                    b = chunk[9:13]
+                    size = (1 + (((b[1] & 0x3F) << 8) | b[0]), 1 + (((b[3] & 0xF) << 10) | (b[2] << 2) | ((b[1] & 0xC0) >> 6)))
+                elif chunk[:4] == b"VP8X":
+                    size = (1 + int.from_bytes(chunk[12:15], "little"), 1 + int.from_bytes(chunk[15:18], "little"))
+            elif head[:2] == b"\xff\xd8":
+                f.seek(2)
+                while True:
+                    m = f.read(2)
+                    if len(m) < 2 or m[0] != 0xFF:
+                        break
+                    if m[1] in (0xD8, 0x01) or 0xD0 <= m[1] <= 0xD7:
+                        continue
+                    ln = int.from_bytes(f.read(2), "big")
+                    if m[1] in (0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7, 0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 0xCF):
+                        d = f.read(5)
+                        size = (int.from_bytes(d[3:5], "big"), int.from_bytes(d[1:3], "big"))
+                        break
+                    f.seek(ln - 2, 1)
+    except OSError:
+        size = None
+    _SIZES[p] = size if size and all(size) else None
+    return _SIZES[p]
+
+
+def size_imgs(doc):
+    """Yerel görsellere width/height (yer ayrılır, sayfa yüklenirken kaymaz) ve decoding="async" ekler."""
+    def add(m):
+        tag = m.group(0)
+        if " width=" in tag:
+            return tag
+        wh = img_size(m.group(1))
+        body = tag[:-2] if tag.endswith("/>") else tag[:-1]
+        return body + (' width="%d" height="%d"' % wh if wh else "") + ' decoding="async">'
+    return re.sub(r'<img src="\{ROOT\}((?:media|uploads)/[^"]+)"[^>]*>', add, doc)
+
+
 def drop_missing(h):
     """Eski sunucuda bulunmayan yerel medya dosyalarına giden <img> ve bağlantıları temizler."""
     h = re.sub(r'<img src="\{ROOT\}(media/[^"]+)"[^>]*>', lambda m: m.group(0) if exists(m.group(1)) else "", h or "")
@@ -362,7 +425,7 @@ def layout(path, title, body, desc="", active="", data=None, share=None):
 <script src="{r}assets/js/app.js" defer></script>
 </body>
 </html>'''
-    doc = doc.replace("{ROOT}", r)
+    doc = size_imgs(doc).replace("{ROOT}", r)
     WRITTEN.add(path)
     out = os.path.join(ROOT, path)
     os.makedirs(os.path.dirname(out), exist_ok=True)
@@ -759,7 +822,7 @@ def build_home():
 <section class="hero">
   {PATTERN}<div class="hero-glow"></div>
   <div class="container hero-grid">
-    <div class="reveal">
+    <div>
       <div class="eyebrow">{E(ST["home_eyebrow"])}</div>
       <h1>{emph(ST["home_title"])}</h1>
       <p class="hero-lead">{E(ST["home_lead"])}</p>
@@ -768,7 +831,7 @@ def build_home():
         <button class="btn btn-ghost" type="button" data-open-search>{ic("search")} Sitede ara</button>
       </div>
     </div>
-    <div class="hero-card reveal">
+    <div class="hero-card">
       <img class="hero-logo" src="{{ROOT}}assets/img/logo.jpg" alt="Mezhep.Org logosu" width="100" height="68">
       <div class="arabic" lang="ar">المذاهب الإسلامية</div>
       {('<p class="quote">“%s”</p>' % E(ST["home_quote"])) if ST["home_quote"] else ""}
@@ -810,6 +873,12 @@ def build_home():
     layout("index.html", SITE, body, active="index.html")
 
 
+def member_card(m):
+    works_n = len(by_member_works[m["id"]])
+    return (f'<a class="card person" href="{{ROOT}}{m["slug"]}">{avatar(m)}<div class="info"><div class="rank">{E(m["title"])}</div>'
+            f'<h3>{E(m["name"])}</h3><div class="uni">{E(m["university"] or "—")}{(" · %d eser" % works_n) if works_n else ""}</div></div></a>')
+
+
 # ---------------------------------------------------------------- AKADEMİSYENLER
 def build_members():
     order = RANK_ORDER + ["Üniversite Dışı", "Emekli", "Rahmetle Andıklarımız", "Diğer"]
@@ -827,7 +896,7 @@ def build_members():
   <select class="select" data-filter-select="uni" aria-label="Üniversite">{opts}</select></div>
   <div class="chips">{chips}</div>
 </div></div>
-<div class="container" style="padding-bottom:80px"><p class="result-info" data-info></p><div class="grid grid-4" data-list="members"></div><div class="load-more"><button class="btn btn-ghost" data-more hidden>Daha fazla göster</button></div></div>'''
+<div class="container" style="padding-bottom:80px"><p class="result-info" data-info>{len(members)} kayıt</p><div class="grid grid-4" data-list="members">{"".join(member_card(m) for m in members[:48])}</div><div class="load-more"><button class="btn btn-ghost" data-more hidden>Daha fazla göster</button></div></div>'''
     layout("akademisyenler.html", "Akademisyenler", with_blocks(body, "akademisyenler"), "İslam Mezhepleri Tarihi akademisyenleri listesi", "akademisyenler.html", data)
 
     for m in members:
@@ -922,7 +991,7 @@ def build_works():
   <select class="select" data-filter-select="decade" aria-label="Dönem">{dopts}</select><select class="select" data-sort aria-label="Sıralama">{sopts}</select></div>
   <div class="chips">{chips}</div>
 </div></div>
-<div class="container" style="padding-bottom:80px"><p class="result-info" data-info></p><div class="feed" data-list="works"></div><div class="load-more"><button class="btn btn-ghost" data-more hidden>Daha fazla göster</button></div></div>'''
+<div class="container" style="padding-bottom:80px"><p class="result-info" data-info>{len(works)} kayıt</p><div class="feed" data-list="works">{"".join(work_item(w) for w in sorted(works, key=lambda w: (w["year"] or 0, w["id"]), reverse=True)[:40])}</div><div class="load-more"><button class="btn btn-ghost" data-more hidden>Daha fazla göster</button></div></div>'''
     layout("eserler.html", "Eserler", with_blocks(body, "eserler"), "İslam Mezhepleri Tarihi tezleri, kitapları, makaleleri ve tebliğleri", "eserler.html", data)
 
     mbyname = {m["key"]: m for m in members}
@@ -980,7 +1049,7 @@ def build_news():
   <div class="row"><label class="input">{ic("search")}<input type="search" data-q placeholder="Haberlerde ara…" aria-label="Haber ara"></label><select class="select" data-filter-select="year" aria-label="Yıl">{yopts}</select></div>
   <div class="chips">{chips}</div>
 </div></div>
-<div class="container" style="padding-bottom:80px"><p class="result-info" data-info></p><div class="grid grid-3" data-list="news"></div><div class="load-more"><button class="btn btn-ghost" data-more hidden>Daha fazla göster</button></div></div>'''
+<div class="container" style="padding-bottom:80px"><p class="result-info" data-info>{len(news)} kayıt</p><div class="grid grid-3" data-list="news">{"".join(news_card(t) for t in news[:24])}</div><div class="load-more"><button class="btn btn-ghost" data-more hidden>Daha fazla göster</button></div></div>'''
     layout("haberler.html", H["seo_title"] or H["name"], with_blocks(body, "haberler"), H["seo_desc"] or H["description"][:160], "haberler.html", data)
 
     for t in topics:
@@ -1005,9 +1074,15 @@ def build_news():
             if x: nav += f'<a class="card hover" href="{{ROOT}}{x["slug"]}"><div class="meta">{lbl}</div><h3 class="clamp-2" style="font-size:1rem">{E(x["title"])}</h3></a>'
         more = [x for x in lst if x["id"] != t["id"]][:5]
         info = "".join(f"<dt>{k}</dt><dd>{v}</dd>" for k, v in [("Kategori", E(t["tag"])), ("Tarih", tr_date(t.get("date"))), ("Yazan", E(t.get("author"))), ("Mesaj", len(t["posts"]) if len(t["posts"]) > 1 else "")] if v)
-        body = page_hero(t["title"], "", crumbs, tr_date(t.get("date")), own_button("topic", t["id"]))
+        words = len(strip_tags(" ".join(p["html"] for p in t["posts"])).split())
+        eyebrow = " · ".join(x for x in (t["tag"], tr_date(t.get("date")), "%d dk okuma" % max(1, round(words / 200))) if x)
+        # kapak görseli metnin içinde yoksa yazının başında gösterilir
+        cover = ""
+        if t.get("image") and t["image"] not in (t["posts"][0]["html"] if t["posts"] else ""):
+            cover = '<figure class="article-cover"><img src="{ROOT}%s" alt="%s"></figure>' % (E(t["image"]), E(t["title"]))
+        body = page_hero(t["title"], "", crumbs, eyebrow, own_button("topic", t["id"]))
         body += f'''<div class="container detail">
-  <div><article class="panel">{posts}</article>{share_block(t["slug"], t["title"], t.get("summary", "")[:200], abs_url(t.get("image")), "topic:%d" % t["id"])}{comments_block("topic:%d" % t["id"])}{('<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(240px,1fr));margin-top:18px">%s</div>' % nav) if nav else ""}</div>
+  <div><article class="panel">{cover}{posts}</article>{share_block(t["slug"], t["title"], t.get("summary", "")[:200], abs_url(t.get("image")), "topic:%d" % t["id"])}{comments_block("topic:%d" % t["id"])}{('<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(240px,1fr));margin-top:18px">%s</div>' % nav) if nav else ""}</div>
   <aside><div class="panel"><h3>Ayrıntılar</h3><dl class="dl">{info}</dl></div><div class="panel"><h3>Diğer {E(tr_lower(pool_cat["name"]))}</h3><div class="feed" style="margin-top:12px">{"".join(feed_topic(x) for x in more)}</div></div><a class="btn btn-ghost" href="{{ROOT}}{href}">{ic("left")} {label}</a></aside>
 </div>'''
         layout(t["slug"], t["title"], body, t.get("summary", "")[:160], nav_active(c),
@@ -1156,10 +1231,29 @@ def write_redirect(path, target):
            f'<link rel="canonical" href="{E(SITE_URL + quote(target, safe="/"))}"><meta name="robots" content="noindex">'
            f'<meta http-equiv="refresh" content="0; url={r}{E(target)}"></head><body><p>Bu sayfa taşındı: <a href="{r}{E(target)}">{E(target)}</a></p></body></html>')
     WRITTEN.add(path)
+    REDIRECTS.add(path)
     out = os.path.join(ROOT, path)
     os.makedirs(os.path.dirname(out), exist_ok=True)
     with open(out, "w", encoding="utf-8") as f:
         f.write(doc)
+
+
+REDIRECTS = set()
+
+
+def build_sitemap():
+    """sitemap.xml: üretilen bütün sayfalar (haberlerde yayın tarihi); robots.txt panel ve API'yi dışarıda tutar."""
+    dates = {t["slug"]: iso_date(t.get("date")) for t in topics}
+    order = lambda p: (p.count("/"), p != "index.html", p)
+    rows = []
+    for p in sorted((p for p in WRITTEN if p not in REDIRECTS and p != "404.html"), key=order):
+        loc = SITE_URL + ("" if p == "index.html" else quote(p, safe="/"))
+        rows.append("<url><loc>%s</loc>%s</url>" % (E(loc), ("<lastmod>%s</lastmod>" % dates[p]) if dates.get(p) else ""))
+    with open(os.path.join(ROOT, "sitemap.xml"), "w", encoding="utf-8") as f:
+        f.write('<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' + "\n".join(rows) + "\n</urlset>\n")
+    with open(os.path.join(ROOT, "robots.txt"), "w", encoding="utf-8") as f:
+        f.write("User-agent: *\nAllow: /\nDisallow: /panel/\nDisallow: /api/\n\nSitemap: %ssitemap.xml\n" % SITE_URL)
+    return len(rows)
 
 
 def build_categories():
@@ -1232,6 +1326,7 @@ def build_404():
 
 
 build_home(); build_members(); build_works(); build_news(); build_events(); build_gallery(); build_resources(); build_about(); build_categories(); build_index(); build_404()
+_n_sitemap = build_sitemap()
 _stale = remove_stale()
 if _stale:
     print("Eski sayfa silindi:", _stale)
