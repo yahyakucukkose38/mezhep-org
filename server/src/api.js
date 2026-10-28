@@ -295,8 +295,8 @@ const canEditComment = (user, c) => !!user && user.status === "active" &&
 const commentOut = (c, user) => ({
   id: c.id, body: c.body, format: c.format, html: C.commentHtml(c.body, c.format), created_at: c.created_at, updated_at: c.updated_at || null,
   ...(c.name !== undefined ? { name: c.name, title: c.title } : { status: c.status }), can_edit: canEditComment(user, c),
-  // Silme düğmesi yalnızca yorum yöneticisine gösterilir; silme isteği DELETE /admin/comments/:id'de ayrıca denetlenir.
-  can_delete: !!user && user.status === "active" && P.can(user, "yorum.yonet"),
+  // Silme düğmesi yalnızca yorum.sil yetkisi olana (Süper Yönetici, Yönetici); istek DELETE /admin/comments/:id'de ayrıca denetlenir.
+  can_delete: P.can(user, "yorum.sil"),
 });
 
 api.get("/comments", (req, res) => {
@@ -304,11 +304,11 @@ api.get("/comments", (req, res) => {
   if (!TARGET.test(t)) return bad(res, "Geçersiz hedef.");
   const rows = db.prepare(
     `SELECT c.id, c.user_id, c.body, c.format, c.status, c.created_at, c.updated_at, u.name, u.title FROM comments c JOIN users u ON u.id = c.user_id
-     WHERE c.target = ? AND c.status = 'visible' ORDER BY c.id`
+     WHERE c.target = ? AND c.status = 'visible' AND c.deleted_at IS NULL ORDER BY c.id`
   ).all(t).map(plain);
   let mine = [];
   if (req.user) {
-    mine = db.prepare("SELECT id, user_id, body, format, created_at, updated_at, status FROM comments WHERE target = ? AND user_id = ? AND status = 'pending' ORDER BY id")
+    mine = db.prepare("SELECT id, user_id, body, format, created_at, updated_at, status FROM comments WHERE target = ? AND user_id = ? AND status = 'pending' AND deleted_at IS NULL ORDER BY id")
       .all(t, req.user.id).map(plain);
   }
   ok(res, { items: rows.map((c) => commentOut(c, req.user)), pending: mine.map((c) => commentOut(c, req.user)), limits: C.COMMENT_LIMITS });
@@ -328,7 +328,7 @@ api.post("/comments", A.requireActive, A.rateLimit({ windowMs: 10 * 60e3, max: 1
 }));
 
 api.patch("/comments/:id", A.requireActive, A.rateLimit({ windowMs: 10 * 60e3, max: 20, key: (r) => "ce" + r.user.id }), wrap((req, res) => {
-  const c = db.prepare("SELECT id, user_id, status FROM comments WHERE id = ?").get(int(req.params.id));
+  const c = db.prepare("SELECT id, user_id, status FROM comments WHERE id = ? AND deleted_at IS NULL").get(int(req.params.id));
   if (!c || !canEditComment(req.user, c)) return A.fail(res, 404, "Düzenlenecek yorum bulunamadı.");
   const mod = P.can(req.user, "yorum.yonet");
   if (!mod && !SS.get("comments_enabled")) return A.fail(res, 403, "Yorumlar şu anda kapalı.");
@@ -355,7 +355,7 @@ function pendingCounts(user) {
   return {
     submissions: kinds.length ? n(`SELECT count(*) AS n FROM submissions WHERE status = 'pending' AND kind IN (${kinds.map(() => "?").join(",")})`, ...kinds) : 0,
     users: P.can(user, "uye.onay") || P.can(user, "uye.yonet") ? n("SELECT count(*) AS n FROM users WHERE status = 'pending'") : 0,
-    comments: P.can(user, "yorum.yonet") ? n("SELECT count(*) AS n FROM comments WHERE status = 'pending'") : 0,
+    comments: P.can(user, "yorum.yonet") ? n("SELECT count(*) AS n FROM comments WHERE status = 'pending' AND deleted_at IS NULL") : 0,
   };
 }
 
@@ -444,7 +444,7 @@ admin.get("/users", need("uye.onay", "uye.yonet", "yetki.yonet"), (req, res) => 
   const rows = db.prepare(
     `SELECT ${A.PUBLIC_USER.split(", ").map((c) => "u." + c).join(", ")},
        (SELECT count(*) FROM submissions s WHERE s.user_id = u.id) AS submission_count,
-       (SELECT count(*) FROM comments c WHERE c.user_id = u.id) AS comment_count
+       (SELECT count(*) FROM comments c WHERE c.user_id = u.id AND c.deleted_at IS NULL) AS comment_count
      FROM users u ${where.length ? "WHERE " + where.join(" AND ") : ""} ORDER BY u.status = 'pending' DESC, u.id DESC`
   ).all(...args).map(plain).filter((u) => !q || `${u.name} ${u.email} ${u.university}`.toLocaleLowerCase("tr").includes(q));
   for (const u of rows) {
@@ -786,12 +786,15 @@ admin.post("/trash/:kind/:id/restore", need("icerik.sil"), (req, res) => {
 });
 
 // ---- yorumlar
+// "deleted": yönetici tarafından silinenler (yalnızca yorum.sil); diğer sekmeler silinmemiş yorumlar
 admin.get("/comments", need("yorum.yonet"), (req, res) => {
-  const status = ["pending", "visible", "hidden"].includes(req.query.status) ? req.query.status : "pending";
+  const status = ["pending", "visible", "hidden", "deleted"].includes(req.query.status) ? req.query.status : "pending";
+  if (status === "deleted" && !P.can(req.user, "yorum.sil")) return A.fail(res, 403, "Silinen yorumları görme yetkiniz yok.");
   const rows = db.prepare(
-    `SELECT c.*, u.name AS user_name, u.email AS user_email FROM comments c JOIN users u ON u.id = c.user_id
-     WHERE c.status = ? ORDER BY c.id DESC LIMIT 300`
-  ).all(status).map(plain);
+    `SELECT c.*, u.name AS user_name, u.email AS user_email, d.name AS deleted_by_name FROM comments c JOIN users u ON u.id = c.user_id
+     LEFT JOIN users d ON d.id = c.deleted_by
+     WHERE ${status === "deleted" ? "c.deleted_at IS NOT NULL" : "c.status = ? AND c.deleted_at IS NULL"} ORDER BY ${status === "deleted" ? "c.deleted_at" : "c.id"} DESC LIMIT 300`
+  ).all(...(status === "deleted" ? [] : [status])).map(plain);
   for (const r of rows) {
     r.html = C.commentHtml(r.body, r.format);
     const [kind, id] = r.target.split(":");
@@ -805,19 +808,27 @@ admin.get("/comments", need("yorum.yonet"), (req, res) => {
 admin.patch("/comments/:id", need("yorum.yonet"), (req, res) => {
   const status = req.body?.status;
   if (!["visible", "hidden", "pending"].includes(status)) return bad(res, "Geçersiz durum.");
-  const n = db.prepare("UPDATE comments SET status = ? WHERE id = ?").run(status, int(req.params.id)).changes;
+  const n = db.prepare("UPDATE comments SET status = ? WHERE id = ? AND deleted_at IS NULL").run(status, int(req.params.id)).changes;
   if (!n) return A.fail(res, 404, "Yorum bulunamadı.");
   log(req.user.id, "yorum-" + status, `#${req.params.id}`);
   ok(res);
 });
 
-// Kalıcı silme (yorumların yanıtı ya da bağlı kaydı yoktur; görseller yükleme klasöründe kalır, gece yedeğinde de bulunur).
-// Denetim kaydına hedef içerik ve yazar yazılır.
-admin.delete("/comments/:id", need("yorum.yonet"), (req, res) => {
-  const c = db.prepare("SELECT id, target, user_id FROM comments WHERE id = ?").get(int(req.params.id));
+// Mantıksal silme: kayıt, yazarı, tarihi ve görselleriyle yerinde kalır; ziyaretçi ve üyelere görünmez,
+// "Silinenler"den geri getirilebilir. Yalnızca yorum.sil (Süper Yönetici, Yönetici). Denetim kaydına hedef ve yazar yazılır.
+admin.delete("/comments/:id", need("yorum.sil"), (req, res) => {
+  const c = db.prepare("SELECT id, target, user_id FROM comments WHERE id = ? AND deleted_at IS NULL").get(int(req.params.id));
   if (!c) return A.fail(res, 404, "Yorum bulunamadı. Daha önce silinmiş olabilir.");
-  db.prepare("DELETE FROM comments WHERE id = ?").run(c.id);
+  db.prepare("UPDATE comments SET deleted_at = datetime('now'), deleted_by = ? WHERE id = ? AND deleted_at IS NULL").run(req.user.id, c.id);
   log(req.user.id, "yorum-sil", `#${c.id} ${c.target} (yazar #${c.user_id})`);
+  ok(res, { id: c.id });
+});
+
+admin.post("/comments/:id/restore", need("yorum.sil"), (req, res) => {
+  const c = db.prepare("SELECT id, target FROM comments WHERE id = ? AND deleted_at IS NOT NULL").get(int(req.params.id));
+  if (!c) return A.fail(res, 404, "Geri getirilecek yorum bulunamadı.");
+  db.prepare("UPDATE comments SET deleted_at = NULL, deleted_by = NULL WHERE id = ?").run(c.id);
+  log(req.user.id, "yorum-geri", `#${c.id} ${c.target}`);
   ok(res, { id: c.id });
 });
 

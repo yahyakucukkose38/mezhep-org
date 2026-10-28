@@ -1062,7 +1062,7 @@
     onay: "Öneriyi onayladı", red: "Öneriyi reddetti", "uye-guncelle": "Üyeyi güncelledi", "uye-toplu-onay": "Toplu üye onayı", "uye-sil": "Üyeyi sildi",
     "sifre-sifirla": "Şifre sıfırladı", "rol-ekle": "Rol ekledi", "rol-duzenle": "Rolü düzenledi", "rol-sil": "Rolü sildi", ayar: "Ayar değiştirdi",
     "icerik-ekle": "Kayıt ekledi", "icerik-duzenle": "Kaydı düzenledi", "icerik-sil": "Kaydı sildi", "icerik-geri-getir": "Kaydı geri getirdi",
-    "kendi-guncelle": "Kendi kaydını güncelledi", "yorum-visible": "Yorumu yayınladı", "yorum-hidden": "Yorumu gizledi", "yorum-sil": "Yorumu sildi", "yorum-duzenle": "Yorumu düzenledi",
+    "kendi-guncelle": "Kendi kaydını güncelledi", "yorum-visible": "Yorumu yayınladı", "yorum-hidden": "Yorumu gizledi", "yorum-sil": "Yorumu sildi", "yorum-duzenle": "Yorumu düzenledi", "yorum-geri": "Yorumu geri getirdi",
     "site-uret": "Siteyi yeniden üretti", "disa-aktar": "Dışa aktardı", "icerik-yenile": "İçerik yenilendi", "ilk-yonetici": "İlk yönetici oluşturuldu",
     "kategori-ekle": "Kategori ekledi", "kategori-duzenle": "Kategoriyi düzenledi", "kategori-sil": "Kategoriyi sildi", "menu-duzenle": "Menüyü düzenledi", "kategori-geri-al": "Kategori tabloları kaldırıldı"
   };
@@ -1397,25 +1397,33 @@
   function viewComments(status) {
     status = status || "pending";
     setTitle("Yorumlar");
-    var tabs = '<nav class="tabs">' + [["pending", "Onay bekleyen"], ["visible", "Yayında"], ["hidden", "Gizlenen"]].map(function (t) {
+    var del = can("yorum.sil"), gone = status === "deleted";
+    var tabs = '<nav class="tabs">' + [["pending", "Onay bekleyen"], ["visible", "Yayında"], ["hidden", "Gizlenen"]].concat(del ? [["deleted", "Silinenler"]] : []).map(function (t) {
       return '<a href="#/yonetim/yorumlar/' + t[0] + '"' + (t[0] === status ? ' aria-current="page"' : "") + ">" + t[1] + "</a>";
     }).join("") + "</nav>";
-    main.innerHTML = '<h1 class="page-title">Yorumlar</h1><p class="page-lead">Üye yorumları onaydan sonra eser ve haber sayfalarında görünür.</p>' + tabs + '<div data-c><p class="muted">Yükleniyor…</p></div>';
+    main.innerHTML = '<h1 class="page-title">Yorumlar</h1><p class="page-lead">' + (gone ? "Silinen yorumlar sitede görünmez; geri getirilen yorum önceki durumuyla (yayında, gizli ya da onay bekliyor) döner." :
+      "Üye yorumları onaydan sonra eser ve haber sayfalarında görünür.") + "</p>" + tabs + '<div data-c><p class="muted">Yükleniyor…</p></div>';
     api("GET", "/admin/comments?status=" + status).then(function (j) {
       var box = $("[data-c]", main);
       if (!j.items.length) { box.innerHTML = '<div class="empty">Kayıt yok.</div>'; return; }
       box.innerHTML = j.items.map(function (c) {
         return '<article class="review" data-id="' + c.id + '"><header><div><a href="/' + esc(c.target_url) + '#yorumlar" target="_blank"><strong>' + esc(c.target_label) + '</strong></a><div class="muted">' +
-          esc(c.user_name) + " · " + esc(c.user_email) + " · " + when(c.created_at) + (c.updated_at ? " · düzenlendi " + when(c.updated_at) : "") + "</div></div>" + badge(c.status) + '</header><div class="body"><div class="prose comment-body">' + c.html +
-          '</div><div class="form-actions">' + (c.status !== "visible" ? '<button class="btn btn-primary btn-sm" data-s="visible">Yayınla</button>' : "") +
-          (c.status !== "hidden" ? '<button class="btn btn-ghost btn-sm" data-s="hidden">Gizle</button>' : "") + '<button class="btn btn-danger btn-sm" data-del>Sil</button></div></div></article>';
+          esc(c.user_name) + " · " + esc(c.user_email) + " · " + when(c.created_at) + (c.updated_at ? " · düzenlendi " + when(c.updated_at) : "") +
+          (gone ? " · <strong>silindi " + when(c.deleted_at) + (c.deleted_by_name ? " (" + esc(c.deleted_by_name) + ")" : "") + "</strong>" : "") + "</div></div>" + badge(c.status) +
+          '</header><div class="body"><div class="prose comment-body">' + c.html + '</div><div class="form-actions">' +
+          (gone ? '<button class="btn btn-primary btn-sm" data-restore>Geri getir</button>' :
+            (c.status !== "visible" ? '<button class="btn btn-primary btn-sm" data-s="visible">Yayınla</button>' : "") +
+            (c.status !== "hidden" ? '<button class="btn btn-ghost btn-sm" data-s="hidden">Gizle</button>' : "") + (del ? '<button class="btn btn-danger btn-sm" data-del>Sil</button>' : "")) + "</div></div></article>";
       }).join("");
       var after = function (msg) { toast(msg); refreshMe().then(function () { renderChrome(location.hash); viewComments(status); }); };
       $$("[data-s]", box).forEach(function (b) {
         b.addEventListener("click", function () { api("PATCH", "/admin/comments/" + b.closest("article").dataset.id, { status: b.dataset.s }).then(function () { after(b.dataset.s === "visible" ? "Yorum yayınlandı." : "Yorum gizlendi."); }).catch(fail); });
       });
       $$("[data-del]", box).forEach(function (b) {
-        b.addEventListener("click", function () { confirmBox("Yorum kalıcı olarak silinecek.", "Sil", true).then(function (y) { if (y) api("DELETE", "/admin/comments/" + b.closest("article").dataset.id).then(function () { after("Yorum silindi."); }).catch(fail); }); });
+        b.addEventListener("click", function () { confirmBox("Bu yorumu silmek istediğinize emin misiniz? Silinenler sekmesinden geri getirilebilir.", "Yorumu Sil", true).then(function (y) { if (y) api("DELETE", "/admin/comments/" + b.closest("article").dataset.id).then(function () { after("Yorum başarıyla silindi."); }).catch(fail); }); });
+      });
+      $$("[data-restore]", box).forEach(function (b) {
+        b.addEventListener("click", function () { b.disabled = true; api("POST", "/admin/comments/" + b.closest("article").dataset.id + "/restore").then(function () { after("Yorum geri getirildi."); }).catch(function (e) { b.disabled = false; fail(e); }); });
       });
     }).catch(fail);
   }

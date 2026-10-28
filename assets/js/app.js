@@ -427,7 +427,7 @@
     };
     // Onay penceresi: Esc, dışarı tıklama ve İptal vazgeçer; odak önce İptal'dedir (yanlışlıkla silinmesin)
     var confirmDelete = function () {
-      var text = "Bu yorumu silmek istediğinize emin misiniz? Bu işlem geri alınamaz.";
+      var text = "Bu yorumu silmek istediğinize emin misiniz?";
       var d = document.createElement("dialog");
       if (!d.showModal) return Promise.resolve(window.confirm(text));
       return new Promise(function (resolve) {
@@ -444,7 +444,7 @@
         $("[data-no]", d).focus();
       });
     };
-    // Yorum yöneticisinin silmesi: yetki sunucuda (DELETE /admin/comments/:id, yorum.yonet) ayrıca denetlenir
+    // Yöneticinin silmesi (mantıksal; panelde "Silinenler"den geri getirilir): yetki sunucuda (DELETE /admin/comments/:id, yorum.sil) ayrıca denetlenir
     var deleteComment = function (box, el, btn) {
       var id = el.getAttribute("data-comment");
       confirmDelete().then(function (yes) {

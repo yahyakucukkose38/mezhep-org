@@ -208,7 +208,7 @@ test("işlem kayıtları: yetkiliye açık, filtrelenebilir", async () => {
   assert.ok(r.body.actions.some((a) => a.action === "rol-ekle"));
 });
 
-test("yorum silme: yalnızca yorum yöneticisi; yetki sunucuda denetlenir, yalnızca o yorum silinir ve kaydı tutulur", async () => {
+test("yorum silme: yalnızca yöneticiler (yorum.sil); mantıksal silme, geri getirme ve denetim kaydı", async () => {
   // önceki rol testleri moderatör hesabının rolünü değiştiriyor; burada yeniden Moderatör rolü
   db.prepare("UPDATE users SET role_key = 'moderator' WHERE email = 'moderator@t.local'").run();
   const mk = async (who, body) => {
@@ -218,43 +218,67 @@ test("yorum silme: yalnızca yorum yöneticisi; yetki sunucuda denetlenir, yaln�
     return r.body.id;
   };
   const a = await mk("uye", "Üyenin yorumu"), b = await mk("hoca", "Hocanın yorumu"), c = await mk("super", "Yöneticinin yorumu");
-  const exists = (cid) => !!db.prepare("SELECT 1 FROM comments WHERE id = ?").get(cid);
-  // düğme bayrağı: yalnızca yorum.yonet yetkisi olanlara
-  const flag = async (who) => (await U[who].call("GET", "/comments?target=topic:265")).body.items.find((x) => x.id === a);
-  assert.equal((await flag("super")).can_delete, true);
-  assert.equal((await flag("moderator")).can_delete, true);
-  assert.equal((await flag("yonetici")).can_delete, true);
-  assert.equal((await flag("editor")).can_delete, true, "editör rolünde de yorum.yonet var");
-  for (const who of ["uye", "hoca"]) assert.equal((await flag(who)).can_delete, false, who);
-  assert.equal((await new Client().call("GET", "/comments?target=topic:265")).body.items.find((x) => x.id === a).can_delete, false);
+  const row = (cid) => db.prepare("SELECT * FROM comments WHERE id = ?").get(cid);
+  const list = async (who) => ((who ? U[who] : new Client()).call("GET", "/comments?target=topic:265")).then((r) => r.body.items);
+  // düğme bayrağı: yalnızca Süper Yönetici ve Yönetici
+  const flag = async (who) => (await list(who)).find((x) => x.id === a);
+  for (const who of ["super", "yonetici"]) assert.equal((await flag(who)).can_delete, true, who);
+  for (const who of ["editor", "moderator", "hoca", "uye", null]) assert.equal((await flag(who)).can_delete, false, String(who));
   assert.equal((await flag("uye")).can_edit, true, "düzenleme yetkisi değişmedi");
+  assert.equal((await flag("moderator")).can_edit, true, "moderatör düzenlemeye devam eder");
 
-  // yetkisiz istekler reddedilir; yorum yerinde kalır
+  // yetkisiz istekler reddedilir; yorumlar yerinde kalır
   assert.equal((await new Client().call("DELETE", `/admin/comments/${b}`)).status, 401);
-  assert.equal((await U.uye.call("DELETE", `/admin/comments/${b}`)).status, 403, "üye başkasının yorumunu silemez");
+  for (const who of ["uye", "hoca"]) assert.equal((await U[who].call("DELETE", `/admin/comments/${b}`)).status, 403, who);
   assert.equal((await U.uye.call("DELETE", `/admin/comments/${a}`)).status, 403, "üye kendi yorumunu da bu uçtan silemez");
-  assert.equal((await U.hoca.call("DELETE", `/admin/comments/${b}`)).status, 403, "akademisyen rolünde yorum.yonet yok");
+  for (const who of ["editor", "moderator"]) assert.equal((await U[who].call("DELETE", `/admin/comments/${b}`)).status, 403, who + " yorum yayınlar/gizler ama silemez");
   const noCsrf = await fetch(base + `/api/admin/comments/${b}`, { method: "DELETE", headers: { cookie: U.super.cookie } });
   assert.equal(noCsrf.status, 403, "x-mz başlığı olmayan istek (CSRF)");
-  assert.ok(exists(a) && exists(b) && exists(c));
+  assert.ok(!row(a).deleted_at && !row(b).deleted_at && !row(c).deleted_at);
 
-  // moderatör ve yönetici siler; yalnızca hedeflenen yorum gider
-  const before = db.prepare("SELECT count(*) AS n FROM comments").get().n;
-  const r = await U.moderator.call("DELETE", `/admin/comments/${b}`);
-  assert.equal(r.status, 200);
+  // yönetici siler: kayıt silinmez, işaretlenir; yalnızca o yorum etkilenir
+  const total = db.prepare("SELECT count(*) AS n FROM comments").get().n;
+  const r = await U.yonetici.call("DELETE", `/admin/comments/${b}`);
+  assert.equal(r.status, 200, r.body.error);
   assert.equal(r.body.id, b);
-  assert.ok(!exists(b) && exists(a) && exists(c));
-  assert.equal(db.prepare("SELECT count(*) AS n FROM comments").get().n, before - 1);
-  assert.equal((await U.super.call("DELETE", `/admin/comments/${a}`)).status, 200);
-  assert.ok(!exists(a) && exists(c));
-  // olmayan / zaten silinmiş / geçersiz kimlik
-  assert.equal((await U.super.call("DELETE", `/admin/comments/${a}`)).status, 404);
+  assert.equal(db.prepare("SELECT count(*) AS n FROM comments").get().n, total, "hiçbir kayıt silinmedi");
+  assert.ok(row(b).deleted_at && row(b).deleted_by === id("yonetici@t.local"));
+  assert.equal(row(b).body, "<p>Hocanın yorumu</p>");
+  assert.ok(!row(a).deleted_at && !row(c).deleted_at);
+  // silinen yorum hiçbir yerde görünmez, düzenlenemez, durumu değiştirilemez
+  for (const who of [null, "hoca", "super"]) assert.ok(!(await list(who)).some((x) => x.id === b), String(who));
+  assert.equal((await U.hoca.call("PATCH", `/comments/${b}`, { body: "<p>x</p>", format: "html" })).status, 404);
+  assert.equal((await U.super.call("PATCH", `/admin/comments/${b}`, { status: "visible" })).status, 404);
+  assert.ok(!(await U.moderator.call("GET", "/admin/comments?status=visible")).body.items.some((x) => x.id === b));
+  // Silinenler: yalnızca yorum.sil
+  assert.equal((await U.moderator.call("GET", "/admin/comments?status=deleted")).status, 403);
+  const del = (await U.super.call("GET", "/admin/comments?status=deleted")).body.items.find((x) => x.id === b);
+  assert.ok(del && del.deleted_by_name === "Yonetici Deneme" && del.html === "<p>Hocanın yorumu</p>");
+  // ikinci kez silme ve geçersiz kimlikler
+  assert.equal((await U.super.call("DELETE", `/admin/comments/${b}`)).status, 404);
   assert.equal((await U.super.call("DELETE", "/admin/comments/abc")).status, 404);
-  assert.equal((await U.super.call("DELETE", "/admin/comments/1%20OR%201=1")).status, 404);
-  assert.ok(exists(c));
+  assert.equal((await U.super.call("DELETE", "/admin/comments/999999")).status, 404);
+  // geri getirme: yalnızca yorum.sil; önceki durumuyla döner
+  assert.equal((await U.moderator.call("POST", `/admin/comments/${b}/restore`)).status, 403);
+  assert.equal((await U.super.call("POST", `/admin/comments/${a}/restore`)).status, 404, "silinmemiş yorum");
+  assert.equal((await U.super.call("POST", `/admin/comments/${b}/restore`)).status, 200);
+  assert.ok(!row(b).deleted_at && row(b).status === "visible");
+  assert.ok((await list(null)).some((x) => x.id === b));
   // denetim kaydı: kim, hangi yorum, hangi içerik, kimin yorumu
-  const log = db.prepare("SELECT user_id, detail FROM logs WHERE action = 'yorum-sil' ORDER BY id DESC LIMIT 2").all();
-  assert.equal(log[1].user_id, id("moderator@t.local"));
-  assert.equal(log[1].detail, `#${b} topic:265 (yazar #${id("hoca@t.local")})`);
-  assert.equal(log[0].detail, `#${a} topic:265 (yazar #${id("uye@t.local")})`);
+  const logs = db.prepare("SELECT user_id, action, detail FROM logs WHERE action IN ('yorum-sil', 'yorum-geri') ORDER BY id DESC LIMIT 2").all().map((x) => ({ ...x }));
+  assert.deepEqual(logs[1], { user_id: id("yonetici@t.local"), action: "yorum-sil", detail: `#${b} topic:265 (yazar #${id("hoca@t.local")})` });
+  assert.deepEqual(logs[0], { user_id: id("super@t.local"), action: "yorum-geri", detail: `#${b} topic:265` });
+});
+
+test("yorum.sil yetkisi var olan Yönetici rolüne bir kez eklenir; Editör ve Moderatöre eklenmez", () => {
+  const P = require("../src/perms");
+  const perms = (k) => JSON.parse(db.prepare("SELECT perms FROM roles WHERE key = ?").get(k).perms);
+  assert.ok(P.permsOf("yonetici").includes("yorum.sil") && P.permsOf("super").includes("yorum.sil"));
+  assert.ok(!P.permsOf("editor").includes("yorum.sil") && !P.permsOf("moderator").includes("yorum.sil"));
+  assert.ok(db.prepare("SELECT 1 FROM migrations WHERE name = 'yorum-sil-yetkisi'").get());
+  // geçiş tekrar çalışmaz: rol ekranından kaldırılan yetki geri eklenmez
+  db.prepare("UPDATE roles SET perms = ? WHERE key = 'yonetici'").run(JSON.stringify(perms("yonetici").filter((p) => p !== "yorum.sil")));
+  delete require.cache[require.resolve("../src/perms")];
+  require("../src/perms");
+  assert.ok(!perms("yonetici").includes("yorum.sil"));
 });

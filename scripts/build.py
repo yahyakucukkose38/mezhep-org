@@ -331,7 +331,7 @@ def share_block(path, title, desc="", image="", target=""):
             f'<div class="share-list">'
             + btn("button", "native", "Diğer uygulamalarla paylaş", ic("share"), 'type="button" data-share-native hidden')
             + links
-            + btn("a", "email", "E-posta ile Gönder", ic("mail"), f'href="{E(mail)}" data-share="eposta"')
+            + btn("a", "email", "E-posta ile Paylaş", ic("mail"), f'href="{E(mail)}" data-share="eposta"')
             + btn("button", "copy", "Bağlantıyı Kopyala", ic("link"), 'type="button" data-share-copy data-share="kopyala"')
             + '</div><span class="share-status" data-share-status role="status" aria-live="polite"></span></section>')
 

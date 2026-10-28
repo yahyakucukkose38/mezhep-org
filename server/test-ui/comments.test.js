@@ -245,7 +245,7 @@ test("yorum silme: yönetici onayla siler (sayfa yenilenmeden), İptal/Esc vazge
   // İptal ve Esc vazgeçer; odak önce İptal'de
   const dlg = page.locator("dialog.mz-confirm");
   await row.locator(".comment-del").click();
-  assert.equal(await dlg.locator("p").innerText(), "Bu yorumu silmek istediğinize emin misiniz? Bu işlem geri alınamaz.");
+  assert.equal(await dlg.locator("p").innerText(), "Bu yorumu silmek istediğinize emin misiniz?");
   assert.equal(await page.evaluate(() => document.activeElement.textContent), "İptal");
   await dlg.locator("[data-no]").click();
   await row.locator(".comment-del").click();
@@ -260,7 +260,8 @@ test("yorum silme: yönetici onayla siler (sayfa yenilenmeden), İptal/Esc vazge
   await row.waitFor({ state: "detached" });
   assert.equal(await page.evaluate(() => window.__ayniSayfa), true, "sayfa yenilenmedi");
   assert.equal(await page.locator(`[data-comment="${keep}"]`).count(), 1);
-  assert.equal(db.prepare("SELECT 1 FROM comments WHERE id = ?").get(gone), undefined);
+  // mantıksal silme: kayıt yerinde, silindi olarak işaretli
+  assert.ok(db.prepare("SELECT deleted_at FROM comments WHERE id = ?").get(gone).deleted_at);
   // sunucu hata verirse anlaşılır ileti çıkar, düğme yeniden etkinleşir
   db.prepare("DELETE FROM comments WHERE id = ?").run(keep); // başka sekmede silinmiş gibi
   const k = page.locator(`[data-comment="${keep}"]`);

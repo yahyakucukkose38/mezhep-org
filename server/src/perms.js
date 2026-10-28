@@ -14,7 +14,8 @@ const PERMS = {
   "icerik.work": { label: "Eser kayıtlarını ekleme ve düzenleme", group: "İçerik" },
   "icerik.topic": { label: "Haber ve etkinlikleri ekleme ve düzenleme", group: "İçerik" },
   "icerik.sil": { label: "Kayıt silme ve geri dönüşüm kutusundan geri getirme", group: "İçerik" },
-  "yorum.yonet": { label: "Yorumları yayınlama, gizleme ve silme", group: "İçerik" },
+  "yorum.yonet": { label: "Yorumları yayınlama ve gizleme", group: "İçerik" },
+  "yorum.sil": { label: "Yorumları silme ve geri getirme", group: "İçerik" },
   "site.ayar": { label: "Site ayarlarını değiştirme", group: "Site" },
   "site.yayin": { label: "Siteyi elle yeniden üretme", group: "Site" },
   "kayit.gor": { label: "İşlem kayıtlarını görme", group: "Site" },
@@ -52,6 +53,14 @@ db.exec(`CREATE TABLE IF NOT EXISTS roles (
 {
   const ins = db.prepare("INSERT OR IGNORE INTO roles (key, label, description, perms, system) VALUES (?, ?, ?, ?, ?)");
   for (const r of DEFAULT_ROLES) ins.run(r.key, r.label, r.description, JSON.stringify(r.perms), r.system);
+  // Yorum silme ayrı bir yetki oldu (yalnızca yöneticiler): var olan Yönetici rolüne bir kez eklenir; Editör ve
+  // Moderatör yorumları yayınlamaya/gizlemeye devam eder. Sonradan rol ekranından yapılan değişikliklere dokunulmaz.
+  if (!db.prepare("SELECT 1 FROM migrations WHERE name = 'yorum-sil-yetkisi'").get()) {
+    const y = db.prepare("SELECT perms FROM roles WHERE key = 'yonetici'").get();
+    const perms = y ? JSON.parse(y.perms) : null;
+    if (perms && !perms.includes("*") && !perms.includes("yorum.sil")) db.prepare("UPDATE roles SET perms = ? WHERE key = 'yonetici'").run(JSON.stringify([...perms, "yorum.sil"]));
+    db.prepare("INSERT INTO migrations (name) VALUES ('yorum-sil-yetkisi')").run();
+  }
   // Eski şema: users.role ('admin'/'member') → users.role_key
   const cols = db.prepare("PRAGMA table_info(users)").all().map((c) => c.name);
   if (!cols.includes("role_key")) {

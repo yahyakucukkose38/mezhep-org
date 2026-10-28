@@ -219,7 +219,7 @@ test("telefonda bütün içeriklere erişilir: Haberler'de 'Daha fazla göster' 
 });
 
 test("paylaşım çubuğu: yalnızca simge, tek satır, eş boy; fareyle bilgi balonu; dokunmatikte 44 px, sayfa kaymaz", async () => {
-  const LABELS = ["Diğer uygulamalarla paylaş", "WhatsApp'ta Paylaş", "Facebook'ta Paylaş", "X'te Paylaş", "Telegram'da Paylaş", "LinkedIn'de Paylaş", "E-posta ile Gönder", "Bağlantıyı Kopyala"];
+  const LABELS = ["Diğer uygulamalarla paylaş", "WhatsApp'ta Paylaş", "Facebook'ta Paylaş", "X'te Paylaş", "Telegram'da Paylaş", "LinkedIn'de Paylaş", "E-posta ile Paylaş", "Bağlantıyı Kopyala"];
   const cases = [["chromium", { width: 1280, height: 800, touch: false }], ["chromium", { width: 1024, height: 768, touch: false }], ["firefox", { width: 1024, height: 768, touch: false }],
     ["webkit", { width: 768, height: 1024, touch: true }], ["chromium", { width: 375, height: 812, touch: true }], ["webkit", { width: 320, height: 640, touch: true }]];
   for (const [engine, vp] of cases) {

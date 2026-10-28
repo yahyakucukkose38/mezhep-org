@@ -62,7 +62,9 @@ CREATE TABLE IF NOT EXISTS comments (
   status     TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'visible', 'hidden')),
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   format     TEXT NOT NULL DEFAULT 'text',
-  updated_at TEXT
+  updated_at TEXT,
+  deleted_at TEXT,
+  deleted_by INTEGER
 );
 CREATE INDEX IF NOT EXISTS comments_target ON comments(target, status);
 -- Yapay zekâ çağrılarının token ve maliyet kaydı (soru/yanıt metni saklanmaz).
@@ -117,6 +119,9 @@ CREATE TABLE IF NOT EXISTS logs (
   const cCols = db.prepare("PRAGMA table_info(comments)").all().map((c) => c.name);
   if (!cCols.includes("format")) db.exec("ALTER TABLE comments ADD COLUMN format TEXT NOT NULL DEFAULT 'text'");
   if (!cCols.includes("updated_at")) db.exec("ALTER TABLE comments ADD COLUMN updated_at TEXT");
+  // Mantıksal silme: silinen yorum hiçbir listede görünmez, yönetim panelindeki "Silinenler"den geri getirilebilir
+  if (!cCols.includes("deleted_at")) db.exec("ALTER TABLE comments ADD COLUMN deleted_at TEXT");
+  if (!cCols.includes("deleted_by")) db.exec("ALTER TABLE comments ADD COLUMN deleted_by INTEGER");
 }
 
 const SEED_FILES = { member: "members", work: "works", topic: "topics", album: "albums", link: "links", file: "files" };
