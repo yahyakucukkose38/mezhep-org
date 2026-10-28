@@ -295,6 +295,8 @@ const canEditComment = (user, c) => !!user && user.status === "active" &&
 const commentOut = (c, user) => ({
   id: c.id, body: c.body, format: c.format, html: C.commentHtml(c.body, c.format), created_at: c.created_at, updated_at: c.updated_at || null,
   ...(c.name !== undefined ? { name: c.name, title: c.title } : { status: c.status }), can_edit: canEditComment(user, c),
+  // Silme düğmesi yalnızca yorum yöneticisine gösterilir; silme isteği DELETE /admin/comments/:id'de ayrıca denetlenir.
+  can_delete: !!user && user.status === "active" && P.can(user, "yorum.yonet"),
 });
 
 api.get("/comments", (req, res) => {
@@ -809,10 +811,14 @@ admin.patch("/comments/:id", need("yorum.yonet"), (req, res) => {
   ok(res);
 });
 
+// Kalıcı silme (yorumların yanıtı ya da bağlı kaydı yoktur; görseller yükleme klasöründe kalır, gece yedeğinde de bulunur).
+// Denetim kaydına hedef içerik ve yazar yazılır.
 admin.delete("/comments/:id", need("yorum.yonet"), (req, res) => {
-  const n = db.prepare("DELETE FROM comments WHERE id = ?").run(int(req.params.id)).changes;
-  if (n) log(req.user.id, "yorum-sil", `#${req.params.id}`);
-  n ? ok(res) : A.fail(res, 404, "Yorum bulunamadı.");
+  const c = db.prepare("SELECT id, target, user_id FROM comments WHERE id = ?").get(int(req.params.id));
+  if (!c) return A.fail(res, 404, "Yorum bulunamadı. Daha önce silinmiş olabilir.");
+  db.prepare("DELETE FROM comments WHERE id = ?").run(c.id);
+  log(req.user.id, "yorum-sil", `#${c.id} ${c.target} (yazar #${c.user_id})`);
+  ok(res, { id: c.id });
 });
 
 // ---- dışa aktarma (CSV, Excel uyumlu)

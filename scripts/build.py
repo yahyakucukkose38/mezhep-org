@@ -312,24 +312,28 @@ def share_block(path, title, desc="", image="", target=""):
     q = lambda v: quote(v, safe="")
     t, u = q(title), q(url)
     via = x_handle()[1:]
+    # (anahtar, açıklama: bilgi balonu ve ekran okuyucu adı, adres, simge)
     nets = [
-        ("whatsapp", "WhatsApp", "https://wa.me/?text=%s" % q(title + " " + url), SHARE_ICONS["whatsapp"]),
-        ("facebook", "Facebook", "https://www.facebook.com/sharer/sharer.php?u=%s" % u, BRAND["facebook"][1]),
-        ("x", "X", "https://x.com/intent/tweet?text=%s&url=%s%s" % (t, u, ("&via=" + via) if via else ""), BRAND["x"][1]),
-        ("telegram", "Telegram", "https://t.me/share/url?url=%s&text=%s" % (u, t), SHARE_ICONS["telegram"]),
-        ("linkedin", "LinkedIn", "https://www.linkedin.com/sharing/share-offsite/?url=%s" % u, SHARE_ICONS["linkedin"]),
+        ("whatsapp", "WhatsApp'ta Paylaş", "https://wa.me/?text=%s" % q(title + " " + url), SHARE_ICONS["whatsapp"]),
+        ("facebook", "Facebook'ta Paylaş", "https://www.facebook.com/sharer/sharer.php?u=%s" % u, BRAND["facebook"][1]),
+        ("x", "X'te Paylaş", "https://x.com/intent/tweet?text=%s&url=%s%s" % (t, u, ("&via=" + via) if via else ""), BRAND["x"][1]),
+        ("telegram", "Telegram'da Paylaş", "https://t.me/share/url?url=%s&text=%s" % (u, t), SHARE_ICONS["telegram"]),
+        ("linkedin", "LinkedIn'de Paylaş", "https://www.linkedin.com/sharing/share-offsite/?url=%s" % u, SHARE_ICONS["linkedin"]),
     ]
     if image:
-        nets.append(("pinterest", "Pinterest", "https://www.pinterest.com/pin/create/button/?url=%s&media=%s&description=%s" % (u, q(image), t), SHARE_ICONS["pinterest"]))
-    links = "".join(
-        f'<a class="share-btn is-{k}" href="{E(h)}" target="_blank" rel="noopener" data-share="{k}" aria-label="{label} ile paylaş">{svg}<span>{label}</span></a>'
-        for k, label, h, svg in nets)
+        nets.append(("pinterest", "Pinterest'te Paylaş", "https://www.pinterest.com/pin/create/button/?url=%s&media=%s&description=%s" % (u, q(image), t), SHARE_ICONS["pinterest"]))
+    # Düğmelerde yalnızca simge var; adları aria-label (ekran okuyucu, dokunmatik) ve data-tip (fareyle bilgi balonu) taşır.
+    btn = lambda tag, cls, label, inner, attrs: f'<{tag} class="share-btn is-{cls}" {attrs} aria-label="{label}" data-tip="{label}">{inner}</{tag}>'
+    links = "".join(btn("a", k, label, svg, f'href="{E(h)}" target="_blank" rel="noopener" data-share="{k}"') for k, label, h, svg in nets)
     mail = "mailto:?subject=%s&body=%s" % (t, q((desc + "\n\n" if desc else "") + url))
     return (f'<section class="share" data-share-box data-url="{E(url)}" data-title="{E(title)}" data-text="{E(desc)}" data-target="{E(target)}" aria-label="Bu sayfayı paylaşın">'
-            f'<div class="share-head"><span class="share-title">{ic("share")} Paylaş</span><span class="share-status" data-share-status role="status" aria-live="polite"></span></div>'
-            f'<div class="share-list"><button type="button" class="share-btn is-native" data-share-native hidden>{ic("share")}<span>Paylaş…</span></button>{links}'
-            f'<a class="share-btn is-email" href="{E(mail)}" data-share="eposta" aria-label="E-posta ile gönder">{ic("mail")}<span>E-posta</span></a>'
-            f'<button type="button" class="share-btn is-copy" data-share-copy data-share="kopyala" aria-label="Bağlantıyı kopyala">{ic("link")}<span>Bağlantıyı kopyala</span></button></div></section>')
+            f'<div class="share-head"><span class="share-title">{ic("share")} Paylaş</span></div>'
+            f'<div class="share-list">'
+            + btn("button", "native", "Diğer uygulamalarla paylaş", ic("share"), 'type="button" data-share-native hidden')
+            + links
+            + btn("a", "email", "E-posta ile Gönder", ic("mail"), f'href="{E(mail)}" data-share="eposta"')
+            + btn("button", "copy", "Bağlantıyı Kopyala", ic("link"), 'type="button" data-share-copy data-share="kopyala"')
+            + '</div><span class="share-status" data-share-status role="status" aria-live="polite"></span></section>')
 
 
 def nav_html(r, active):

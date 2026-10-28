@@ -307,7 +307,7 @@
     var status = $("[data-share-status]", box), timer;
     var say = function (m) { status.textContent = m; clearTimeout(timer); timer = setTimeout(function () { status.textContent = ""; }, 3500); };
     var track = function (platform) { if (shareTrack) shareTrack(box.getAttribute("data-target"), platform); };
-    // Mobilde sistemin paylaşım menüsü (Instagram, Mesajlar vb. dahil); diğer seçenekler tek düğme altında toplanır
+    // Genel paylaş: sistemin paylaşım menüsü (Instagram, Mesajlar vb. dahil); tarayıcı desteklemiyorsa düğme gizli kalır
     var nat = $("[data-share-native]", box);
     if (nat && navigator.share) {
       nat.hidden = false;
@@ -315,14 +315,6 @@
         track("sistem");
         navigator.share({ title: title, text: text, url: url }).catch(function () {});
       });
-      if (touch) {
-        box.classList.add("compact");
-        var more = document.createElement("button");
-        more.type = "button"; more.className = "share-btn is-more"; more.setAttribute("aria-expanded", "false");
-        more.innerHTML = "<span>Diğer seçenekler</span>";
-        more.addEventListener("click", function () { var o = box.classList.toggle("open"); more.setAttribute("aria-expanded", o); more.firstChild.textContent = o ? "Daha az" : "Diğer seçenekler"; });
-        $(".share-list", box).appendChild(more);
-      }
     }
     $$("a[data-share]", box).forEach(function (a) {
       a.addEventListener("click", function (e) {
@@ -338,13 +330,22 @@
     var cp = $("[data-share-copy]", box);
     cp && cp.addEventListener("click", function () {
       track("kopyala");
-      var label = $("span", cp);
+      var tip = cp.getAttribute("data-tip");
       copyText(url).then(function () {
-        say("Bağlantı kopyalandı.");
-        label.textContent = "Kopyalandı ✓"; cp.classList.add("done");
-        setTimeout(function () { label.textContent = "Bağlantıyı kopyala"; cp.classList.remove("done"); }, 2200);
+        say("Bağlantı kopyalandı");
+        cp.setAttribute("data-tip", "Kopyalandı ✓"); cp.classList.add("done");
+        setTimeout(function () { cp.setAttribute("data-tip", tip); cp.classList.remove("done"); }, 2200);
       }, function () { say("Kopyalanamadı. Adres: " + url); });
     });
+    // Dar ekranda şerit yatay kayar; kaydırılacak simge kalan kenar soluk gösterilir
+    var list = $(".share-list", box);
+    var edges = function () {
+      list.classList.toggle("more-l", list.scrollLeft > 2);
+      list.classList.toggle("more-r", list.scrollLeft + list.clientWidth < list.scrollWidth - 2);
+    };
+    list.addEventListener("scroll", edges, { passive: true });
+    window.addEventListener("resize", edges);
+    edges();
   });
 
   /* ---------- kaynak kopyala ---------- */
@@ -416,11 +417,61 @@
       }));
     };
     var commentMsg = function (el, text, warn) { el.textContent = text || ""; el.hidden = !text; el.classList.toggle("warn", !!warn); };
+    var TRASH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></svg>';
+    // Liste üstündeki bildirim (silme sonucu); başarı iletisi birkaç saniye sonra kaybolur
+    var listNotice = function (box, text, warn) {
+      var n = $(".comment-notice", box);
+      if (!n) { n = document.createElement("p"); n.className = "comment-msg comment-notice"; n.setAttribute("role", "status"); var l = $("[data-comment-list]", box); l.parentNode.insertBefore(n, l); }
+      commentMsg(n, text, warn);
+      clearTimeout(n._t); if (!warn) n._t = setTimeout(function () { commentMsg(n, ""); }, 5000);
+    };
+    // Onay penceresi: Esc, dışarı tıklama ve İptal vazgeçer; odak önce İptal'dedir (yanlışlıkla silinmesin)
+    var confirmDelete = function () {
+      var text = "Bu yorumu silmek istediğinize emin misiniz? Bu işlem geri alınamaz.";
+      var d = document.createElement("dialog");
+      if (!d.showModal) return Promise.resolve(window.confirm(text));
+      return new Promise(function (resolve) {
+        d.className = "mz-confirm"; d.setAttribute("aria-labelledby", "mz-confirm-t");
+        d.innerHTML = '<div class="mz-confirm-in"><p id="mz-confirm-t">' + text + '</p><div class="mz-confirm-actions"><button type="button" class="btn btn-ghost btn-sm" data-no>İptal</button>' +
+          '<button type="button" class="btn btn-sm btn-danger" data-yes>' + TRASH + "Yorumu Sil</button></div></div>";
+        document.body.appendChild(d);
+        var done = function (v) { if (d.open) d.close(); d.remove(); resolve(v); };
+        $("[data-no]", d).addEventListener("click", function () { done(false); });
+        $("[data-yes]", d).addEventListener("click", function () { done(true); });
+        d.addEventListener("cancel", function (e) { e.preventDefault(); done(false); });
+        d.addEventListener("click", function (e) { if (e.target === d) done(false); });
+        d.showModal();
+        $("[data-no]", d).focus();
+      });
+    };
+    // Yorum yöneticisinin silmesi: yetki sunucuda (DELETE /admin/comments/:id, yorum.yonet) ayrıca denetlenir
+    var deleteComment = function (box, el, btn) {
+      var id = el.getAttribute("data-comment");
+      confirmDelete().then(function (yes) {
+        if (!yes) return btn.focus();
+        btn.disabled = true; btn.setAttribute("aria-busy", "true");
+        apiCall("DELETE", "/admin/comments/" + encodeURIComponent(id)).then(function () {
+          if (box._byId) delete box._byId[id];
+          el.classList.add("is-removing");
+          setTimeout(function () {
+            var list = $("[data-comment-list]", box);
+            el.remove();
+            if (!$(".comment", list)) list.innerHTML = '<p class="muted">Henüz yorum yok. İlk yorumu siz yazın.</p>';
+          }, 220);
+          listNotice(box, "Yorum başarıyla silindi.");
+        }).catch(function (err) {
+          btn.disabled = false; btn.removeAttribute("aria-busy");
+          listNotice(box, (err && err.error) || "Yorum silinemedi. Bağlantınızı kontrol edip yeniden deneyin.", true);
+        });
+      });
+    };
     var initials = function (n) { return esc(String(n || "").split(/\s+/).filter(Boolean).map(function (w) { return w[0]; }).slice(0, 2).join("")); };
     var commentItem = function (c, pending) {
       var body = '<div class="prose comment-body">' + (c.html != null ? c.html : paras(c.body)) + "</div>";
+      var btns = (c.can_edit ? '<button type="button" class="comment-edit" data-edit="' + c.id + '">Düzenle</button>' : "") +
+        (c.can_delete ? '<button type="button" class="comment-del" data-del="' + c.id + '" aria-label="Yorumu sil">' + TRASH + "<span>Sil</span></button>" : "");
       var tools = (c.updated_at ? '<span class="comment-edited" title="' + esc(fmtTime(c.updated_at)) + '">düzenlendi</span>' : "") +
-        (c.can_edit ? '<button type="button" class="comment-edit" data-edit="' + c.id + '">Düzenle</button>' : "");
+        (btns ? '<span class="comment-tools">' + btns + "</span>" : "");
       var head = pending
         ? '<div class="post-head"><span class="badge b-gold">Onay bekliyor</span><span class="grow">Yorumunuz yönetici onayından sonra herkese görünecek.</span>' + tools + "</div>"
         : '<div class="post-head"><span class="avatar">' + initials(c.name) + '</span><div class="grow"><strong>' + esc((c.title ? c.title + " " : "") + c.name) + "</strong><br>" + fmtTime(c.created_at) + "</div>" + tools + "</div>";
@@ -509,6 +560,8 @@
       box.addEventListener("click", function (e) {
         var b = e.target.closest && e.target.closest("[data-edit]");
         if (b) editComment(box, b.closest("[data-comment]"));
+        var del = e.target.closest && e.target.closest("[data-del]");
+        if (del && !del.disabled) deleteComment(box, del.closest("[data-comment]"), del);
       });
       listComments(box).then(function () { commentForm(box); });
     };

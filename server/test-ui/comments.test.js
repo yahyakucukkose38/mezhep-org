@@ -227,3 +227,58 @@ for (const [engine, name] of [["chromium", "Pixel 7"], ["webkit", "iPhone SE"], 
     await ctx.close();
   });
 }
+
+test("yorum silme: yönetici onayla siler (sayfa yenilenmeden), İptal/Esc vazgeçer; üye Sil düğmesini görmez", async () => {
+  const A = require("../src/auth");
+  db.prepare("INSERT INTO users (email, name, password_hash, role_key, status) VALUES ('uye@ui.local', 'Zeynep Üye', ?, 'uye', 'active')").run(A.hashPassword("UyeSifre12345"));
+  const uid = db.prepare("SELECT id FROM users WHERE email = 'uye@ui.local'").get().id;
+  const add = (body) => Number(db.prepare("INSERT INTO comments (target, user_id, body, status, format) VALUES ('topic:265', ?, ?, 'visible', 'html')").run(uid, body).lastInsertRowid);
+  const keep = add("<p>Kalacak yorum</p>"), gone = add("<p>Silinecek yorum</p>");
+  const { ctx, page, errors, dialogs } = await openPage("chromium", { url: "/haber/265.html" });
+  const row = page.locator(`[data-comment="${gone}"]`);
+  await row.waitFor();
+  // Düzenle ve Sil yan yana, aynı yükseklikte, ~8 px arayla
+  const [ed, del] = await row.locator(".comment-tools > button").evaluateAll((bs) => bs.map((b) => { const r = b.getBoundingClientRect(); return { t: b.textContent.trim(), h: r.height, l: r.left, r: r.right }; }));
+  assert.equal(ed.t, "Düzenle"); assert.equal(del.t, "Sil");
+  assert.equal(ed.h, del.h);
+  assert.ok(Math.abs(del.l - ed.r - 8) <= 1, "aralık " + (del.l - ed.r));
+  // İptal ve Esc vazgeçer; odak önce İptal'de
+  const dlg = page.locator("dialog.mz-confirm");
+  await row.locator(".comment-del").click();
+  assert.equal(await dlg.locator("p").innerText(), "Bu yorumu silmek istediğinize emin misiniz? Bu işlem geri alınamaz.");
+  assert.equal(await page.evaluate(() => document.activeElement.textContent), "İptal");
+  await dlg.locator("[data-no]").click();
+  await row.locator(".comment-del").click();
+  await page.keyboard.press("Escape");
+  assert.equal(await page.locator("dialog").count(), 0);
+  assert.ok(db.prepare("SELECT 1 FROM comments WHERE id = ?").get(gone));
+  // onaylayınca yalnızca o yorum gider, sayfa yenilenmez
+  await page.evaluate(() => { window.__ayniSayfa = true; });
+  await row.locator(".comment-del").click();
+  await dlg.locator("[data-yes]").click();
+  await page.locator(".comment-notice").filter({ hasText: "Yorum başarıyla silindi." }).waitFor();
+  await row.waitFor({ state: "detached" });
+  assert.equal(await page.evaluate(() => window.__ayniSayfa), true, "sayfa yenilenmedi");
+  assert.equal(await page.locator(`[data-comment="${keep}"]`).count(), 1);
+  assert.equal(db.prepare("SELECT 1 FROM comments WHERE id = ?").get(gone), undefined);
+  // sunucu hata verirse anlaşılır ileti çıkar, düğme yeniden etkinleşir
+  db.prepare("DELETE FROM comments WHERE id = ?").run(keep); // başka sekmede silinmiş gibi
+  const k = page.locator(`[data-comment="${keep}"]`);
+  await k.locator(".comment-del").click();
+  await dlg.locator("[data-yes]").click();
+  await page.locator(".comment-notice.warn").filter({ hasText: "Yorum bulunamadı" }).waitFor();
+  assert.equal(await k.locator(".comment-del").isDisabled(), false);
+  assert.deepEqual(errors, []); assert.deepEqual(dialogs, []);
+  await ctx.close();
+
+  // üye (telefonda): Sil yok, kendi yorumunda Düzenle var
+  add("<p>Üyenin yeni yorumu</p>");
+  const uctx = await browsers.chromium.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+  assert.ok((await uctx.request.post(base + "/api/auth/login", { headers: { "x-mz": "1" }, data: { email: "uye@ui.local", password: "UyeSifre12345" } })).ok());
+  const up = await uctx.newPage();
+  await up.goto(base + "/haber/265.html", { waitUntil: "networkidle" });
+  await up.locator(".comment").first().waitFor();
+  assert.equal(await up.locator(".comment-del").count(), 0);
+  assert.ok(await up.locator(".comment-edit").count() >= 1);
+  await uctx.close();
+});

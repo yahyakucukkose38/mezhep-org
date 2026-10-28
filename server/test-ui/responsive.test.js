@@ -217,3 +217,51 @@ test("telefonda bütün içeriklere erişilir: Haberler'de 'Daha fazla göster' 
   assert.ok(titles.length >= 1 && titles.every((x) => /2014|Sivas/i.test(x)), titles.join(" | "));
   await ctx.close();
 });
+
+test("paylaşım çubuğu: yalnızca simge, tek satır, eş boy; fareyle bilgi balonu; dokunmatikte 44 px, sayfa kaymaz", async () => {
+  const LABELS = ["Diğer uygulamalarla paylaş", "WhatsApp'ta Paylaş", "Facebook'ta Paylaş", "X'te Paylaş", "Telegram'da Paylaş", "LinkedIn'de Paylaş", "E-posta ile Gönder", "Bağlantıyı Kopyala"];
+  const cases = [["chromium", { width: 1280, height: 800, touch: false }], ["chromium", { width: 1024, height: 768, touch: false }], ["firefox", { width: 1024, height: 768, touch: false }],
+    ["webkit", { width: 768, height: 1024, touch: true }], ["chromium", { width: 375, height: 812, touch: true }], ["webkit", { width: 320, height: 640, touch: true }]];
+  for (const [engine, vp] of cases) {
+    const ctx = await context(engine, vp, { login: false });
+    await ctx.addInitScript(() => { navigator.share = () => Promise.resolve(); }); // "genel paylaş" düğmesi görünsün
+    const page = await ctx.newPage();
+    await open(page, "/haber/265.html");
+    const m = await page.locator(".share").first().evaluate((box) => {
+      const bs = [...box.querySelectorAll(".share-btn")].filter((b) => b.offsetParent);
+      return { n: bs.length, text: bs.map((b) => b.textContent.trim()).join(""), labels: bs.map((b) => b.getAttribute("aria-label")),
+        rows: new Set(bs.map((b) => Math.round(b.getBoundingClientRect().top))).size, sizes: [...new Set(bs.map((b) => b.offsetWidth + "x" + b.offsetHeight))],
+        gaps: [...new Set(bs.slice(1).map((b, i) => Math.round(b.getBoundingClientRect().left - bs[i].getBoundingClientRect().right)))],
+        pageOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth };
+    });
+    const tag = `${engine} ${vp.width}px`;
+    assert.equal(m.n, 8, tag);
+    assert.equal(m.text, "", tag + ": görünen yazı yok");
+    assert.deepEqual(m.labels, LABELS, tag);
+    assert.equal(m.rows, 1, tag + ": tek satır");
+    assert.deepEqual(m.sizes, [vp.touch ? "44x44" : "40x40"], tag);
+    assert.deepEqual(m.gaps, [8], tag);
+    assert.ok(m.pageOverflow <= 0, tag + ": sayfa yatay kaymaz");
+    if (!vp.touch) {
+      const wa = page.locator(".share .is-whatsapp").first();
+      await wa.hover();
+      await page.waitForTimeout(250);
+      assert.deepEqual(await wa.evaluate((b) => { const s = getComputedStyle(b, "::after"); return [s.content, s.opacity]; }), ['"WhatsApp\'ta Paylaş"', "1"], tag + ": bilgi balonu");
+      await page.locator(".share .is-facebook").first().focus();
+      assert.equal(await page.evaluate(() => document.activeElement.getAttribute("aria-label")), "Facebook'ta Paylaş", tag + ": klavye odağı");
+    }
+    await ctx.close();
+  }
+  // paylaşım adresleri korunur; Kopyala "Bağlantı kopyalandı" der
+  const ctx = await browsers.chromium.newContext({ viewport: { width: 1280, height: 800 }, permissions: ["clipboard-read", "clipboard-write"] });
+  const page = await ctx.newPage();
+  await open(page, "/haber/265.html");
+  const hrefs = await page.locator(".share a[data-share]").evaluateAll((as) => as.map((a) => a.getAttribute("href")));
+  ["https://wa.me/?text=", "https://www.facebook.com/sharer/sharer.php?u=", "https://x.com/intent/tweet?text=", "https://t.me/share/url?url=", "https://www.linkedin.com/sharing/share-offsite/?url="]
+    .forEach((p, i) => assert.ok(hrefs[i].startsWith(p), hrefs[i]));
+  assert.ok(hrefs.at(-1).startsWith("mailto:?subject="));
+  await page.locator(".share .is-copy").first().click();
+  await page.locator(".share-status").filter({ hasText: "Bağlantı kopyalandı" }).waitFor();
+  assert.match(await page.evaluate(() => navigator.clipboard.readText()), /\/haber\/265\.html$/);
+  await ctx.close();
+});

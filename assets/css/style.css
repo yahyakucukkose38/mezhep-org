@@ -456,8 +456,23 @@ a.feed-item:hover { background: var(--surface-2); }
 .comment .post-head { flex-wrap: wrap; }
 .comment .post-head .grow { flex: 1; min-width: 0; }
 .comment-edited { font-size: .8rem; color: var(--muted); font-style: italic; }
-.comment-edit { border: 1px solid var(--line); background: var(--surface); color: var(--ink-2); font: 600 .82rem var(--sans); padding: 6px 12px; border-radius: 999px; cursor: pointer; }
+.comment-tools { display: inline-flex; align-items: center; gap: 8px; }
+.comment-edit, .comment-del { display: inline-flex; align-items: center; gap: 5px; height: 32px; padding: 0 12px; border: 1px solid var(--line); background: var(--surface); color: var(--ink-2); font: 600 .82rem var(--sans); border-radius: 999px; cursor: pointer; }
 .comment-edit:hover { border-color: var(--line-2); color: var(--ink); }
+.comment-del { background: var(--rose-soft); border-color: color-mix(in oklab, var(--rose) 22%, transparent); color: var(--rose); }
+.comment-del svg { width: 14px; height: 14px; }
+.comment-del:hover { border-color: color-mix(in oklab, var(--rose) 45%, transparent); }
+.comment-del:disabled { opacity: .55; cursor: progress; }
+.comment { transition: opacity .2s, transform .2s; }
+.comment.is-removing { opacity: 0; transform: translateX(8px); }
+.comment-notice { margin: 0 0 12px; }
+.mz-confirm { border: 0; padding: 0; border-radius: 16px; background: var(--surface); color: var(--ink); width: min(420px, calc(100vw - 32px)); box-shadow: var(--shadow-lg); }
+.mz-confirm::backdrop { background: rgba(10, 18, 26, .5); }
+.mz-confirm-in { padding: 22px 22px 18px; }
+.mz-confirm p { margin: 0 0 18px; font-size: .98rem; line-height: 1.6; }
+.mz-confirm-actions { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+.mz-confirm .btn-danger { background: var(--rose); border-color: var(--rose); color: #fff; }
+.mz-confirm .btn-danger svg { width: 16px; height: 16px; }
 .comment-btns { display: inline-flex; gap: 8px; margin-left: auto; }
 .comment-msg { margin: 10px 0 0; padding: 10px 14px; border-radius: 12px; background: var(--indigo-soft); color: var(--indigo); font-size: .9rem; }
 .comment-msg.warn { background: var(--rose-soft); color: var(--rose); }
@@ -533,7 +548,8 @@ a.feed-item:hover { background: var(--surface-2); }
   .ce-bar button { height: 44px; min-width: 44px; }
   .ce-prev-btn { height: 44px; }
   .ce-x { width: 44px; height: 44px; top: 0; right: 0; }
-  .comment-edit { min-height: 40px; }
+  .comment-edit, .comment-del { height: 40px; }
+  .mz-confirm .btn { height: 44px; }
   .ce-area, .ce-field input { font-size: 16px; } /* iOS odaklanınca sayfayı büyütmesin */
 }
 
@@ -722,29 +738,44 @@ a.feed-item:hover { background: var(--surface-2); }
 .ai-bubble h4:first-child { margin-top: 0; }
 
 /* ---- paylaş alanı (haber, eser, akademisyen, galeri) ---- */
-.share { margin: 18px 0; padding: 18px 20px; border: 1px solid var(--line); border-radius: var(--radius, 18px); background: var(--surface); }
-.share-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
-.share-title { display: inline-flex; align-items: center; gap: 8px; font-family: var(--serif); font-size: 1.1rem; font-weight: 600; color: var(--ink); }
-.share-title svg { width: 20px; height: 20px; color: var(--brand); }
-.share-status { font-size: .85rem; font-weight: 600; color: var(--brand); }
-.share-list { display: flex; flex-wrap: wrap; gap: 8px; }
-.share-btn { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2);
-  color: var(--ink); font: 600 .88rem var(--sans); text-decoration: none; cursor: pointer; transition: border-color .2s, transform .2s var(--ease), background .2s; }
-.share-btn svg { width: 19px; height: 19px; flex-shrink: 0; }
-.share-btn:hover { border-color: var(--line-2); background: var(--surface); transform: translateY(-1px); }
+.share { margin: 18px 0; padding: 14px 16px; border: 1px solid var(--line); border-radius: var(--radius, 18px); background: var(--surface);
+  display: flex; align-items: center; gap: 10px 16px; flex-wrap: wrap; }
+.share-head { display: flex; align-items: center; gap: 12px; }
+.share-title { display: inline-flex; align-items: center; gap: 7px; font-family: var(--serif); font-size: 1rem; font-weight: 600; color: var(--ink); }
+.share-title svg { width: 17px; height: 17px; color: var(--brand); }
+.share-status { margin-left: auto; font-size: .82rem; font-weight: 600; color: var(--brand); }
+.share-status:empty { display: none; }
+/* yalnızca simgeler, tek satır; dar ekranda sayfa değil yalnızca bu şerit yatay kayar */
+.share-list { display: flex; flex-wrap: nowrap; gap: 8px; min-width: 0; max-width: 100%; }
+.share-btn { position: relative; display: inline-grid; place-items: center; flex: 0 0 auto; width: 40px; height: 40px; padding: 0; border: 1px solid var(--line); border-radius: 12px;
+  background: var(--surface-2); color: var(--ink); text-decoration: none; cursor: pointer; transition: border-color .2s, transform .2s var(--ease), background .2s, box-shadow .2s; }
+.share-btn svg { width: 20px; height: 20px; }
+.share-btn:hover { border-color: var(--line-2); background: var(--surface); transform: translateY(-2px); box-shadow: var(--shadow-sm); }
 .share-btn:focus-visible { outline: 3px solid color-mix(in oklab, var(--brand) 45%, transparent); outline-offset: 2px; }
-.share-btn.is-email svg, .share-btn.is-copy svg, .share-btn.is-native svg { color: var(--brand); }
+.share-btn.is-email svg, .share-btn.is-copy svg { color: var(--brand); }
 .share-btn.is-native { background: var(--brand); border-color: var(--brand); color: var(--brand-ink, #fff); }
-.share-btn.is-native svg { color: currentColor; }
-.share-btn.done { border-color: var(--brand); color: var(--brand); }
-.share.compact .share-btn:not(.is-native):not(.is-more) { display: none; }
-.share.compact.open .share-btn:not(.is-native):not(.is-more) { display: inline-flex; }
-.share-btn.is-more { background: none; }
+.share-btn.done { border-color: var(--brand); background: var(--brand-soft); }
+/* bilgi balonu: yalnızca fareyle (ve klavye odağında); dokunmatikte adı aria-label taşır */
+@media (hover: hover) and (pointer: fine) {
+  .share-btn[data-tip]::after { content: attr(data-tip); position: absolute; left: 50%; bottom: calc(100% + 9px); transform: translate(-50%, 4px); padding: 5px 10px; border-radius: 8px;
+    background: var(--ink); color: var(--surface); font: 600 .75rem/1.3 var(--sans); white-space: nowrap; opacity: 0; pointer-events: none; transition: opacity .15s, transform .15s; z-index: 5; }
+  .share-btn[data-tip]::before { content: ""; position: absolute; left: 50%; bottom: calc(100% + 4px); transform: translate(-50%, 4px); border: 5px solid transparent; border-bottom: 0; border-top-color: var(--ink);
+    opacity: 0; pointer-events: none; transition: opacity .15s, transform .15s; z-index: 5; }
+  .share-btn:is(:hover, :focus-visible)::after, .share-btn:is(:hover, :focus-visible)::before { opacity: 1; transform: translate(-50%, 0); }
+}
+@media (pointer: coarse) {
+  .share-btn { width: 44px; height: 44px; }
+}
 @media (max-width: 640px) {
-  .share { padding: 16px; }
-  .share-list { display: grid; grid-template-columns: 1fr 1fr; }
-  .share-btn { justify-content: flex-start; }
-  .share.compact .share-btn.is-native, .share.compact .share-btn.is-more { grid-column: span 1; justify-content: center; }
+  .share { padding: 12px 14px; display: block; }
+  .share-head { margin-bottom: 10px; }
+  .share-status { display: block; margin-top: 8px; }
+  .share-list { overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; padding: 4px; margin: -4px; }
+  .share-list::-webkit-scrollbar { display: none; }
+  /* kaydırılacak simge kaldığında kenar solar (app.js .more-l / .more-r) */
+  .share-list.more-r { -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 36px), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - 36px), transparent); }
+  .share-list.more-l { -webkit-mask-image: linear-gradient(90deg, transparent, #000 36px); mask-image: linear-gradient(90deg, transparent, #000 36px); }
+  .share-list.more-l.more-r { -webkit-mask-image: linear-gradient(90deg, transparent, #000 36px, #000 calc(100% - 36px), transparent); mask-image: linear-gradient(90deg, transparent, #000 36px, #000 calc(100% - 36px), transparent); }
 }
 @media print { .share { display: none; } }
 

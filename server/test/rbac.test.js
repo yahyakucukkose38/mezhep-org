@@ -207,3 +207,54 @@ test("işlem kayıtları: yetkiliye açık, filtrelenebilir", async () => {
   assert.ok(r.body.items.length >= 2 && r.body.items.every((x) => x.action === "kendi-guncelle"));
   assert.ok(r.body.actions.some((a) => a.action === "rol-ekle"));
 });
+
+test("yorum silme: yalnızca yorum yöneticisi; yetki sunucuda denetlenir, yalnızca o yorum silinir ve kaydı tutulur", async () => {
+  // önceki rol testleri moderatör hesabının rolünü değiştiriyor; burada yeniden Moderatör rolü
+  db.prepare("UPDATE users SET role_key = 'moderator' WHERE email = 'moderator@t.local'").run();
+  const mk = async (who, body) => {
+    const r = await U[who].call("POST", "/comments", { target: "topic:265", body: `<p>${body}</p>`, format: "html" });
+    assert.equal(r.status, 200, r.body.error);
+    db.prepare("UPDATE comments SET status = 'visible' WHERE id = ?").run(r.body.id);
+    return r.body.id;
+  };
+  const a = await mk("uye", "Üyenin yorumu"), b = await mk("hoca", "Hocanın yorumu"), c = await mk("super", "Yöneticinin yorumu");
+  const exists = (cid) => !!db.prepare("SELECT 1 FROM comments WHERE id = ?").get(cid);
+  // düğme bayrağı: yalnızca yorum.yonet yetkisi olanlara
+  const flag = async (who) => (await U[who].call("GET", "/comments?target=topic:265")).body.items.find((x) => x.id === a);
+  assert.equal((await flag("super")).can_delete, true);
+  assert.equal((await flag("moderator")).can_delete, true);
+  assert.equal((await flag("yonetici")).can_delete, true);
+  assert.equal((await flag("editor")).can_delete, true, "editör rolünde de yorum.yonet var");
+  for (const who of ["uye", "hoca"]) assert.equal((await flag(who)).can_delete, false, who);
+  assert.equal((await new Client().call("GET", "/comments?target=topic:265")).body.items.find((x) => x.id === a).can_delete, false);
+  assert.equal((await flag("uye")).can_edit, true, "düzenleme yetkisi değişmedi");
+
+  // yetkisiz istekler reddedilir; yorum yerinde kalır
+  assert.equal((await new Client().call("DELETE", `/admin/comments/${b}`)).status, 401);
+  assert.equal((await U.uye.call("DELETE", `/admin/comments/${b}`)).status, 403, "üye başkasının yorumunu silemez");
+  assert.equal((await U.uye.call("DELETE", `/admin/comments/${a}`)).status, 403, "üye kendi yorumunu da bu uçtan silemez");
+  assert.equal((await U.hoca.call("DELETE", `/admin/comments/${b}`)).status, 403, "akademisyen rolünde yorum.yonet yok");
+  const noCsrf = await fetch(base + `/api/admin/comments/${b}`, { method: "DELETE", headers: { cookie: U.super.cookie } });
+  assert.equal(noCsrf.status, 403, "x-mz başlığı olmayan istek (CSRF)");
+  assert.ok(exists(a) && exists(b) && exists(c));
+
+  // moderatör ve yönetici siler; yalnızca hedeflenen yorum gider
+  const before = db.prepare("SELECT count(*) AS n FROM comments").get().n;
+  const r = await U.moderator.call("DELETE", `/admin/comments/${b}`);
+  assert.equal(r.status, 200);
+  assert.equal(r.body.id, b);
+  assert.ok(!exists(b) && exists(a) && exists(c));
+  assert.equal(db.prepare("SELECT count(*) AS n FROM comments").get().n, before - 1);
+  assert.equal((await U.super.call("DELETE", `/admin/comments/${a}`)).status, 200);
+  assert.ok(!exists(a) && exists(c));
+  // olmayan / zaten silinmiş / geçersiz kimlik
+  assert.equal((await U.super.call("DELETE", `/admin/comments/${a}`)).status, 404);
+  assert.equal((await U.super.call("DELETE", "/admin/comments/abc")).status, 404);
+  assert.equal((await U.super.call("DELETE", "/admin/comments/1%20OR%201=1")).status, 404);
+  assert.ok(exists(c));
+  // denetim kaydı: kim, hangi yorum, hangi içerik, kimin yorumu
+  const log = db.prepare("SELECT user_id, detail FROM logs WHERE action = 'yorum-sil' ORDER BY id DESC LIMIT 2").all();
+  assert.equal(log[1].user_id, id("moderator@t.local"));
+  assert.equal(log[1].detail, `#${b} topic:265 (yazar #${id("hoca@t.local")})`);
+  assert.equal(log[0].detail, `#${a} topic:265 (yazar #${id("uye@t.local")})`);
+});
