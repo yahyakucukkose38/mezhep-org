@@ -80,6 +80,10 @@ düzenleme, üye yönetimi ve sağ alttaki asistanlar (OpenAI `gpt-6-luna`): **A
 kaynakları) ve **Hanefî Fıkhı Asistanı** (klasik Arapça Hanefî metinleri; cilt/sayfa göstererek Türkçe yanıt).
 Onaylanan her değişiklikten sonra site `scripts/build.py` ile birkaç saniyede yeniden üretilir.
 
+Yorumlar zengin metin editörüyle yazılır (`assets/js/comment-editor.js`, yalnızca yorum yazabilen üyelere yüklenir):
+kalın/italik, başlık, liste, alıntı, bağlantı, görsel yükleme (tarayıcıda küçültülür) ve YouTube/Vimeo videosu. Gelen HTML
+sunucuda izin listesiyle temizlenir (`server/src/content.js` → `cleanCommentHtml`); eski düz metin yorumlar olduğu gibi gösterilir.
+
 Yerelde çalıştırma:
 
 ```
@@ -88,7 +92,7 @@ npm install
 MZ_ADMIN_EMAIL=siz@ornek.com npm start          # http://localhost:3000, panel: /panel/
 npm run kaynak -- "<akaid markdown klasörü>"    # Akaid asistanı kaynak indeksi (isteğe bağlı)
 npm run kaynak-hanefi -- "../HANEFİ FIKHI"      # Hanefî asistanı indeksi (isteğe bağlı)
-npm test                                        # 72 uçtan uca test
+npm test                                        # 78 uçtan uca test
 npm run test:ui                                 # responsive arayüz testleri (Playwright: Chromium, Firefox, WebKit;
                                                 #   ilk seferde: npx playwright install chromium firefox webkit)
 ```

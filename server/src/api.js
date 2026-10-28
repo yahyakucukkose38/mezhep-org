@@ -288,33 +288,55 @@ api.put("/my/items/:kind/:id", A.requireActive, A.rateLimit({ windowMs: 60 * 60e
 // ================================================================ yorumlar
 const TARGET = /^(work|topic):(\d{1,9})$/;
 
+// Düzenleme: yorumun sahibi (etkin üye) ya da yorum yöneticisi; gizlenen yorumu yalnızca yönetici düzenler.
+const canEditComment = (user, c) => !!user && user.status === "active" &&
+  (P.can(user, "yorum.yonet") || (Number(c.user_id) === user.id && c.status !== "hidden"));
+// "html": sunucuda temizlenmiş gösterim metni (eski düz metin yorumlar da HTML'e çevrilir); "body" eski istemciler için korunur.
+const commentOut = (c, user) => ({
+  id: c.id, body: c.body, format: c.format, html: C.commentHtml(c.body, c.format), created_at: c.created_at, updated_at: c.updated_at || null,
+  ...(c.name !== undefined ? { name: c.name, title: c.title } : { status: c.status }), can_edit: canEditComment(user, c),
+});
+
 api.get("/comments", (req, res) => {
   const t = String(req.query.target || "");
   if (!TARGET.test(t)) return bad(res, "Geçersiz hedef.");
   const rows = db.prepare(
-    `SELECT c.id, c.body, c.created_at, u.name, u.title FROM comments c JOIN users u ON u.id = c.user_id
+    `SELECT c.id, c.user_id, c.body, c.format, c.status, c.created_at, c.updated_at, u.name, u.title FROM comments c JOIN users u ON u.id = c.user_id
      WHERE c.target = ? AND c.status = 'visible' ORDER BY c.id`
   ).all(t).map(plain);
   let mine = [];
   if (req.user) {
-    mine = db.prepare("SELECT id, body, created_at, status FROM comments WHERE target = ? AND user_id = ? AND status = 'pending' ORDER BY id")
+    mine = db.prepare("SELECT id, user_id, body, format, created_at, updated_at, status FROM comments WHERE target = ? AND user_id = ? AND status = 'pending' ORDER BY id")
       .all(t, req.user.id).map(plain);
   }
-  ok(res, { items: rows, pending: mine });
+  ok(res, { items: rows.map((c) => commentOut(c, req.user)), pending: mine.map((c) => commentOut(c, req.user)), limits: C.COMMENT_LIMITS });
 });
 
 api.post("/comments", A.requireActive, A.rateLimit({ windowMs: 10 * 60e3, max: 10, key: (r) => "c" + r.user.id }), wrap((req, res) => {
   const t = String(req.body?.target || "");
   const m = t.match(TARGET);
   if (!m || !C.getItem(m[1], Number(m[2]))) return bad(res, "Yorum yapılacak içerik bulunamadı.");
-  const body = String(req.body?.body || "").replace(/\r/g, "").replace(/\n{3,}/g, "\n\n").trim();
-  if (body.length < 3) return bad(res, "Yorum çok kısa.", { body: "Yorum çok kısa." });
-  if (body.length > 3000) return bad(res, "Yorum en fazla 3000 karakter olabilir.", { body: "En fazla 3000 karakter." });
+  const v = C.commentInput(req.body?.body, req.body?.format);
+  if (v.error) return bad(res, v.error, { body: v.error });
   if (!SS.get("comments_enabled")) return A.fail(res, 403, "Yorumlar şu anda kapalı.");
   const status = P.can(req.user, "yorum.yonet") || !SS.get("comments_require_approval") ? "visible" : "pending";
-  const info = db.prepare("INSERT INTO comments (target, user_id, body, status) VALUES (?, ?, ?, ?)").run(t, req.user.id, body, status);
+  const info = db.prepare("INSERT INTO comments (target, user_id, body, format, status) VALUES (?, ?, ?, ?, ?)").run(t, req.user.id, v.body, v.format, status);
   log(req.user.id, "yorum", t);
   ok(res, { id: Number(info.lastInsertRowid), status });
+}));
+
+api.patch("/comments/:id", A.requireActive, A.rateLimit({ windowMs: 10 * 60e3, max: 20, key: (r) => "ce" + r.user.id }), wrap((req, res) => {
+  const c = db.prepare("SELECT id, user_id, status FROM comments WHERE id = ?").get(int(req.params.id));
+  if (!c || !canEditComment(req.user, c)) return A.fail(res, 404, "Düzenlenecek yorum bulunamadı.");
+  const mod = P.can(req.user, "yorum.yonet");
+  if (!mod && !SS.get("comments_enabled")) return A.fail(res, 403, "Yorumlar şu anda kapalı.");
+  const v = C.commentInput(req.body?.body, req.body?.format);
+  if (v.error) return bad(res, v.error, { body: v.error });
+  // Onay gerekiyorsa üyenin değiştirdiği yorum yeniden incelemeye düşer (onaydan sonra içerik değiştirilerek denetim atlatılamasın).
+  const status = mod || !SS.get("comments_require_approval") ? c.status : "pending";
+  db.prepare("UPDATE comments SET body = ?, format = ?, status = ?, updated_at = datetime('now') WHERE id = ?").run(v.body, v.format, status, c.id);
+  log(req.user.id, "yorum-duzenle", `#${c.id}`);
+  ok(res, { id: c.id, status });
 }));
 
 // ================================================================ yönetim
@@ -769,6 +791,7 @@ admin.get("/comments", need("yorum.yonet"), (req, res) => {
      WHERE c.status = ? ORDER BY c.id DESC LIMIT 300`
   ).all(status).map(plain);
   for (const r of rows) {
+    r.html = C.commentHtml(r.body, r.format);
     const [kind, id] = r.target.split(":");
     const it = C.getItem(kind, Number(id));
     r.target_label = it ? it.title : "(silinmiş içerik)";

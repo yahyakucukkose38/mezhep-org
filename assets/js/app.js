@@ -402,17 +402,73 @@
 
     var fmtTime = function (s) { var d = new Date(String(s).replace(" ", "T") + "Z"); return isNaN(d) ? "" : d.toLocaleDateString("tr-TR", { day: "numeric", month: "long", year: "numeric" }); };
     var paras = function (t) { return esc(t).split(/\n{2,}/).map(function (p) { return "<p>" + p.replace(/\n/g, "<br>") + "</p>"; }).join(""); };
-    var loadComments = function (box) {
-      var target = box.getAttribute("data-comments"), list = $("[data-comment-list]", box), form = $("[data-comment-form]", box);
-      apiCall("GET", "/comments?target=" + encodeURIComponent(target)).then(function (j) {
-        var rows = j.items.map(function (c) {
-          return '<div class="comment"><div class="post-head"><span class="avatar">' + esc(c.name.split(/\s+/).map(function (w) { return w[0]; }).slice(0, 2).join("")) +
-            "</span><div><strong>" + esc((c.title ? c.title + " " : "") + c.name) + "</strong><br>" + fmtTime(c.created_at) + '</div></div><div class="prose">' + paras(c.body) + "</div></div>";
-        }).concat(j.pending.map(function (c) {
-          return '<div class="comment is-pending"><div class="post-head"><span class="badge b-gold">Onay bekliyor</span> Yorumunuz yönetici onayından sonra herkese görünecek.</div><div class="prose">' + paras(c.body) + "</div></div>";
-        }));
+    // Zengin metin editörü (assets/js/comment-editor.js) yalnızca yorum yazabilen üyeye, ilk gerektiğinde yüklenir.
+    // Yüklenemezse yorum alanı düz metin kutusu olarak çalışmaya devam eder.
+    var editorLoad = null;
+    var loadEditor = function () {
+      if (window.MZCommentEditor) return Promise.resolve(window.MZCommentEditor);
+      return editorLoad || (editorLoad = new Promise(function (resolve, reject) {
+        var s = document.createElement("script");
+        s.src = "/assets/js/comment-editor.js"; s.async = true;
+        s.onload = function () { window.MZCommentEditor ? resolve(window.MZCommentEditor) : reject(); };
+        s.onerror = function () { editorLoad = null; reject(); };
+        document.head.appendChild(s);
+      }));
+    };
+    var commentMsg = function (el, text, warn) { el.textContent = text || ""; el.hidden = !text; el.classList.toggle("warn", !!warn); };
+    var initials = function (n) { return esc(String(n || "").split(/\s+/).filter(Boolean).map(function (w) { return w[0]; }).slice(0, 2).join("")); };
+    var commentItem = function (c, pending) {
+      var body = '<div class="prose comment-body">' + (c.html != null ? c.html : paras(c.body)) + "</div>";
+      var tools = (c.updated_at ? '<span class="comment-edited" title="' + esc(fmtTime(c.updated_at)) + '">düzenlendi</span>' : "") +
+        (c.can_edit ? '<button type="button" class="comment-edit" data-edit="' + c.id + '">Düzenle</button>' : "");
+      var head = pending
+        ? '<div class="post-head"><span class="badge b-gold">Onay bekliyor</span><span class="grow">Yorumunuz yönetici onayından sonra herkese görünecek.</span>' + tools + "</div>"
+        : '<div class="post-head"><span class="avatar">' + initials(c.name) + '</span><div class="grow"><strong>' + esc((c.title ? c.title + " " : "") + c.name) + "</strong><br>" + fmtTime(c.created_at) + "</div>" + tools + "</div>";
+      return '<div class="comment' + (pending ? " is-pending" : "") + '" data-comment="' + c.id + '">' + head + body + "</div>";
+    };
+    var listComments = function (box) {
+      var target = box.getAttribute("data-comments"), list = $("[data-comment-list]", box);
+      return apiCall("GET", "/comments?target=" + encodeURIComponent(target)).then(function (j) {
+        box._limits = j.limits; box._byId = {};
+        j.items.concat(j.pending).forEach(function (c) { box._byId[c.id] = c; });
+        var rows = j.items.map(function (c) { return commentItem(c, false); }).concat(j.pending.map(function (c) { return commentItem(c, true); }));
         list.innerHTML = rows.length ? rows.join("") : '<p class="muted">Henüz yorum yok. İlk yorumu siz yazın.</p>';
       }).catch(function () { list.innerHTML = '<p class="muted">Yorumlar yüklenemedi.</p>'; });
+    };
+    // Kendi yorumunu (yorum yöneticisi her yorumu) yerinde düzenleme
+    var editComment = function (box, el) {
+      var c = box._byId && box._byId[el.getAttribute("data-comment")];
+      if (!c || $(".comment-editing", el)) return;
+      var body = $(".comment-body", el);
+      var wrap = document.createElement("div");
+      wrap.className = "comment-editing";
+      wrap.innerHTML = '<div data-ce><p class="muted">Editör yükleniyor…</p></div><p class="comment-msg" role="status" hidden></p><div class="comment-actions"><span class="muted">' +
+        (c.status === "visible" || !c.status ? (siteSet.comments_require_approval === false || can("yorum.yonet") ? "" : "Değişiklik yönetici onayından sonra yayınlanır.") : "") +
+        '</span><span class="comment-btns"><button class="btn btn-ghost btn-sm" type="button" data-cancel>Vazgeç</button><button class="btn btn-primary btn-sm" type="button" data-save disabled>Kaydet</button></span></div>';
+      body.hidden = true; body.parentNode.insertBefore(wrap, body.nextSibling);
+      var msg = $(".comment-msg", wrap), save = $("[data-save]", wrap), ed = null;
+      var close = function () { if (ed) ed.destroy(); wrap.remove(); body.hidden = false; };
+      $("[data-cancel]", wrap).addEventListener("click", close);
+      var submit = function () {
+        var p = ed && ed.problem(); if (!ed || p) return commentMsg(msg, p || "", true);
+        save.disabled = true;
+        apiCall("PATCH", "/comments/" + c.id, { body: ed.getHtml(), format: "html" }).then(function (r) {
+          ed.destroy();
+          listComments(box).then(function () {
+            if (r.status === "pending" && c.status !== "pending") {
+              var n = $(".comment-msg", $("[data-comment-form]", box)); if (n) commentMsg(n, "Yorumunuz güncellendi; yönetici onayından sonra yeniden yayınlanacak.");
+            }
+          });
+        }).catch(function (err) { commentMsg(msg, (err && err.error) || "Yorum kaydedilemedi.", true); save.disabled = false; });
+      };
+      save.addEventListener("click", submit);
+      loadEditor().then(function (E) {
+        ed = E($("[data-ce]", wrap), { html: c.html, limits: box._limits, label: "Yorumu düzenle", onSubmit: submit });
+        save.disabled = false; ed.focus();
+      }).catch(function () { commentMsg(msg, "Editör yüklenemedi. Sayfayı yenileyip yeniden deneyin.", true); });
+    };
+    var commentForm = function (box) {
+      var target = box.getAttribute("data-comments"), form = $("[data-comment-form]", box);
       if (siteSet.comments_enabled === false) {
         form.innerHTML = '<p class="muted">Yorumlar şu anda kapalı.</p>';
       } else if (!me) {
@@ -420,18 +476,41 @@
       } else if (me.status !== "active") {
         form.innerHTML = '<p class="muted">Üyeliğiniz onaylandıktan sonra yorum yazabilirsiniz.</p>';
       } else {
-        form.innerHTML = '<form class="comment-form"><label class="sr-only" for="yorum-' + esc(target) + '">Yorumunuz</label><textarea id="yorum-' + esc(target) +
-          '" rows="4" maxlength="3000" required placeholder="Yorumunuzu yazın…"></textarea><div class="comment-actions"><span class="muted">' + (siteSet.comments_require_approval === false ? "" : "Yorumlar yönetici onayından sonra yayınlanır.") + '</span><button class="btn btn-primary btn-sm" type="submit">Gönder</button></div></form>';
-        var f = $("form", form);
+        form.innerHTML = '<form class="comment-form" novalidate><div data-ce><label class="sr-only" for="yorum-' + esc(target) + '">Yorumunuz</label><textarea id="yorum-' + esc(target) +
+          '" rows="4" maxlength="3000" placeholder="Yorumunuzu yazın…"></textarea></div><p class="comment-msg" role="status" hidden></p><div class="comment-actions"><span class="muted">' +
+          (siteSet.comments_require_approval === false || can("yorum.yonet") ? "" : "Yorumlar yönetici onayından sonra yayınlanır.") + '</span><button class="btn btn-primary btn-sm" type="submit">Gönder</button></div></form>';
+        var f = $("form", form), msg = $(".comment-msg", f), b = $("button[type=submit]", f), ed = null;
         f.addEventListener("submit", function (e) {
           e.preventDefault();
-          var ta = $("textarea", f), b = $("button", f);
-          b.disabled = true;
-          apiCall("POST", "/comments", { target: target, body: ta.value }).then(function () { ta.value = ""; loadComments(box); })
-            .catch(function (err) { alert((err && err.error) || "Yorum gönderilemedi."); })
+          var data;
+          if (ed) {
+            var p = ed.problem(); if (p) return commentMsg(msg, p, true);
+            data = { target: target, body: ed.getHtml(), format: "html" };
+          } else {
+            var ta = $("textarea", f); if (ta.value.trim().length < 3) return commentMsg(msg, "Yorum çok kısa.", true);
+            data = { target: target, body: ta.value };
+          }
+          b.disabled = true; commentMsg(msg, "");
+          apiCall("POST", "/comments", data).then(function (r) {
+            if (ed) ed.clear(); else $("textarea", f).value = "";
+            commentMsg(msg, r.status === "pending" ? "Yorumunuz alındı; yönetici onayından sonra yayınlanacak." : "Yorumunuz yayınlandı.");
+            return listComments(box);
+          }).catch(function (err) { commentMsg(msg, (err && err.error) || "Yorum gönderilemedi.", true); })
             .then(function () { b.disabled = false; });
         });
+        loadEditor().then(function (E) {
+          ed = E($("[data-ce]", f), { limits: box._limits, label: "Yorumunuz", onSubmit: function () { b.click(); } });
+          ed.onChange(function () { if (!msg.classList.contains("warn")) return; commentMsg(msg, ""); });
+        }).catch(function () {});
       }
+    };
+    var loadComments = function (box) {
+      // Düzenle düğmeleri liste her yenilendiğinde yeniden çizilir; tıklama kutu düzeyinde dinlenir.
+      box.addEventListener("click", function (e) {
+        var b = e.target.closest && e.target.closest("[data-edit]");
+        if (b) editComment(box, b.closest("[data-comment]"));
+      });
+      listComments(box).then(function () { commentForm(box); });
     };
 
     /* ---- Asistanlar: Akaid ve Hanefî Fıkhı (sağ alt) ---- */

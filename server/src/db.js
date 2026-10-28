@@ -60,7 +60,9 @@ CREATE TABLE IF NOT EXISTS comments (
   user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   body       TEXT NOT NULL,
   status     TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'visible', 'hidden')),
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  format     TEXT NOT NULL DEFAULT 'text',
+  updated_at TEXT
 );
 CREATE INDEX IF NOT EXISTS comments_target ON comments(target, status);
 -- Yapay zekâ çağrılarının token ve maliyet kaydı (soru/yanıt metni saklanmaz).
@@ -111,6 +113,10 @@ CREATE TABLE IF NOT EXISTS logs (
   // assistant: kaydın ait olduğu asistan (akaid | hanefi); eski kayıtlar Akaid Asistanı'na aittir
   const aiCols = db.prepare("PRAGMA table_info(ai_usage)").all().map((c) => c.name);
   if (!aiCols.includes("assistant")) db.exec("ALTER TABLE ai_usage ADD COLUMN assistant TEXT NOT NULL DEFAULT 'akaid'");
+  // format: "text" (eski düz metin yorumlar, olduğu gibi kalır) | "html" (zengin metin editörüyle yazılanlar); updated_at: son düzenleme
+  const cCols = db.prepare("PRAGMA table_info(comments)").all().map((c) => c.name);
+  if (!cCols.includes("format")) db.exec("ALTER TABLE comments ADD COLUMN format TEXT NOT NULL DEFAULT 'text'");
+  if (!cCols.includes("updated_at")) db.exec("ALTER TABLE comments ADD COLUMN updated_at TEXT");
 }
 
 const SEED_FILES = { member: "members", work: "works", topic: "topics", album: "albums", link: "links", file: "files" };

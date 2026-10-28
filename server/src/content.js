@@ -143,6 +143,79 @@ const htmlText = (h) => sanitizeHtml(String(h || ""), { allowedTags: [], allowed
   .replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'")
   .replace(/\s+/g, " ").trim();
 
+// ---------------------------------------------------------------- yorumlar
+// Üye yorumları içerik metinlerinden daha dar bir izin listesiyle temizlenir: tablo ve sınıf yok; görseller yalnızca
+// sitenin yükleme klasöründen (dış adreslerden izleme pikseli ya da sıcak bağlantı gelmesin), videolar yalnızca
+// VIDEO_HOSTS oynatıcılarından; dış bağlantılar "nofollow ugc" ile işaretlenir.
+const COMMENT_IMG = /^\/uploads\/\d{4}-\d{2}\/[0-9a-f]{24}\.(?:jpg|png|webp)$/;
+// http(s), mailto ya da site içi yol ("//" ve "/\" ile başlayan adresler tarayıcıda başka siteye gider; kabul edilmez)
+const COMMENT_HREF = /^(?:https?:\/\/[^\s<>"]+|mailto:[^\s<>"]+|\/(?![/\\])[^\s<>"]*)$/i;
+const COMMENT_SANITIZE = {
+  allowedTags: ["p", "br", "strong", "em", "u", "a", "h2", "h3", "ul", "ol", "li", "blockquote", "img", "figure", "iframe"],
+  allowedAttributes: {
+    a: ["href", "target", "rel"], img: ["src", "alt", "loading"], figure: ["class"],
+    iframe: ["src", "title", "loading", "allow", "allowfullscreen", "referrerpolicy"],
+  },
+  allowedClasses: { figure: ["media-video", "short"] },
+  allowedIframeHostnames: VIDEO_HOSTS,
+  allowedSchemes: ["http", "https", "mailto"],
+  allowedSchemesAppliedToAttributes: ["href", "src"],
+  allowProtocolRelative: false,
+  transformTags: {
+    b: "strong", i: "em", h1: "h2", h4: "h3", h5: "h3", h6: "h3", div: "p",
+    // geçersiz adresli bağlantı adressiz kalır, cleanCommentHtml onu düz metne indirir
+    // (etiket adını değiştirmek sanitize-html'de kapanış etiketlerini karıştırıyor)
+    a: (tag, attribs) => {
+      const href = String(attribs.href || "").trim();
+      if (!COMMENT_HREF.test(href)) return { tagName: "a", attribs: {} };
+      return { tagName: "a", attribs: /^https?:/i.test(href) ? { href, target: "_blank", rel: "nofollow ugc noopener noreferrer" } : { href } };
+    },
+    img: (tag, attribs) => ({
+      tagName: "img",
+      attribs: { src: String(attribs.src || "").replace(/^https?:\/\/(?:www\.)?(?:mezhep\.(?:net|org)|mezhep\.ihyadijital\.com|localhost(?::\d+)?|127\.0\.0\.1(?::\d+)?)(?=\/)/i, ""), alt: String(attribs.alt || "").slice(0, 200), loading: "lazy" },
+    }),
+  },
+  // video kutusu yalnızca tek bir izinli oynatıcı taşıyabilir (içine metin ya da başka öğe konamaz)
+  exclusiveFilter: (frame) => (frame.tag === "img" && !COMMENT_IMG.test(frame.attribs.src || "")) ||
+    (frame.tag === "iframe" && !CANON_VIDEO.test(frame.attribs.src || "")) ||
+    (frame.tag === "figure" && (frame.text.trim() !== "" || !(frame.mediaChildren || []).includes("iframe"))),
+};
+const COMMENT_LIMITS = { text: 3000, html: 40000, images: 6, videos: 3 };
+
+function cleanCommentHtml(html) {
+  let h = sanitizeHtml(embedVideos(String(html || "").slice(0, COMMENT_LIMITS.html * 3)), COMMENT_SANITIZE).trim();
+  h = h.replace(/<a>([\s\S]*?)<\/a>/g, "$1").replace(/<p>\s*(<br\s*\/?>\s*)*<\/p>/g, "").replace(/(<br\s*\/?>\s*){3,}/g, "<br><br>");
+  return htmlText(h) || /<(img|iframe)\b/.test(h) ? h : "";
+}
+
+// Yorum girdisi: yeni editör HTML gönderir (format "html"); eski istemcilerden düz metin gelebilir (format "text").
+// Hata durumunda { error } döner; aksi halde kaydedilecek { body, format }.
+function commentInput(raw, format) {
+  if (format !== "html") {
+    const body = String(raw || "").replace(/\r/g, "").replace(/\n{3,}/g, "\n\n").trim();
+    if (body.length < 3) return { error: "Yorum çok kısa." };
+    if (body.length > COMMENT_LIMITS.text) return { error: `Yorum en fazla ${COMMENT_LIMITS.text} karakter olabilir.` };
+    return { body, format: "text" };
+  }
+  const html = cleanCommentHtml(raw);
+  const text = htmlText(html).length;
+  const images = (html.match(/<img\b/g) || []).length, videos = (html.match(/<iframe\b/g) || []).length;
+  if (text < 3 && !images && !videos) return { error: "Yorum çok kısa." };
+  if (text > COMMENT_LIMITS.text) return { error: `Yorum en fazla ${COMMENT_LIMITS.text} karakter olabilir.` };
+  if (images > COMMENT_LIMITS.images) return { error: `Bir yoruma en fazla ${COMMENT_LIMITS.images} görsel eklenebilir.` };
+  if (videos > COMMENT_LIMITS.videos) return { error: `Bir yoruma en fazla ${COMMENT_LIMITS.videos} video eklenebilir.` };
+  if (html.length > COMMENT_LIMITS.html) return { error: "Yorum çok uzun." };
+  return { body: html, format: "html" };
+}
+
+// Gösterim: HTML yorumlar her okumada yeniden temizlenir (kurallar sıkılaşırsa eski kayıtlar da uyar);
+// eski düz metin yorumlar paragraflara bölünür.
+const escText = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+function commentHtml(body, format) {
+  if (format === "html") return cleanCommentHtml(body);
+  return String(body || "").split(/\n{2,}/).map((p) => "<p>" + escText(p).replace(/\n/g, "<br>") + "</p>").join("");
+}
+
 // ---------------------------------------------------------------- doğrulama
 const trDate = (d = new Date()) => `${d.getDate()}.${String(d.getMonth() + 1).padStart(2, "0")}.${d.getFullYear()}`;
 const trTime = (d = new Date()) => `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
@@ -406,6 +479,6 @@ function exportAll(dir) {
 }
 
 module.exports = {
-  SCHEMAS, KINDS, RANKS, GROUPS, WORK_TYPES, ValidationError, normalize, cleanHtml, htmlText,
+  SCHEMAS, KINDS, RANKS, GROUPS, WORK_TYPES, ValidationError, normalize, cleanHtml, htmlText, commentInput, commentHtml, COMMENT_LIMITS,
   getItem, itemVersion, listItems, applyFields, parseVideo, videoFigure, fixEmbedCodes, splitEventForums, eventKind, saveItem, deleteItem, ownsItem, ownItems, formValues, exportAll, trDate, plain,
 };

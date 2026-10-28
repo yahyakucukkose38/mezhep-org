@@ -1062,7 +1062,7 @@
     onay: "Öneriyi onayladı", red: "Öneriyi reddetti", "uye-guncelle": "Üyeyi güncelledi", "uye-toplu-onay": "Toplu üye onayı", "uye-sil": "Üyeyi sildi",
     "sifre-sifirla": "Şifre sıfırladı", "rol-ekle": "Rol ekledi", "rol-duzenle": "Rolü düzenledi", "rol-sil": "Rolü sildi", ayar: "Ayar değiştirdi",
     "icerik-ekle": "Kayıt ekledi", "icerik-duzenle": "Kaydı düzenledi", "icerik-sil": "Kaydı sildi", "icerik-geri-getir": "Kaydı geri getirdi",
-    "kendi-guncelle": "Kendi kaydını güncelledi", "yorum-visible": "Yorumu yayınladı", "yorum-hidden": "Yorumu gizledi", "yorum-sil": "Yorumu sildi",
+    "kendi-guncelle": "Kendi kaydını güncelledi", "yorum-visible": "Yorumu yayınladı", "yorum-hidden": "Yorumu gizledi", "yorum-sil": "Yorumu sildi", "yorum-duzenle": "Yorumu düzenledi",
     "site-uret": "Siteyi yeniden üretti", "disa-aktar": "Dışa aktardı", "icerik-yenile": "İçerik yenilendi", "ilk-yonetici": "İlk yönetici oluşturuldu",
     "kategori-ekle": "Kategori ekledi", "kategori-duzenle": "Kategoriyi düzenledi", "kategori-sil": "Kategoriyi sildi", "menu-duzenle": "Menüyü düzenledi", "kategori-geri-al": "Kategori tabloları kaldırıldı"
   };
@@ -1406,8 +1406,8 @@
       if (!j.items.length) { box.innerHTML = '<div class="empty">Kayıt yok.</div>'; return; }
       box.innerHTML = j.items.map(function (c) {
         return '<article class="review" data-id="' + c.id + '"><header><div><a href="/' + esc(c.target_url) + '#yorumlar" target="_blank"><strong>' + esc(c.target_label) + '</strong></a><div class="muted">' +
-          esc(c.user_name) + " · " + esc(c.user_email) + " · " + when(c.created_at) + "</div></div>" + badge(c.status) + '</header><div class="body"><p style="white-space:pre-wrap;margin-top:0">' + esc(c.body) +
-          '</p><div class="form-actions">' + (c.status !== "visible" ? '<button class="btn btn-primary btn-sm" data-s="visible">Yayınla</button>' : "") +
+          esc(c.user_name) + " · " + esc(c.user_email) + " · " + when(c.created_at) + (c.updated_at ? " · düzenlendi " + when(c.updated_at) : "") + "</div></div>" + badge(c.status) + '</header><div class="body"><div class="prose comment-body">' + c.html +
+          '</div><div class="form-actions">' + (c.status !== "visible" ? '<button class="btn btn-primary btn-sm" data-s="visible">Yayınla</button>' : "") +
           (c.status !== "hidden" ? '<button class="btn btn-ghost btn-sm" data-s="hidden">Gizle</button>' : "") + '<button class="btn btn-danger btn-sm" data-del>Sil</button></div></div></article>';
       }).join("");
       var after = function (msg) { toast(msg); refreshMe().then(function () { renderChrome(location.hash); viewComments(status); }); };

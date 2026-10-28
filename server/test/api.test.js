@@ -169,10 +169,101 @@ test("yorum onaydan sonra görünür; yönetici gizleyebilir", async () => {
   assert.equal((await uye.call("POST", "/comments", { target: "work:999999", body: "olmayan" })).status, 400);
 });
 
+test("zengin metin yorum: biçim korunur, zararlı HTML sunucuda temizlenir", async () => {
+  const body = '<h2>Başlık</h2><p><strong>Kalın</strong> ve <em>italik</em> <a href="https://ornek.org/kaynak">kaynak</a></p>' +
+    '<ul><li>bir</li></ul><ol><li>iki</li></ol><blockquote>alıntı</blockquote>' +
+    '<p><img src="/uploads/2026-10/0123456789abcdef01234567.jpg" alt=""></p>' +
+    '<p>video: </p>&lt;iframe src="https://www.youtube.com/embed/dQw4w9WgXcQ"&gt;&lt;/iframe&gt;' +
+    '<script>alert(1)</script><p onclick="alert(1)" style="color:red">olay</p><img src="x" onerror="alert(1)">' +
+    '<a href="javascript:alert(1)">js</a><a href="//kotu.example">pr</a><iframe src="https://kotu.example/x"></iframe>' +
+    '<img src="https://kotu.example/izle.gif"><svg onload="alert(1)"></svg><form action="/x"><input></form>';
+  const c = await admin.call("POST", "/comments", { target: "work:656", body, format: "html" });
+  assert.equal(c.status, 200, c.body.error);
+  assert.equal(c.body.status, "visible", "yorum yöneticisinin yorumu doğrudan yayında");
+  const row = db.prepare("SELECT body, format FROM comments WHERE id = ?").get(c.body.id);
+  assert.equal(row.format, "html");
+  for (const bad of ["<script", "onclick", "onerror", "style=", "javascript:", "kotu.example", "<svg", "<form", "<input"]) assert.ok(!row.body.includes(bad), bad + " temizlenmeli");
+  for (const good of ["<h2>Başlık</h2>", "<strong>Kalın</strong>", "<em>italik</em>", "<ul><li>bir</li></ul>", "<ol><li>iki</li></ol>", "<blockquote>alıntı</blockquote>",
+    'rel="nofollow ugc noopener noreferrer"', 'src="/uploads/2026-10/0123456789abcdef01234567.jpg"', "https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ?rel=0"]) assert.ok(row.body.includes(good), good + " korunmalı");
+  // yeniden okunduğunda (sayfa yenilenince) aynı biçimle gelir
+  const got = (await new Client().call("GET", "/comments?target=work:656")).body;
+  const mine = got.items.find((x) => x.id === c.body.id);
+  assert.equal(mine.html, row.body);
+  assert.equal(mine.can_edit, false, "ziyaretçi düzenleyemez");
+  assert.equal(got.limits.text, 3000);
+});
+
+test("eski düz metin yorumlar kaçışlanarak paragraflara bölünür", async () => {
+  const r = db.prepare("INSERT INTO comments (target, user_id, body, status) VALUES ('work:656', 1, ?, 'visible')").run("Eski <b>yorum</b>\nikinci satır\n\nyeni paragraf");
+  const it = (await new Client().call("GET", "/comments?target=work:656")).body.items.find((x) => x.id === Number(r.lastInsertRowid));
+  assert.equal(it.format, "text");
+  assert.equal(it.html, "<p>Eski &lt;b&gt;yorum&lt;/b&gt;<br>ikinci satır</p><p>yeni paragraf</p>");
+  assert.equal(it.body, "Eski <b>yorum</b>\nikinci satır\n\nyeni paragraf", "eski API alanı korunur");
+});
+
+test("yorum düzenleme: yalnızca sahibi ya da yorum yöneticisi; onaylı yorum yeniden incelemeye düşer", async () => {
+  const c = await uye.call("POST", "/comments", { target: "topic:265", body: "<p>İlk hâli</p>", format: "html" });
+  assert.equal(c.status, 200, c.body.error);
+  await admin.call("PATCH", `/admin/comments/${c.body.id}`, { status: "visible" });
+  let list = (await uye.call("GET", "/comments?target=topic:265")).body.items;
+  assert.equal(list.find((x) => x.id === c.body.id).can_edit, true);
+
+  // başka bir üye düzenleyemez
+  db.prepare("INSERT INTO users (email, name, password_hash, role_key, status) VALUES ('baska@test.local', 'Başka Üye', ?, 'uye', 'active')").run(A.hashPassword("BaskaSifre12345"));
+  const baska = new Client();
+  assert.equal((await baska.call("POST", "/auth/login", { email: "baska@test.local", password: "BaskaSifre12345" })).status, 200);
+  assert.equal((await baska.call("GET", "/comments?target=topic:265")).body.items.find((x) => x.id === c.body.id).can_edit, false);
+  assert.equal((await baska.call("PATCH", `/comments/${c.body.id}`, { body: "<p>ele geçirildi</p>", format: "html" })).status, 404);
+  assert.equal((await new Client().call("PATCH", `/comments/${c.body.id}`, { body: "<p>x</p>", format: "html" })).status, 401);
+
+  // sahibi düzenler: biçim kaydedilir, onay gerektiği için yeniden incelemeye düşer
+  const e = await uye.call("PATCH", `/comments/${c.body.id}`, { body: '<p><strong>Düzeltilmiş</strong> hâli</p><img src=x onerror="alert(1)">', format: "html" });
+  assert.equal(e.status, 200, e.body.error);
+  assert.equal(e.body.status, "pending");
+  let row = db.prepare("SELECT body, status, updated_at, target, user_id, created_at FROM comments WHERE id = ?").get(c.body.id);
+  assert.equal(row.body, "<p><strong>Düzeltilmiş</strong> hâli</p>");
+  assert.ok(row.updated_at);
+  assert.equal(row.target, "topic:265"); // yazar, hedef ve tarih korunur
+  const pend = (await uye.call("GET", "/comments?target=topic:265")).body.pending.find((x) => x.id === c.body.id);
+  assert.ok(pend && pend.can_edit && pend.updated_at);
+
+  // yönetici düzenlemesi durumu değiştirmez
+  await admin.call("PATCH", `/admin/comments/${c.body.id}`, { status: "visible" });
+  assert.equal((await admin.call("PATCH", `/comments/${c.body.id}`, { body: "<p>Yönetici düzeltmesi</p>", format: "html" })).body.status, "visible");
+  // gizlenen yorumu sahibi düzenleyemez
+  await admin.call("PATCH", `/admin/comments/${c.body.id}`, { status: "hidden" });
+  assert.equal((await uye.call("PATCH", `/comments/${c.body.id}`, { body: "<p>geri</p>", format: "html" })).status, 404);
+  // yönetim listesi temizlenmiş HTML'i verir
+  const adm = (await admin.call("GET", "/admin/comments?status=hidden")).body.items.find((x) => x.id === c.body.id);
+  assert.equal(adm.html, "<p>Yönetici düzeltmesi</p>");
+});
+
+test("yorum sınırları: uzunluk, görsel ve video sayısı, boş içerik", async () => {
+  const post = (body) => admin.call("POST", "/comments", { target: "work:656", body, format: "html" });
+  assert.equal((await post("<p>" + "a".repeat(3001) + "</p>")).status, 400);
+  assert.equal((await post("<p><br></p><p>  </p>")).status, 400);
+  assert.equal((await post("<script>alert('uzun bir zararlı kod')</script>")).status, 400, "temizlendikten sonra boş kalan yorum");
+  const img = '<p><img src="/uploads/2026-10/0123456789abcdef01234567.png"></p>';
+  assert.equal((await post(img.repeat(7))).status, 400);
+  assert.equal((await post(img)).status, 200, "yalnızca görsel içeren yorum");
+  const vid = '<figure class="media-video"><iframe src="https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ?rel=0"></iframe></figure>';
+  assert.equal((await post(vid.repeat(4))).status, 400);
+});
+
 test("yükleme yalnızca gerçek görsel kabul eder", async () => {
   const fake = new FormData();
   fake.append("file", new Blob(["<?php echo 1; ?>"], { type: "image/png" }), "x.png");
   assert.equal((await uye.call("POST", "/uploads", undefined, { raw: fake })).status, 400);
+  // SVG (betik taşıyabilir), HTML ve uzantısı değiştirilmiş dosyalar kabul edilmez
+  for (const [data, type, name] of [['<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"/>', "image/svg+xml", "x.svg"], ["<html><script>alert(1)</script>", "text/html", "x.html"],
+    ["<script>alert(1)</script>", "image/jpeg", "x.jpg"], ["GIF89a", "image/gif", "x.gif"]]) {
+    const f = new FormData(); f.append("file", new Blob([data], { type }), name);
+    assert.equal((await uye.call("POST", "/uploads", undefined, { raw: f })).status, 400, name);
+  }
+  // 5 MB sınırı
+  const big = new FormData(); big.append("file", new Blob([Buffer.alloc(5 * 1024 * 1024 + 10, 0xff)], { type: "image/jpeg" }), "b.jpg");
+  assert.equal((await uye.call("POST", "/uploads", undefined, { raw: big })).status, 400);
+  assert.equal((await new Client().call("POST", "/uploads", undefined, { raw: fake })).status, 401, "giriş yapmamış kullanıcı yükleyemez");
   const png = new FormData();
   png.append("file", new Blob([Buffer.from("89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d4944415478da63f8ffff3f0005fe02fea7d6a0a50000000049454e44ae426082", "hex")], { type: "image/png" }), "a.png");
   const r = await uye.call("POST", "/uploads", undefined, { raw: png });
