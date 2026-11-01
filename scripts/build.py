@@ -55,6 +55,8 @@ ST = {
     "videos_title": "Konuşmalar ve videolar", "videos_more_url": "https://www.ahmetishak.com/galeri/videolar/",
     "videos_channel_url": "https://www.youtube.com/@mezheporg",
     "gallery_show_videos": True, "gallery_channel": "UCGFN07whsFRvjvB7TzK-bKg",
+    "links_title": "Akademik Bağlantılar", "links_show_desc": True, "links_sort": "az",
+    "links_lead": "İslam mezhepleri tarihi ve ilahiyat alanında çalışanlar için üniversiteler, araştırma merkezleri, bilimsel dergiler, kütüphaneler, veri tabanları ve dijital kaynaklardan seçilmiş bağlantılar.",
 }
 if os.path.exists(os.path.join(DATA, "settings.json")):
     ST.update({k: v for k, v in load("settings").items() if v is not None})
@@ -223,7 +225,7 @@ BIG_STAR = '<svg class="pattern" viewBox="0 0 100 100" fill="none" stroke="curre
 # Menüdeki sabit sayfalar (categories.json "pages" yoksa); Haberler ve Etkinlikler birer kategoridir (bkz. kategoriler ve menü).
 FIXED_PAGES = [dict(name="Ana Sayfa", href="index.html", menu_order=10), dict(name="Akademisyenler", href="akademisyenler.html", menu_order=20),
                dict(name="Eserler", href="eserler.html", menu_order=30), dict(name="Galeri", href="galeri.html", menu_order=60),
-               dict(name="Kaynaklar", href="kaynaklar.html", menu_order=70), dict(name="Hakkında", href="hakkinda.html", menu_order=80)]
+               dict(name="Bağlantılar", href="baglantilar.html", menu_order=65), dict(name="Kaynaklar", href="kaynaklar.html", menu_order=70), dict(name="Hakkında", href="hakkinda.html", menu_order=80)]
 
 
 WRITTEN = set()
@@ -355,7 +357,7 @@ def nav_html(r, active):
 def footer_current(r):
     """Alt bilgi "Güncel" sütunu: menüdeki kategoriler (alt kategorileriyle), galeri ve kaynaklar."""
     links = [(cat_url(c), c["name"]) for c in CAT_LIST if in_menu(c)]
-    links += [("galeri.html", "Fotoğraf Galerisi"), ("kaynaklar.html", "Kaynaklar")]
+    links += [("galeri.html", "Fotoğraf Galerisi"), ("baglantilar.html", "Bağlantılar"), ("kaynaklar.html", "Kaynaklar")]
     return "".join('<li><a href="%s%s">%s</a></li>' % (r, h, E(t)) for h, t in links)
 
 
@@ -609,7 +611,7 @@ for w in works:
 # (sunucu categories.json'u dışa aktarır; statik sürümde data/categories.json). Bir haberin kategorisini seçmek onu
 # kategori sayfasına, bölümü eklenmiş sayfalara ve menüye kendiliğinden taşır; içerikleri elle seçmek gerekmez.
 CAT_DEF = dict(name="", label="", slug="", parent="", description="", menu_show=False, menu_order=100, home_show=False, count=6,
-               sort="new", style="kart", pages=[], block_eyebrow="", block_title="", seo_title="", seo_desc="", page="", old_slugs=[])
+               sort="new", style="kart", pages=[], block_eyebrow="", block_title="", seo_title="", seo_desc="", page="", old_slugs=[], redirect="")
 _CJ = load("categories") if os.path.exists(os.path.join(DATA, "categories.json")) else {}
 CATS = {c["key"]: dict(CAT_DEF, **c) for c in _CJ.get("categories", [])}
 
@@ -1170,19 +1172,6 @@ def safe_url(u):
 
 
 def build_resources():
-    groups = defaultdict(list)
-    for l in links:
-        groups[l["category"]].append(l)
-    lk = ""
-    for cat, ls in groups.items():
-        items = ""
-        for l in ls:
-            url = safe_url(l.get("url"))
-            tag = "a" if url else "div"
-            attr = ' href="%s" target="_blank" rel="noopener"' % url if url else ""
-            foot = '<div class="foot"><span class="link-arrow">Siteye git %s</span></div>' % ic("ext") if url else ""
-            items += f'<{tag} class="card{" hover" if url else ""}"{attr}><div class="meta"><span class="badge">{E(l["sub"])}</span></div><h3>{E(l["name"])}</h3><p>{E(l["desc"])}</p>{foot}</{tag}>'
-        lk += f'<h3 style="margin:28px 0 14px">{E(cat)}</h3><div class="grid grid-3">{items}</div>'
     def file_card(f):
         url = safe_url(f.get("url"))
         tag, attr = ("a", ' href="%s" target="_blank" rel="noopener"' % E(url)) if url else ("div", "")
@@ -1194,10 +1183,109 @@ def build_resources():
     # "Yayınlar" ve kaynaklar sayfasına eklenen diğer kategoriler (panel: Kategoriler → Diğer sayfalarda göster → Kaynaklar)
     blocks = "".join(h.replace("{ALT}", " alt") for h in page_blocks("kaynaklar"))
     body = page_hero("Kaynaklar", "Mezhepler tarihçisinin bilmesi gereken siteler, dergiler, yeni kitap tanıtımları ve indirilebilir araçlar.", [("index.html", "Ana Sayfa"), ("", "Kaynaklar")])
-    body += f'''<section class="section"><div class="container"><div class="section-head"><div><div class="eyebrow">Bağlantılar</div><h2>Önerilen siteler ve dergiler</h2><p>“Mezhepler tarihçisi bunu görmeli!” dediğiniz siteleri bize iletin.</p></div></div>{lk}</div></section>
+    n_cat = len({l["category"] for l in LINKS})
+    body += f'''<section class="section"><div class="container"><a class="panel lk-callout" href="{{ROOT}}baglantilar.html"><span class="lk-callout-ic">{ic("link")}</span><span class="lk-callout-txt"><span class="eyebrow">Bağlantılar</span><strong>{E(ST["links_title"])}</strong><span>{len(LINKS)} bağlantı · {n_cat} kategori: üniversiteler, araştırma merkezleri, dergiler, veri tabanları ve dijital kaynaklar.</span></span><span class="link-arrow">Rehbere git {ic("arrow")}</span></a></div></section>
 {blocks}
 <section class="section"><div class="container"><div class="section-head"><div><div class="eyebrow">Araçlar</div><h2>İndirilebilir dosyalar</h2><p>Transkripsiyon yazı tipleri ve yardımcı belgeler.{" İndirme bağlantısı olmayan dosyalar için lütfen site yöneticisiyle iletişime geçin." if no_url else ""}</p></div></div><div class="grid grid-3">{fl}</div></div></section>'''
     layout("kaynaklar.html", "Kaynaklar", body, "Mezhepler tarihi kaynakları, bağlantılar ve dosyalar", "kaynaklar.html")
+
+
+# ---------------------------------------------------------------- BAĞLANTILAR
+# Bağlantılar rehberi panelden yönetilir (Bağlantı Yönetimi). Kategoriler haber kategorilerinden ayrıdır (link_categories.json);
+# statik sürümde bu dosya yoksa kategoriler bağlantılardaki kategori adlarından çıkarılır. Pasif bağlantılar yayımlanmaz.
+_TR_ABC = "abcçdefgğhıijklmnoöpqrsştuüvwxyz"
+_TR_RANK = {c: i for i, c in enumerate(_TR_ABC)}
+_TR_PLAIN = {"â": "a", "î": "i", "û": "u", "é": "e", "è": "e", "ê": "e", "á": "a", "à": "a", "ä": "a", "ô": "o", "ó": "o", "ú": "u", "í": "i", "ā": "a", "ī": "i", "ū": "u"}
+
+
+def tr_key(s):
+    """Türkçe alfabe sırası: c < ç, g < ğ, ı < i, o < ö, s < ş, u < ü; büyük/küçük harf ve şapka sırayı değiştirmez."""
+    out = []
+    for ch in (s or "").replace("I", "ı").replace("İ", "i").lower():
+        ch = _TR_PLAIN.get(ch, ch)
+        if ch in _TR_RANK: out.append(100 + _TR_RANK[ch])
+        elif ch.isdigit(): out.append(10 + int(ch))
+        elif ch.isspace(): out.append(1)
+        elif ch.isalpha(): out.append(200 + ord(ch))
+    return tuple(out)
+
+
+if os.path.exists(os.path.join(DATA, "link_categories.json")):
+    LINK_CATS = load("link_categories")
+else:  # statik sürüm: kategori ve alt kategori adları bağlantılarda metin olarak durur
+    LINK_CATS, _seen = [], {}
+    for _l in links:
+        for _name, _par in ((_l.get("category") or "Diğer Bağlantılar", ""), (_l.get("sub") or "", _l.get("category") or "Diğer Bağlantılar")):
+            if _name and (_name, _par) not in _seen:
+                _seen[(_name, _par)] = _key = "%s%s" % ("" if not _par else slugify(_par) + "--", slugify(_name) or "kategori")
+                LINK_CATS.append(dict(key=_key, name=_name, parent=_seen.get((_par, "")) if _par else "", order=len(LINK_CATS) * 10, description=""))
+    for _l in links:
+        _c = _l.get("category") or "Diğer Bağlantılar"
+        _l["category"], _l["sub"] = _seen[(_c, "")], (_seen[(_l["sub"], _c)] if _l.get("sub") else "")
+LCAT = {c["key"]: c for c in LINK_CATS}
+LINKS = [l for l in links if l.get("status", "aktif") != "pasif" and l.get("category") in LCAT and (l.get("name") or "").strip()]
+
+
+def build_links():
+    show_desc = ST.get("links_show_desc", True)
+    manual = ST.get("links_sort") == "manual"
+    order = lambda l: ((l.get("order") or 10 ** 9) if manual else 0, tr_key(l["name"]), l["id"])
+    tops = sorted((c for c in LINK_CATS if not c.get("parent")), key=lambda c: (c.get("order", 0), tr_key(c["name"])))
+    subs = lambda k: sorted((c for c in LINK_CATS if c.get("parent") == k), key=lambda c: (c.get("order", 0), tr_key(c["name"])))
+    by_cat = defaultdict(list)
+    for l in sorted(LINKS, key=order):
+        by_cat[l["category"]].append(l)
+
+    def row(l):
+        url = safe_url(l.get("url"))
+        logo = (l.get("logo") or "").replace("{ROOT}", "")
+        icon = ('<img src="{ROOT}%s" alt="" loading="lazy" width="28" height="28">' % E(logo)) if logo and exists(logo) else ic("link")
+        desc = (l.get("desc") or "").strip() if show_desc and not l.get("hide_desc") else ""
+        text = f'<span class="lk-txt"><span class="lk-name">{E(l["name"])}</span>{("<span class=lk-desc>%s</span>" % E(desc)) if desc else ""}</span>'
+        host = re.sub(r"^www\.", "", re.sub(r"^https?://([^/:?#]+).*$", r"\1", url)) if url else ""
+        find = fold(" ".join([l["name"], l.get("desc") or "", " ".join(l.get("tags") or []), host]))
+        if url:
+            inner = f'<a class="lk-row" href="{E(url)}" target="_blank" rel="noopener noreferrer"><span class="lk-ic">{icon}</span>{text}<span class="lk-ext">{ic("ext")}<span class="sr-only"> (yeni sekmede açılır)</span></span></a>'
+        else:
+            inner = f'<div class="lk-row is-off"><span class="lk-ic">{icon}</span>{text}</div>'
+        return f'<li data-c="{E(l["category"])}" data-s="{E(l.get("sub") or "")}" data-f="{E(find)}">{inner}</li>'
+
+    secs, side, opts, n_cats = "", "", "", 0
+    for c in tops:
+        ls = by_cat.get(c["key"], [])
+        if not ls:
+            continue
+        n_cats += 1
+        plain = "".join(row(l) for l in ls if not l.get("sub"))
+        kids, kid_side, kid_opts = "", "", ""
+        for sc in subs(c["key"]):
+            sl = [l for l in ls if l.get("sub") == sc["key"]]
+            if not sl:
+                continue
+            kids += f'<div class="lk-sub" data-lk-subsec="{E(sc["key"])}"><h3>{E(sc["name"])} <span class="n" data-lk-n>{len(sl)}</span></h3><ul class="lk-list">{"".join(row(l) for l in sl)}</ul></div>'
+            kid_side += f'<button type="button" class="lk-pick is-sub" data-lk-pick="{E(sc["key"])}" aria-pressed="false">{E(sc["name"])} <span class="n">{len(sl)}</span></button>'
+            kid_opts += f'<option value="{E(sc["key"])}">— {E(sc["name"])} ({len(sl)})</option>'
+        desc = ('<p class="lk-cat-desc">%s</p>' % E(c["description"])) if c.get("description") else ""
+        secs += (f'<section class="lk-cat" data-lk-sec="{E(c["key"])}" id="{E(c["key"])}" aria-labelledby="lk-h-{E(c["key"])}"><h2 id="lk-h-{E(c["key"])}">{E(c["name"])} <span class="n" data-lk-n>{len(ls)}</span></h2>{desc}'
+                 + (f'<ul class="lk-list">{plain}</ul>' if plain else "") + kids + "</section>")
+        side += f'<button type="button" class="lk-pick" data-lk-pick="{E(c["key"])}" aria-pressed="false">{E(c["name"])} <span class="n">{len(ls)}</span></button>{kid_side}'
+        opts += f'<option value="{E(c["key"])}">{E(c["name"])} ({len(ls)})</option>{kid_opts}'
+    total = len(LINKS)
+    body = page_hero(ST["links_title"], E(ST["links_lead"]), [("index.html", "Ana Sayfa"), ("", ST["links_title"])], "%d bağlantı · %d kategori" % (total, n_cats))
+    if total:
+        body += f'''<div class="toolbar lk-toolbar"><div class="container"><div class="row">
+  <label class="input">{ic("search")}<input type="search" data-lk-q placeholder="Bağlantı adı ya da açıklamada ara…" aria-label="Bağlantılarda ara" autocomplete="off" enterkeyhint="search"><button type="button" class="lk-clear" data-lk-clear hidden aria-label="Aramayı temizle">{ic("x")}</button></label>
+  <select class="select lk-select" data-lk-cat aria-label="Kategori"><option value="">Tüm kategoriler ({total})</option>{opts}</select>
+</div></div></div>
+<div class="container lk-wrap" data-links>
+  <nav class="lk-side" aria-label="Bağlantı kategorileri"><div class="lk-side-in"><button type="button" class="lk-pick" data-lk-pick="" aria-pressed="true">Tüm bağlantılar <span class="n">{total}</span></button>{side}</div></nav>
+  <div class="lk-main"><p class="result-info" data-lk-info role="status" aria-live="polite">{total} bağlantı</p>{secs}
+    <div class="empty" data-lk-empty hidden><p>Aramanızla eşleşen bağlantı bulunamadı.</p><button type="button" class="btn btn-ghost btn-sm" data-lk-reset>Aramayı ve süzgeci temizle</button></div>
+  </div>
+</div>'''
+    else:
+        body += '<div class="container" style="padding:32px 24px 80px"><div class="empty">Henüz yayımlanmış bağlantı bulunmuyor.</div></div>'
+    layout("baglantilar.html", ST["links_title"], with_blocks(body, "baglantilar"), (ST["links_lead"] or "Akademik bağlantılar")[:160], "baglantilar.html")
 
 
 # ---------------------------------------------------------------- HAKKINDA
@@ -1272,6 +1360,9 @@ def build_categories():
     for c in CAT_LIST:
         if c["page"]:
             continue  # haberler.html ve etkinlikler.html kendi sayfalarında üretilir
+        if c.get("redirect"):  # ör. eski "Bağlantılar" haber kategorisi → Bağlantılar rehberi (içerikleri silinmez)
+            write_redirect(cat_url(c), c["redirect"])
+            continue
         items = cat_items(c["key"])
         path = cat_url(c)
         cnt = Counter(t["tag"] for t in items)
@@ -1335,7 +1426,7 @@ def build_404():
         f.write(doc)
 
 
-build_home(); build_members(); build_works(); build_news(); build_events(); build_gallery(); build_resources(); build_about(); build_categories(); build_index(); build_404()
+build_home(); build_members(); build_works(); build_news(); build_events(); build_gallery(); build_links(); build_resources(); build_about(); build_categories(); build_index(); build_404()
 _n_sitemap = build_sitemap()
 _stale = remove_stale()
 if _stale:

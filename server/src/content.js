@@ -59,13 +59,19 @@ const SCHEMAS = {
     { key: "name", label: "Albüm adı", type: "text", required: true, max: 160 },
     { key: "photos", label: "Fotoğraflar", type: "gallery", maxItems: 500 },
   ],
-  // Kaynaklar sayfası: önerilen siteler ve indirilebilir dosyalar
+  // Bağlantılar rehberi (baglantilar.html); kategoriler haber kategorilerinden ayrıdır (links.js). Kategori ve alt kategori
+  // kayıtta anahtarla durur; seçenekler her istekte veritabanından okunur.
   link: [
-    { key: "name", label: "Site / dergi adı", type: "text", required: true, max: 200 },
-    { key: "url", label: "Adres", type: "url", max: 600 },
-    { key: "category", label: "Bölüm (sayfada bu başlık altında listelenir)", type: "text", required: true, max: 80, get suggest() { return distinct("link", "category"); } },
-    { key: "sub", label: "Etiket (ör. Dergi, Tezler)", type: "text", max: 80, get suggest() { return distinct("link", "sub"); } },
-    { key: "desc", label: "Kısa açıklama", type: "text", max: 400 },
+    { key: "name", label: "Bağlantı adı", type: "text", required: true, max: 200 },
+    { key: "url", label: "İnternet adresi (URL)", type: "url", required: true, max: 600, autoHttps: true },
+    { key: "category", label: "Kategori", type: "select", required: true, get options() { return require("./links").choices().options; }, get labels() { return require("./links").choices().labels; } },
+    { key: "sub", label: "Alt kategori", type: "select", get options() { return require("./links").choices().subOptions; }, get labels() { return require("./links").choices().labels; } },
+    { key: "desc", label: "Kısa açıklama", type: "text", max: 500, recommended: 300 },
+    { key: "hide_desc", label: "Bu bağlantının açıklamasını sitede gösterme", type: "bool" },
+    { key: "logo", label: "Logo veya simge", type: "image" },
+    { key: "tags", label: "Etiketler (virgülle ayırın; aramada kullanılır)", type: "tags", maxItems: 10, max: 40 },
+    { key: "status", label: "Yayın durumu", type: "select", options: ["aktif", "pasif"], labels: { aktif: "Aktif (sitede görünür)", pasif: "Pasif (taslak; sitede görünmez)" } },
+    { key: "order", label: "Özel sıralama önceliği (küçük sayı önce; boş: sona)", type: "int", min: 1, max: 9999 },
   ],
   file: [
     { key: "name", label: "Dosya adı", type: "text", required: true, max: 200 },
@@ -289,8 +295,25 @@ function normalize(kind, input, { partial = false, isAdmin = false } = {}) {
       }
       case "url": {
         v = String(v).trim();
+        // "isam.org.tr" gibi şemasız adresler https:// ile tamamlanır; javascript:, data: vb. şemalar hiçbir durumda kabul edilmez
+        if (v && f.autoHttps && !/^[a-z][a-z0-9+.-]*:/i.test(v) && /^(\/\/)?[\w-]+(\.[\w-]+)+(:\d+)?([/?#]\S*)?$/i.test(v)) v = "https://" + v.replace(/^\/\//, "");
         if (v && !/^https?:\/\/[^\s"'<>]+\.[^\s"'<>]+$/i.test(v)) { errors[f.key] = "Adres http:// veya https:// ile başlamalı."; continue; }
         break;
+      }
+      case "bool": v = [true, "true", 1, "1", "on"].includes(v); break;
+      // Etiketler: dizi ya da virgülle ayrılmış metin; tekrarlar ve boşlar atılır
+      case "tags": {
+        const arr = Array.isArray(v) ? v : String(v).split(/[,;\n]/);
+        const seen = new Set(), tags = [];
+        for (const t of arr) {
+          const s = String(t ?? "").replace(/[\u0000-\u001f]/g, " ").replace(/\s+/g, " ").trim();
+          if (!s || seen.has(foldTr(s))) continue;
+          if (s.length > f.max) { errors[f.key] = `Her etiket en fazla ${f.max} karakter olabilir.`; break; }
+          seen.add(foldTr(s)); tags.push(s);
+        }
+        if (errors[f.key]) continue;
+        if (tags.length > f.maxItems) { errors[f.key] = `En fazla ${f.maxItems} etiket girin.`; continue; }
+        v = tags; break;
       }
       case "email": {
         v = String(v).trim();
@@ -454,8 +477,16 @@ function applyFields(kind, existing, fields, user) {
       item.cid = same ? same.cid : Math.max(0, ...all.map((a) => a.cid || 0)) + 1;
       item.sid = Math.max(0, ...all.map((a) => a.sid || 0)) + 1;
     }
+  } else if (kind === "link") {
+    Object.assign(item, fields);
+    for (const k of ["url", "category", "sub", "desc", "logo"]) item[k] ??= "";
+    item.tags = Array.isArray(item.tags) ? item.tags : [];
+    item.hide_desc = !!item.hide_desc;
+    item.status = item.status === "pasif" ? "pasif" : "aktif";
+    item.order ??= null;
+    item.added ||= trDate();
   } else {
-    Object.assign(item, fields); // bağlantı, dosya, Hakkında sayfası
+    Object.assign(item, fields); // dosya, Hakkında sayfası
     for (const f of SCHEMAS[kind]) item[f.key] ??= "";
   }
   return item;
@@ -555,6 +586,8 @@ function exportAll(dir) {
     fs.writeFileSync(tmp, JSON.stringify(obj));
     fs.renameSync(tmp, path.join(dir, name + ".json"));
   };
+  const L = require("./links");
+  L.adopt(); // eski biçimdeki (kategori adıyla kaydedilmiş) bağlantılar kategori anahtarına bağlanır
   for (const [kind, file] of Object.entries(SEED_FILES)) {
     let rows = listItems(kind);
     if (kind === "member") rows.sort((a, b) => a.name.localeCompare(b.name, "tr"));
@@ -564,6 +597,7 @@ function exportAll(dir) {
   }
   CAT.adoptOrphans(); // kategorisi tanımlı olmayan haber kalmasın
   write("categories", CAT.exportData()); // kategoriler, kategori sayfaları ve menü
+  write("link_categories", L.exportCategories()); // Bağlantılar rehberinin kategorileri
   write("pages", getItem("page", 1) || { welcome: "", policy: "" });
   write("settings", require("./site-settings").all()); // site üreteci için panel ayarları
   write("videos", require("./videos").load()); // ana sayfa video modülü

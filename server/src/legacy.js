@@ -21,7 +21,7 @@ const RULES = {
   },
   "eleman_read.asp": (q) => item("member", param(q, "item"), `/akademisyen/${param(q, "item")}.html`, "/akademisyenler.html"),
   "eser_read.asp": (q) => item("work", param(q, "item"), `/eser/${param(q, "item")}.html`, "/eserler.html"),
-  "links.asp": () => "/kaynaklar.html", "links_pop.asp": () => "/kaynaklar.html", "dl.asp": () => "/kaynaklar.html", "article.asp": () => "/kaynaklar.html",
+  "links.asp": () => "/baglantilar.html", "links_pop.asp": () => "/baglantilar.html", "dl.asp": () => "/kaynaklar.html", "article.asp": () => "/kaynaklar.html",
   "policy.asp": () => "/hakkinda.html#kosullar", "privacy.asp": () => "/hakkinda.html#kosullar",
 };
 for (const f of ["link.asp", "forum_topic.asp", "topic.asp", "post.asp"]) {

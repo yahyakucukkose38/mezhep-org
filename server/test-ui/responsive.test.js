@@ -311,20 +311,21 @@ test("panel: yeni galeri albümü (çoklu yükleme, küçültme, sıralama, aç�
   const page = await ctx.newPage();
   await open(page, "/panel/#/yonetim/icerik/page");
   const nav = await page.locator("nav a").allTextContents();
-  for (const t of ["Galeri albümleri", "Kaynaklar: bağlantılar", "Kaynaklar: dosyalar", "Hakkında sayfası"]) assert.ok(nav.some((x) => x.includes(t)), t);
+  for (const t of ["Galeri albümleri", "Bağlantı yönetimi", "Kaynaklar: dosyalar", "Hakkında sayfası"]) assert.ok(nav.some((x) => x.includes(t)), t);
   const area = page.locator('[data-editor="about_html"] .editor-area');
   assert.ok((await area.innerText()).includes("Mezhepler Tarihi"));
   assert.equal(await page.locator("[data-del]").count(), 0, "Hakkında silinemez");
   await page.locator('[name="about_lead"]').fill("Arayüz testinden giriş cümlesi.");
   await page.locator("form button[type=submit]").click();
   await page.waitForFunction(() => fetch("/api/items/page/1").then((r) => r.json()).then((j) => j.values.about_lead === "Arayüz testinden giriş cümlesi."));
-  // Kaynaklar: bağlantı adresi ekleme
+  // bağlantı ekleme (eski "icerik/link" adresi Bağlantı Yönetimi'ne gider)
   await open(page, "/panel/#/yonetim/icerik/link/yeni");
+  await page.waitForURL(/#\/yonetim\/baglantilar\/yeni$/);
   await page.locator('[name="name"]').fill("Arayüz Dergisi");
   await page.locator('[name="url"]').fill("https://ornek.org/dergi");
-  await page.locator('[name="category"]').fill("Dergiler");
+  await page.locator('[name="category"]').selectOption({ label: "Dergiler" });
   await page.locator("form button[type=submit]").click();
-  await page.waitForURL(/#\/yonetim\/icerik\/link\/\d+$/);
+  await page.waitForURL(/#\/yonetim\/baglantilar\/\d+$/);
   assert.equal(C.getItem("link", +page.url().split("/").pop()).url, "https://ornek.org/dergi");
   await ctx.close();
 });

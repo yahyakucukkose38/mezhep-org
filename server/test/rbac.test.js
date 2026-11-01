@@ -301,7 +301,7 @@ test("galeri, kaynaklar ve Hakkında: Editör ekler ve düzenler, silemez; diğe
 
   // bağlantı: adres doğrulanır
   assert.equal((await U.editor.call("POST", "/admin/items/link", { data: { name: "Kötü", url: "javascript:alert(1)", category: "Dergiler" } })).status, 400);
-  const l = await U.editor.call("POST", "/admin/items/link", { data: { name: "İLAM Araştırma Dergisi", url: "https://dergipark.org.tr/tr/pub/ilam", category: "Dergiler", sub: "Dergi", desc: "Hakemli dergi" } });
+  const l = await U.editor.call("POST", "/admin/items/link", { data: { name: "İLAM Araştırma Dergisi", url: "https://dergipark.org.tr/tr/pub/ilam", category: "Dergiler", desc: "Hakemli dergi" } });
   assert.equal(l.status, 200, l.text);
   assert.equal(C.getItem("link", l.body.id).url, "https://dergipark.org.tr/tr/pub/ilam");
   const f = await U.editor.call("POST", "/admin/items/file", { data: { name: "Transkripsiyon kılavuzu", url: "https://ornek.edu.tr/kilavuz.pdf", category: "Belgeler", date: "2026-10-29" } });
@@ -358,8 +358,8 @@ test("galeri, kaynaklar ve Hakkında: Editör ekler ve düzenler, silemez; diğe
   const page = (p) => fs.readFileSync(path.join(cfg.SITE_DIR, p), "utf8");
   assert.ok(page("galeri.html").includes("Deneme 2026"));
   assert.ok(page(`galeri/${al.cid}-${al.sid}.html`).includes(up.body.path));
-  assert.ok(page("kaynaklar.html").includes('href="https://dergipark.org.tr/tr/pub/ilam"') && page("kaynaklar.html").includes('href="https://ornek.edu.tr/kilavuz.pdf"'));
-  assert.ok(page("kaynaklar.html").includes('href="https://dergipark.org.tr/tr/pub/kader"'), "taşınan eski adresler");
+  assert.ok(page("baglantilar.html").includes('href="https://dergipark.org.tr/tr/pub/ilam"') && page("kaynaklar.html").includes('href="https://ornek.edu.tr/kilavuz.pdf"'));
+  assert.ok(page("baglantilar.html").includes('href="https://dergipark.org.tr/tr/pub/kader"'), "taşınan eski adresler");
   assert.ok(page("hakkinda.html").includes("Yeni giriş cümlesi.") && page("hakkinda.html").includes("Yeni amaç metni."));
 });
 

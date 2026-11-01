@@ -54,6 +54,7 @@
     {"key": "akademisyenler", "name": "Akademisyenler", "href": "akademisyenler.html", "menu_show": true, "menu_order": 20},
     {"key": "eserler", "name": "Eserler", "href": "eserler.html", "menu_show": true, "menu_order": 30},
     {"key": "galeri", "name": "Galeri", "href": "galeri.html", "menu_show": true, "menu_order": 60},
+    {"key": "baglantilar", "name": "Bağlantılar", "href": "baglantilar.html", "menu_show": true, "menu_order": 65},
     {"key": "kaynaklar", "name": "Kaynaklar", "href": "kaynaklar.html", "menu_show": true, "menu_order": 70},
     {"key": "hakkinda", "name": "Hakkında", "href": "hakkinda.html", "menu_show": true, "menu_order": 80}
   ]

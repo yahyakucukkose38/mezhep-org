@@ -13,6 +13,8 @@ const ai = require("./ai/service");
 const P = require("./perms");
 const SS = require("./site-settings");
 const CAT = require("./categories");
+const L = require("./links");
+const SHEET = require("./sheet");
 
 const api = express.Router();
 const ok = (res, data = {}) => res.json(data);
@@ -609,7 +611,8 @@ admin.delete("/roles/:key", need("yetki.yonet"), (req, res) => {
 
 // ---- site ayarları
 admin.get("/settings", need("site.ayar", "ai.ayar"), (req, res) => {
-  const groups = SS.GROUPS.filter((g) => P.can(req.user, g.perm));
+  // Bağlantılar rehberinin ayarları Bağlantı Yönetimi → Görünüm ayarları ekranındadır
+  const groups = SS.GROUPS.filter((g) => P.can(req.user, g.perm) && g.key !== "baglantilar");
   ok(res, { groups, values: SS.all() });
 });
 
@@ -722,7 +725,8 @@ function summary(kind, it, cats = CAT.topicChoices().labels) {
   if (kind === "member") return { id: it.id, title: it.name, sub: [it.title, it.university].filter(Boolean).join(" · ") };
   if (kind === "work") return { id: it.id, title: it.title, sub: [it.author, it.year, it.type].filter(Boolean).join(" · ") };
   if (kind === "album") return { id: it.id, title: it.name, sub: [it.event, (it.photos || []).length + " fotoğraf"].join(" · ") };
-  if (kind === "link" || kind === "file") return { id: it.id, title: it.name, sub: [it.category, it.sub, it.url ? "" : "adres yok"].filter(Boolean).join(" · ") };
+  if (kind === "link") return { id: it.id, title: it.name, sub: [L.choices().labels[it.sub || it.category] || it.category, it.status === "pasif" ? "pasif" : "", it.url ? "" : "adres yok"].filter(Boolean).join(" · ") };
+  if (kind === "file") return { id: it.id, title: it.name, sub: [it.category, it.url ? "" : "adres yok"].filter(Boolean).join(" · ") };
   if (kind === "page") return { id: it.id, title: "Hakkında sayfası", sub: "Amacımız ve kullanım koşulları" };
   return { id: it.id, title: it.title, sub: [cats[it.forum] || it.forum, it.date].filter(Boolean).join(" · ") };
 }
@@ -748,6 +752,7 @@ admin.get("/items/:kind", kindPerm, (req, res) => {
 admin.post("/items/:kind", kindPerm, wrap((req, res) => {
   const { kind } = req.params;
   if (kind === "page") return bad(res, "Hakkında sayfası tek kayıttır; yenisi eklenmez, düzenlenir.");
+  if (kind === "link") return linkSave(req, res, null); // Bağlantılar rehberinin kuralları (kategori, mükerrer denetimi)
   const fields = C.normalize(kind, req.body?.data || {}, { isAdmin: true });
   const item = C.saveItem(kind, null, C.applyFields(kind, null, fields, req.user), req.user.id);
   log(req.user.id, "icerik-ekle", `${kind}:${item.id}`);
@@ -760,6 +765,7 @@ admin.put("/items/:kind/:id", kindPerm, wrap((req, res) => {
   const existing = id != null ? C.getItem(kind, id) : null;
   if (!existing) return A.fail(res, 404, "Bulunamadı.");
   if (staleEdit(req, res, kind, id)) return;
+  if (kind === "link") return linkSave(req, res, id);
   // Yalnızca gönderilen (değiştirilen) alanlar işlenir; diğer alanlar, görseller ve videolar olduğu gibi kalır.
   const fields = C.normalize(kind, req.body?.data || {}, { isAdmin: true, partial: true });
   C.saveItem(kind, id, C.applyFields(kind, existing, fields, req.user), req.user.id);
@@ -776,6 +782,195 @@ admin.delete("/items/:kind/:id", need("icerik.sil"), (req, res) => {
   rebuild.schedule(`${kind}:${id} silindi`);
   ok(res);
 });
+
+// ---- Bağlantılar rehberi (baglantilar.html)
+// Ekleme, düzenleme, kategoriler, toplu işlemler ve içe / dışa aktarma "icerik.kaynak" yetkisiyle (Editör, Yönetici);
+// silme (tek tek ya da toplu) ve kategori silme "icerik.sil" yetkisiyle (Yönetici). Silinen bağlantı geri dönüşüm kutusuna gider.
+const linkFail = (res, e) => {
+  if (e instanceof L.LinkError) return res.status(e.status).json({ error: e.message, fields: e.fields, duplicates: e.duplicates, count: e.count });
+  if (e instanceof C.ValidationError) return bad(res, e.message, e.fields);
+  throw e;
+};
+function linkSave(req, res, id) {
+  try {
+    const item = L.save(req.user, id, req.body?.data || {}, { allowDuplicate: !!req.body?.allow_duplicate });
+    log(req.user.id, id == null ? "icerik-ekle" : "icerik-duzenle", `link:${item.id}${id == null ? "" : ` (${Object.keys(req.body?.data || {}).join(",")})`}`);
+    rebuild.schedule(`link:${item.id} ${id == null ? "eklendi" : "düzenlendi"}`, 800);
+    ok(res, { id: item.id, version: C.itemVersion("link", item.id) });
+  } catch (e) { linkFail(res, e); }
+}
+const linkMeta = () => ({ categories: L.cats(), counts: L.counts(), status: L.STATUS, sorts: L.SORTS, suggested: L.SUGGESTED });
+
+const links = express.Router();
+links.use(need("icerik.kaynak"), (_req, _res, next) => { L.adopt(); next(); });
+
+links.get("/", (req, res) => {
+  const r = L.query({ q: req.query.q, cat: req.query.cat, status: req.query.status, sort: req.query.sort, offset: req.query.offset, limit: req.query.limit });
+  ok(res, { ...r, ...linkMeta(), canDelete: P.can(req.user, "icerik.sil") });
+});
+// Form açıkken anlık mükerrer denetimi (kayıtta sunucu ayrıca denetler)
+links.get("/check", (req, res) => {
+  const url = String(req.query.url || "").trim();
+  ok(res, { duplicates: L.duplicates({ name: req.query.name, url: !url || /^https?:\/\//i.test(url) ? url : "https://" + url.replace(/^\/\//, "") }, int(req.query.id)) });
+});
+links.get("/meta", (_req, res) => ok(res, linkMeta()));
+
+// ---- görünüm ayarları (açıklamaları göster / gizle, sıralama, sayfa metinleri)
+const linkSettingsGroup = () => SS.GROUPS.find((g) => g.key === "baglantilar");
+links.get("/settings", (_req, res) => ok(res, { group: linkSettingsGroup(), values: SS.all() }));
+links.put("/settings", (req, res) => {
+  const keys = new Set(linkSettingsGroup().fields.map((f) => f.key));
+  const values = Object.fromEntries(Object.entries(req.body?.values || {}).filter(([k]) => keys.has(k)));
+  try {
+    const changes = Object.keys(SS.save(values, req.user, (perm) => P.can(req.user, perm)));
+    if (changes.length) { log(req.user.id, "ayar", changes.join(", ")); rebuild.schedule("bağlantı görünüm ayarları", 500); }
+    ok(res, { values: SS.all(), changed: changes });
+  } catch (e) {
+    if (e instanceof SS.SettingsError) return bad(res, e.message, e.fields);
+    throw e;
+  }
+});
+
+// ---- toplu işlemler
+links.post("/bulk", (req, res) => {
+  const { ids, action, value } = req.body || {};
+  try {
+    if (action === "delete") {
+      if (!P.can(req.user, "icerik.sil")) return A.fail(res, 403, "Bağlantı silme yetkiniz yok.");
+      const list = [...new Set((Array.isArray(ids) ? ids : []).map(Number).filter(Number.isInteger))];
+      if (!list.length) return bad(res, "Önce bağlantı seçin.");
+      const done = list.filter((id) => C.deleteItem("link", id, req.user.id));
+      log(req.user.id, "icerik-sil", `link: ${done.length} kayıt (toplu): ${done.join(",")}`);
+      if (done.length) rebuild.schedule("bağlantılar silindi", 500);
+      return ok(res, { count: done.length, ids: done });
+    }
+    const n = L.bulk(req.user, ids, action, value);
+    log(req.user.id, "icerik-duzenle", `link: ${n} kayıt (toplu ${action}: ${value})`);
+    if (n) rebuild.schedule("bağlantılar toplu düzenlendi", 500);
+    ok(res, { count: n });
+  } catch (e) { linkFail(res, e); }
+});
+// Silinen bağlantıları geri getirme (silme bildirimindeki "Geri al" düğmesi)
+links.post("/restore", need("icerik.sil"), (req, res) => {
+  const ids = [...new Set((Array.isArray(req.body?.ids) ? req.body.ids : []).map(Number).filter(Number.isInteger))];
+  const done = ids.filter((id) => db.prepare("UPDATE items SET deleted = 0, updated_at = datetime('now'), updated_by = ? WHERE kind = 'link' AND id = ? AND deleted = 1").run(req.user.id, id).changes);
+  if (!done.length) return A.fail(res, 404, "Geri getirilecek kayıt bulunamadı.");
+  log(req.user.id, "icerik-geri-getir", `link: ${done.join(",")}`);
+  rebuild.schedule("bağlantılar geri getirildi", 500);
+  ok(res, { count: done.length });
+});
+
+// ---- içe aktarma (CSV / Excel): önce önizleme, yönetici onayından sonra kayıt
+const importUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024, files: 1 } });
+links.post("/import/preview", (req, res) => {
+  importUpload.single("file")(req, res, (err) => {
+    if (err) return bad(res, err.code === "LIMIT_FILE_SIZE" ? "Dosya en fazla 5 MB olabilir." : "Dosya yüklenemedi.");
+    if (!req.file) return bad(res, "Bir CSV ya da Excel (.xlsx) dosyası seçin.");
+    let table;
+    try { table = SHEET.readTable(req.file.buffer, req.file.originalname); } catch (e) { return bad(res, e.message + "."); }
+    try { ok(res, L.importPreview(table)); } catch (e) { linkFail(res, e); }
+  });
+});
+links.post("/import/commit", (req, res) => {
+  try {
+    const r = L.importCommit(req.user, req.body?.rows, { skipDuplicates: req.body?.skip_duplicates !== false });
+    log(req.user.id, "baglanti-ice-aktar", `${r.created} eklendi, ${r.skipped} atlandı, ${r.failed} hatalı`);
+    if (r.created) rebuild.schedule("bağlantılar içe aktarıldı", 500);
+    ok(res, r);
+  } catch (e) { linkFail(res, e); }
+});
+links.get("/import/template.csv", (_req, res) => {
+  res.set({ "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": 'attachment; filename="baglanti-sablonu.csv"' });
+  res.send(SHEET.toCsv(["Bağlantı adı", "URL", "Açıklama", "Kategori", "Alt kategori", "Durum"], [
+    ["Örnek Araştırma Merkezi", "https://ornek.edu.tr", "Kısa açıklama (en fazla 300 karakter önerilir)", "Akademik Araştırma Merkezleri", "", "Aktif"],
+  ]));
+});
+links.get("/export", (req, res) => {
+  const xlsx = req.query.format === "xlsx", name = `baglantilar-${new Date().toISOString().slice(0, 10)}`;
+  log(req.user.id, "disa-aktar", `baglantilar (${xlsx ? "xlsx" : "csv"})`);
+  if (xlsx) {
+    res.set({ "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "Content-Disposition": `attachment; filename="${name}.xlsx"` });
+    return res.send(SHEET.toXlsx(L.EXPORT_HEAD, L.exportRows(), "Bağlantılar"));
+  }
+  res.set({ "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": `attachment; filename="${name}.csv"` });
+  res.send(SHEET.toCsv(L.EXPORT_HEAD, L.exportRows()));
+});
+
+// ---- eski "Bağlantılar" haber kategorisinden aktarım (haberler silinmez)
+links.get("/legacy", (req, res) => ok(res, { ...L.legacyList(String(req.query.cat || "")), canRedirect: P.can(req.user, "site.ayar"), linkCategories: L.cats() }));
+links.post("/legacy", (req, res) => {
+  const redirect = !!req.body?.redirect;
+  if (redirect && !P.can(req.user, "site.ayar")) return A.fail(res, 403, "Kategori sayfasını yönlendirmek için kategori yönetimi yetkisi gerekir.");
+  try {
+    const r = L.legacyTransfer(req.user, { category: req.body?.category, items: req.body?.items, redirect });
+    log(req.user.id, "baglanti-aktar", `${r.created.map((x) => `haber:${x.topic}→link:${x.link}`).join(", ") || "aktarılan yok"}${r.redirected.length ? ` · yönlendirildi: ${r.redirected.join(",")}` : ""}`);
+    if (r.created.length || r.redirected.length) rebuild.schedule("eski bağlantılar aktarıldı", 500);
+    ok(res, r);
+  } catch (e) { linkFail(res, e); }
+});
+
+links.get("/:id", (req, res) => {
+  const l = L.getLink(int(req.params.id));
+  if (!l) return A.fail(res, 404, "Bulunamadı.");
+  ok(res, { item: l, ...linkMeta() });
+});
+links.post("/", (req, res) => linkSave(req, res, null));
+links.put("/:id", (req, res) => {
+  const id = int(req.params.id);
+  if (id == null || !C.getItem("link", id)) return A.fail(res, 404, "Bulunamadı.");
+  if (staleEdit(req, res, "link", id)) return;
+  linkSave(req, res, id);
+});
+links.delete("/:id", need("icerik.sil"), (req, res) => {
+  const id = int(req.params.id);
+  if (!C.deleteItem("link", id, req.user.id)) return A.fail(res, 404, "Bulunamadı.");
+  log(req.user.id, "icerik-sil", `link:${id}`);
+  rebuild.schedule(`link:${id} silindi`, 500);
+  ok(res);
+});
+admin.use("/links", links);
+
+// ---- bağlantı kategorileri (haber kategorilerinden ayrı)
+const linkCats = express.Router();
+linkCats.use(need("icerik.kaynak"), (_req, _res, next) => { L.adopt(); next(); });
+linkCats.get("/", (_req, res) => ok(res, linkMeta()));
+linkCats.post("/", (req, res) => {
+  try {
+    const c = L.createCat(req.body?.data, req.user);
+    log(req.user.id, "kategori-ekle", `bağlantı: ${c.key} (${c.name})`);
+    ok(res, { item: c, ...linkMeta() });
+  } catch (e) { linkFail(res, e); }
+});
+linkCats.post("/suggested", (req, res) => {
+  const added = L.addSuggested(req.user);
+  if (added.length) log(req.user.id, "kategori-ekle", `bağlantı: ${added.join(", ")}`);
+  ok(res, { added, ...linkMeta() });
+});
+linkCats.put("/order", (req, res) => {
+  try {
+    L.reorderCats(req.body?.items, req.user);
+    log(req.user.id, "kategori-duzenle", "bağlantı kategorilerinin sırası");
+    rebuild.schedule("bağlantı kategorileri sıralandı", 500);
+    ok(res, linkMeta());
+  } catch (e) { linkFail(res, e); }
+});
+linkCats.put("/:key", (req, res) => {
+  try {
+    const c = L.updateCat(req.params.key, req.body?.data, req.user);
+    log(req.user.id, "kategori-duzenle", `bağlantı: ${c.key} (${c.name})`);
+    rebuild.schedule(`bağlantı kategorisi ${c.key} düzenlendi`, 500);
+    ok(res, { item: c, ...linkMeta() });
+  } catch (e) { linkFail(res, e); }
+});
+linkCats.delete("/:key", need("icerik.sil"), (req, res) => {
+  try {
+    const r = L.removeCat(req.params.key, String(req.query.move_to || req.body?.move_to || ""), req.user);
+    log(req.user.id, "kategori-sil", `bağlantı: ${req.params.key}${r.moved ? ` (${r.moved} bağlantı → ${r.to})` : ""}`);
+    rebuild.schedule(`bağlantı kategorisi ${req.params.key} silindi`, 500);
+    ok(res, { ...r, ...linkMeta() });
+  } catch (e) { linkFail(res, e); }
+});
+admin.use("/link-categories", linkCats);
 
 // ---- geri dönüşüm kutusu
 admin.get("/trash", need("icerik.sil"), (_req, res) => {

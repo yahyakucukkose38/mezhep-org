@@ -34,7 +34,10 @@ const DEFAULT_ROW = {
   name: "", label: "", slug: "", parent: "", description: "", menu_show: false, menu_order: 100,
   home_show: false, count: 6, sort: "new", style: "kart", pages: [], block_eyebrow: "", block_title: "",
   seo_title: "", seo_desc: "", open_submit: false, page: "", old_slugs: [],
+  // Doluysa kategori sayfası bu adrese yönlendirilir (eski "Bağlantılar" haber kategorisi → Bağlantılar rehberi)
+  redirect: "",
 };
+const REDIRECTS = ["baglantilar.html"];
 
 // Panel formu bu tanımla çizilir (GET /api/admin/categories).
 const GROUPS = { temel: "Temel bilgiler", menu: "Menü", gosterim: "Sayfalarda gösterim", seo: "Arama motorları (SEO)", uyelik: "Üyelik" };
@@ -144,6 +147,10 @@ function clean(input, existing) {
   }
   if ("sort" in input) { if (!SORTS[input.sort]) errors.sort = "Listeden bir seçenek seçin."; else out.sort = input.sort; }
   if ("style" in input) { if (!STYLES[input.style]) errors.style = "Listeden bir seçenek seçin."; else out.style = input.style; }
+  if ("redirect" in input) {
+    const r = String(input.redirect || "");
+    if (r && !REDIRECTS.includes(r)) errors.redirect = "Geçersiz yönlendirme."; else out.redirect = r;
+  }
   if ("pages" in input) {
     const arr = Array.isArray(input.pages) ? input.pages : String(input.pages || "").split(",");
     const pages = [...new Set(arr.map((s) => String(s).trim()).filter(Boolean))];
@@ -196,6 +203,15 @@ function remove(key) {
   if (n && n.live + n.trash > 0) return { error: `Bu kategoride ${n.live + n.trash} kayıt var; kayıtlar korunur, kategori silinemez. Menüden gizleyebilirsiniz.`, status: 400 };
   db.prepare("DELETE FROM categories WHERE key = ?").run(key);
   return { ok: true };
+}
+
+// Kategori sayfasını (ve alt kategorilerinkini) başka bir sayfaya yönlendirir ve menüden kaldırır; içeriklere dokunulmaz.
+function setRedirect(key, target, user) {
+  const c = get(key);
+  if (!c || c.page || (target && !REDIRECTS.includes(target))) return [];
+  const keys = [key, ...list().filter((x) => x.parent === key).map((x) => x.key)];
+  for (const k of keys) write(k, { ...get(k), redirect: target, menu_show: target ? false : get(k).menu_show }, user?.id);
+  return keys;
 }
 
 // ---------------------------------------------------------------- menü
@@ -279,5 +295,5 @@ seed();
 
 module.exports = {
   FIELDS, GROUPS, PAGES, COUNTS, SORTS, STYLES, MIGRATION, CategoryError,
-  list, get, create, update, remove, counts, topicChoices, labelOf, menuPages, saveMenu, seed, adoptOrphans, rollback, exportData, slugify,
+  list, get, create, update, remove, counts, setRedirect, topicChoices, labelOf, menuPages, saveMenu, seed, adoptOrphans, rollback, exportData, slugify,
 };

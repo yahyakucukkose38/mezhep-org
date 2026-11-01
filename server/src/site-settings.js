@@ -59,6 +59,15 @@ const GROUPS = [
       pattern: /^UC[\w-]{22}$/, patternMsg: "Kanal kimliği UC ile başlayan 24 karakter olmalı (YouTube kanal sayfası → Paylaş → Kanal kimliğini kopyala).",
       def: "UCGFN07whsFRvjvB7TzK-bKg" },
   ] },
+  // Bağlantılar rehberi (baglantilar.html): panelde Bağlantı Yönetimi → Görünüm ayarları ekranından düzenlenir
+  { key: "baglantilar", label: "Bağlantılar", perm: "icerik.kaynak", fields: [
+    { key: "links_title", label: "Sayfa başlığı", type: "text", def: "Akademik Bağlantılar", max: 80 },
+    { key: "links_lead", label: "Kısa tanıtım metni", type: "textarea", max: 400,
+      def: "İslam mezhepleri tarihi ve ilahiyat alanında çalışanlar için üniversiteler, araştırma merkezleri, bilimsel dergiler, kütüphaneler, veri tabanları ve dijital kaynaklardan seçilmiş bağlantılar." },
+    { key: "links_show_desc", label: "Bağlantı açıklamalarını ziyaretçilere göster", type: "bool", def: true },
+    { key: "links_sort", label: "Ziyaretçi sayfasında sıralama", type: "select", def: "az", options: ["az", "manual"],
+      labels: { az: "Ada göre (A–Z, Türkçe alfabe sırasıyla)", manual: "Özel sıra (öncelik numarası küçük olan önce), sonra A–Z" } },
+  ] },
   { key: "uyelik", label: "Üyelik ve katkılar", perm: "site.ayar", public: true, fields: [
     { key: "registration_open", label: "Yeni üye kaydı açık", type: "bool", def: true },
     { key: "submissions_open", label: "Üyeler eser, haber ve profil önerisi gönderebilir", type: "bool", def: true },

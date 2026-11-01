@@ -63,6 +63,8 @@ function createApp() {
     next();
   });
 
+  // Bağlantı içe aktarma onayı en fazla 5000 satır taşır (ön izlemeden gelen satırlar); diğer istekler 1 MB ile sınırlı
+  app.use("/api/admin/links/import/commit", express.json({ limit: "8mb" }));
   app.use("/api", express.json({ limit: "1mb" }), A.loadUser, A.sameOrigin, (req, res, next) => {
     res.set("Cache-Control", "no-store");
     next();
@@ -110,6 +112,9 @@ if (require.main === module) {
   // Kaynaklar bağlantı adresleri ve Hakkında metni artık veride (panelden düzenlenir): eksikler bir kez doldurulur.
   const filled = require("./db").runOnce("sayfa-kaynak-alanlari-2026-10", () => require("./content").fillFromSeed(cfg.SEED_DIR));
   if (filled && filled.length) { log(null, "icerik-alan-doldur", filled.join(", ")); console.log(`[icerik] eksik alanlar dolduruldu: ${filled.join(", ")}`); }
+  // Bağlantılar rehberi: kategori adıyla kaydedilmiş eski bağlantılar ayrı bağlantı kategorilerine bağlanır (bağlantılar silinmez).
+  const adopted = require("./links").adopt();
+  if (adopted.length) { log(null, "baglanti-kategorileri", `${adopted.length} bağlantı kategorisine bağlandı`); console.log(`[icerik] bağlantı kategorileri: ${adopted.length} kayıt`); }
   // Kategorisi tanımlı olmayan haberler için gizli kategori açılır (hiçbir kayıt listelerden düşmez).
   const orphans = require("./categories").adoptOrphans();
   if (orphans.length) { log(null, "kategori-ekle", `tanımsız bölümler kategoriye dönüştürüldü: ${orphans.join(", ")}`); console.log(`[icerik] tanımsız kategori: ${orphans.join(", ")}`); }

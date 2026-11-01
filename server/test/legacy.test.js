@@ -36,7 +36,7 @@ test("bölüm sayfaları ve artık olmayan kayıtlar ilgili listeye; bilinmeyen 
   assert.deepEqual(await go("/eleman.asp?cmd=2&cid=1&sid=2"), [301, "/akademisyenler.html"]);
   assert.deepEqual(await go("/eser.asp?cmd=6"), [301, "/eserler.html"]);
   assert.deepEqual(await go("/fnews.asp?page=3"), [301, "/haberler.html"]);
-  assert.deepEqual(await go("/links.asp?cmd=2&cid=2&sid=9"), [301, "/kaynaklar.html"]);
+  assert.deepEqual(await go("/links.asp?cmd=2&cid=2&sid=9"), [301, "/baglantilar.html"]);
   assert.deepEqual(await go("/policy.asp"), [301, "/hakkinda.html#kosullar"]);
   assert.deepEqual(await go("/eser_read.asp?item=999999"), [301, "/eserler.html"]);
   assert.deepEqual(await go("/link.asp?TOPIC_ID=abc"), [301, "/haberler.html"]);

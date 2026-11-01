@@ -13,7 +13,7 @@
     key: svg('<circle cx="7.5" cy="15.5" r="4.5"/><path d="m21 2-9.6 9.6M15.5 7.5l3 3L22 7l-3-3"/>'),
     users: svg('<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>')
   };
-  var KIND_LABEL = { member: "Akademisyen", work: "Eser", topic: "Haber / Etkinlik", claim: "Profil sahipliği", album: "Galeri albümü", link: "Kaynak bağlantısı", file: "Kaynak dosyası" };
+  var KIND_LABEL = { member: "Akademisyen", work: "Eser", topic: "Haber / Etkinlik", claim: "Profil sahipliği", album: "Galeri albümü", link: "Bağlantı", file: "Kaynak dosyası" };
   // İçerik türünü düzenleme yetkisi (sunucuda content.js KIND_PERM ile aynı)
   var KIND_PERM = { member: "icerik.member", work: "icerik.work", topic: "icerik.topic", album: "icerik.album", link: "icerik.kaynak", file: "icerik.kaynak", page: "icerik.sayfa" };
   var STATUS_LABEL = { pending: "Onay bekliyor", approved: "Onaylandı", rejected: "Reddedildi", active: "Etkin", blocked: "Engelli", visible: "Yayında", hidden: "Gizli" };
@@ -43,7 +43,7 @@
       body: body instanceof FormData ? body : body !== undefined ? JSON.stringify(body) : undefined
     }).then(function (r) {
       return r.json().catch(function () { return {}; }).then(function (j) {
-        if (!r.ok) { var e = new Error(j.error || "İstek başarısız."); e.fields = j.fields; e.status = r.status; throw e; }
+        if (!r.ok) { var e = new Error(j.error || "İstek başarısız."); e.fields = j.fields; e.status = r.status; e.duplicates = j.duplicates; throw e; }
         return j;
       });
     });
@@ -599,7 +599,7 @@
       if (can("icerik.work")) html += link("#/yonetim/icerik/work", "Eserler");
       if (can("icerik.topic")) html += link("#/yonetim/icerik/topic", "Haber ve etkinlikler");
       if (can("icerik.album")) html += link("#/yonetim/icerik/album", "Galeri albümleri");
-      if (can("icerik.kaynak")) html += link("#/yonetim/icerik/link", "Kaynaklar: bağlantılar") + link("#/yonetim/icerik/file", "Kaynaklar: dosyalar");
+      if (can("icerik.kaynak")) html += link("#/yonetim/baglantilar", "Bağlantı yönetimi") + link("#/yonetim/icerik/file", "Kaynaklar: dosyalar");
       if (can("icerik.sayfa")) html += link("#/yonetim/icerik/page", "Hakkında sayfası");
       if (can("site.ayar")) html += link("#/yonetim/kategoriler", "Kategoriler ve menü");
       if (can("icerik.sil")) html += link("#/yonetim/cop", "Geri dönüşüm kutusu");
@@ -1112,26 +1112,27 @@
     load();
   }
 
+  // Site ayarı alanı (site-settings.js tanımından): Site ayarları ve Bağlantılar → Görünüm ayarları ekranlarında ortak
+  function settingField(f, v) {
+    var id = "st-" + f.key, lbl = '<label for="' + id + '">' + esc(f.label) + "</label>";
+    if (f.type === "bool") return '<div class="field" data-field="' + f.key + '"><label class="check"><input type="checkbox" id="' + id + '" name="' + f.key + '"' + (v ? " checked" : "") + "> <span>" + esc(f.label) + '</span></label><span class="err" hidden></span></div>';
+    if (f.type === "textarea") return '<div class="field" data-field="' + f.key + '">' + lbl + '<textarea id="' + id + '" name="' + f.key + '" maxlength="' + (f.max || 1000) + '">' + esc(v) + '</textarea><span class="err" hidden></span></div>';
+    if (f.type === "lines") return '<div class="field" data-field="' + f.key + '">' + lbl + '<textarea id="' + id + '" name="' + f.key + '" rows="5">' + esc((v || []).join("\n")) + '</textarea><span class="err" hidden></span></div>';
+    if (f.type === "select") return '<div class="field" data-field="' + f.key + '">' + lbl + '<select id="' + id + '" name="' + f.key + '">' + f.options.map(function (o) {
+      return '<option value="' + esc(o) + '"' + (o === v ? " selected" : "") + ">" + esc((f.labels || {})[o] || o) + "</option>"; }).join("") + '</select><span class="err" hidden></span></div>';
+    var type = { number: "number", url: "url", email: "email" }[f.type] || "text";
+    return '<div class="field" data-field="' + f.key + '">' + lbl + '<input type="' + type + '" id="' + id + '" name="' + f.key + '" value="' + esc(v == null ? "" : v) + '"' +
+      (f.max && type !== "number" ? ' maxlength="' + f.max + '"' : "") + (type === "number" ? ' min="' + f.min + '" max="' + f.max + '" step="' + (f.step || 1) + '"' : "") + '><span class="err" hidden></span></div>';
+  }
+
   function viewSettings(tab) {
     setTitle("Site ayarları");
     main.innerHTML = '<h1 class="page-title">Site ayarları</h1><p class="page-lead">Sitenin metinlerini, duyurularını ve davranışını buradan yönetin. Site metinleriyle ilgili değişiklikler kaydedince birkaç saniye içinde yayınlanır.</p><div data-s><p class="muted">Yükleniyor…</p></div>';
     api("GET", "/admin/settings").then(function (j) {
       var g = j.groups.filter(function (x) { return x.key === tab; })[0] || j.groups[0];
       var tabs = '<nav class="tabs">' + j.groups.map(function (x) { return '<a href="#/yonetim/ayarlar/' + x.key + '"' + (x === g ? ' aria-current="page"' : "") + ">" + esc(x.label) + "</a>"; }).join("") + "</nav>";
-      var field = function (f) {
-        var v = j.values[f.key], id = "st-" + f.key;
-        var lbl = '<label for="' + id + '">' + esc(f.label) + "</label>";
-        if (f.type === "bool") return '<div class="field" data-field="' + f.key + '"><label class="check"><input type="checkbox" id="' + id + '" name="' + f.key + '"' + (v ? " checked" : "") + "> <span>" + esc(f.label) + '</span></label><span class="err" hidden></span></div>';
-        if (f.type === "textarea") return '<div class="field" data-field="' + f.key + '">' + lbl + '<textarea id="' + id + '" name="' + f.key + '" maxlength="' + (f.max || 1000) + '">' + esc(v) + '</textarea><span class="err" hidden></span></div>';
-        if (f.type === "lines") return '<div class="field" data-field="' + f.key + '">' + lbl + '<textarea id="' + id + '" name="' + f.key + '" rows="5">' + esc((v || []).join("\n")) + '</textarea><span class="err" hidden></span></div>';
-        if (f.type === "select") return '<div class="field" data-field="' + f.key + '">' + lbl + '<select id="' + id + '" name="' + f.key + '">' + f.options.map(function (o) {
-          return '<option value="' + esc(o) + '"' + (o === v ? " selected" : "") + ">" + esc((f.labels || {})[o] || o) + "</option>"; }).join("") + '</select><span class="err" hidden></span></div>';
-        var type = { number: "number", url: "url", email: "email" }[f.type] || "text";
-        return '<div class="field" data-field="' + f.key + '">' + lbl + '<input type="' + type + '" id="' + id + '" name="' + f.key + '" value="' + esc(v == null ? "" : v) + '"' +
-          (f.max && type !== "number" ? ' maxlength="' + f.max + '"' : "") + (type === "number" ? ' min="' + f.min + '" max="' + f.max + '" step="' + (f.step || 1) + '"' : "") + '><span class="err" hidden></span></div>';
-      };
       $("[data-s]", main).innerHTML = tabs + (g.note ? '<div class="notice info">' + esc(g.note) + (can("site.ayar") ? ' <a href="#/yonetim/kategoriler">Kategoriler ve menü →</a>' : "") + "</div>" : "") +
-        '<form class="form panel" novalidate>' + g.fields.map(field).join("") +
+        '<form class="form panel" novalidate>' + g.fields.map(function (fd) { return settingField(fd, j.values[fd.key]); }).join("") +
         '<div class="form-actions"><button class="btn btn-primary" type="submit">Kaydet</button>' + (g.key === "duyuru" || g.key === "anasayfa" || g.key === "genel" ? '<a class="btn btn-ghost" href="/index.html" target="_blank">Siteyi aç</a>' : "") + "</div></form>";
       var f = $("form", main);
       f.addEventListener("submit", function (e) {
@@ -1154,7 +1155,8 @@
     "icerik-ekle": "Kayıt ekledi", "icerik-duzenle": "Kaydı düzenledi", "icerik-sil": "Kaydı sildi", "icerik-geri-getir": "Kaydı geri getirdi",
     "kendi-guncelle": "Kendi kaydını güncelledi", "yorum-visible": "Yorumu yayınladı", "yorum-hidden": "Yorumu gizledi", "yorum-sil": "Yorumu sildi", "yorum-duzenle": "Yorumu düzenledi", "yorum-geri": "Yorumu geri getirdi",
     "site-uret": "Siteyi yeniden üretti", "disa-aktar": "Dışa aktardı", "icerik-yenile": "İçerik yenilendi", "ilk-yonetici": "İlk yönetici oluşturuldu",
-    "kategori-ekle": "Kategori ekledi", "kategori-duzenle": "Kategoriyi düzenledi", "kategori-sil": "Kategoriyi sildi", "menu-duzenle": "Menüyü düzenledi", "kategori-geri-al": "Kategori tabloları kaldırıldı"
+    "kategori-ekle": "Kategori ekledi", "kategori-duzenle": "Kategoriyi düzenledi", "kategori-sil": "Kategoriyi sildi", "menu-duzenle": "Menüyü düzenledi", "kategori-geri-al": "Kategori tabloları kaldırıldı",
+    "baglanti-ice-aktar": "Bağlantı içe aktardı", "baglanti-aktar": "Eski bağlantıları aktardı", "baglanti-kategorileri": "Bağlantı kategorileri bağlandı"
   };
 
   function viewLogs() {
@@ -1303,6 +1305,7 @@
       var info = isNew ? '<div class="notice info">Kategori oluşturulduğunda sayfası kendiliğinden açılır. Bir haberi bu kategoriye almak için haberin “Kategori” alanında seçmeniz yeterlidir.</div>'
         : '<div class="notice info">Bu kategoride <strong>' + n.live + "</strong> yayımlanmış içerik var" + (hasKids ? " (alt kategorilerle)" : "") + (n.trash ? " (" + n.trash + " içerik geri dönüşüm kutusunda)" : "") +
           ' · Sayfa: <a href="' + esc(catUrl(c)) + '" target="_blank" rel="noopener">' + esc(catUrl(c)) + '</a> · <a href="#/yonetim/icerik/topic?kat=' + encodeURIComponent(c.key) + '">İçerikleri listele</a></div>';
+      if (!isNew && c.redirect) info += '<div class="notice warn">Bu kategorinin sayfası <a href="/' + esc(c.redirect) + '" target="_blank" rel="noopener">Bağlantılar rehberine</a> yönlendiriliyor (içerikleri silinmedi). <button type="button" class="btn btn-ghost btn-sm" data-unredirect>Yönlendirmeyi kaldır</button></div>';
       var canDel = !isNew && !c.page && !hasKids && !(own.live + own.trash);
       $("[data-f]", main).innerHTML = info + '<form class="form panel" novalidate>' + groups + '<div class="form-actions"><button class="btn btn-primary" type="submit">' + (isNew ? "Kategoriyi oluştur" : "Kaydet ve yayınla") + "</button>" +
         '<a class="btn btn-ghost" href="#/yonetim/kategoriler">Vazgeç</a>' + (canDel ? '<button class="btn btn-danger" type="button" data-del>Kategoriyi sil</button>' : "") + "</div></form>";
@@ -1337,6 +1340,10 @@
         if (isNew && !data.menu_show && String(data.name || "").trim()) {
           askMenu(data.name.trim()).then(function (yes) { if (yes === null) return; data.menu_show = yes; send(); });
         } else send();
+      });
+      var unr = $("[data-unredirect]", main);
+      unr && unr.addEventListener("click", function () {
+        api("PUT", "/admin/categories/" + encodeURIComponent(key), { data: { redirect: "" } }).then(function () { toast("Yönlendirme kaldırıldı; kategori sayfası yeniden üretilecek. Menüde göstermek için “Ana menüde göster”i işaretleyin."); render(); }).catch(fail);
       });
       var del = $("[data-del]", main);
       del && del.addEventListener("click", function () {
@@ -1410,17 +1417,17 @@
   }
 
   var CONTENT = { member: ["Akademisyenler", "akademisyen"], work: ["Eserler", "eser"], topic: ["Haber ve etkinlikler", "haber"],
-    album: ["Galeri albümleri", "galeri"], link: ["Kaynaklar: bağlantılar", "kaynaklar"], file: ["Kaynaklar: dosyalar", "kaynaklar"], page: ["Hakkında sayfası", "hakkinda"] };
+    album: ["Galeri albümleri", "galeri"], link: ["Bağlantılar", "baglantilar"], file: ["Kaynaklar: dosyalar", "kaynaklar"], page: ["Hakkında sayfası", "hakkinda"] };
   var CONTENT_LEAD = {
     album: "Albümler galeride etkinlik adına göre gruplanır. Yeni albüm açıp fotoğrafları yükleyin; kaydedince galeride yayınlanır.",
-    link: "Kaynaklar sayfasındaki önerilen siteler ve dergiler; sayfada “Bölüm” başlıkları altında listelenir.",
     file: "Kaynaklar sayfasındaki indirilebilir dosyalar; indirme adresi verilen dosya sitede bağlantı olarak görünür."
   };
   // Kaydın sitedeki sayfası (Sayfaya dön / Sitede yayında bağlantısı)
   function contentPage(kind, id) {
     // albüm numarası = etkinlik numarası × 1000 + albüm numarası (adres: galeri/etkinlik-albüm.html)
     if (kind === "album") return typeof id === "number" ? "/galeri/" + Math.floor(id / 1000) + "-" + (id % 1000) + ".html" : "/galeri.html";
-    if (kind === "link" || kind === "file") return "/kaynaklar.html";
+    if (kind === "link") return "/baglantilar.html";
+    if (kind === "file") return "/kaynaklar.html";
     if (kind === "page") return "/hakkinda.html";
     return "/" + CONTENT[kind][1] + "/" + id + ".html";
   }
@@ -1464,18 +1471,20 @@
     load(q, offset);
   }
 
-  function viewContentEdit(kind, id) {
+  function viewContentEdit(kind, id, params) {
     if (!CONTENT[kind]) return viewNotFound();
-    var isNew = id === "yeni", single = kind === "page";
+    var isNew = id === "yeni", single = kind === "page", yazi = kind === "topic" && isNew && (params || {}).tur === "yazi";
     setTitle(isNew ? "Yeni kayıt" : "Düzenle");
     var page = isNew ? "" : contentPage(kind, id);
     var hasPreview = ["member", "work", "topic", "page"].indexOf(kind) > -1;
-    main.innerHTML = (single ? "" : '<p><a class="link-arrow" href="#/yonetim/icerik/' + kind + '">← ' + CONTENT[kind][0] + "</a></p>") + '<h1 class="page-title" data-h>' + (isNew ? "Yeni kayıt" : "Düzenle") + "</h1>" +
+    main.innerHTML = (single ? "" : '<p><a class="link-arrow" href="#/yonetim/icerik/' + kind + '">← ' + CONTENT[kind][0] + "</a></p>") + (kind === "topic" && isNew ? typeSwitch(yazi ? "yazi" : "haber") : "") +
+      '<h1 class="page-title" data-h>' + (isNew ? (kind === "topic" ? (yazi ? "Yeni yazı" : "Yeni haber") : "Yeni kayıt") : "Düzenle") + "</h1>" +
+      (yazi ? '<p class="page-lead">Yazı: makale, eser tanıtımı, duyuru gibi haber dışı içerikler. Hangi bölümde yayımlanacağını “Kategori” alanından seçin.</p>' : "") +
       (single ? '<p class="page-lead">Sık sorulan sorular “Sık sorulan sorular” kategorisindeki içeriklerden, iletişim bilgileri Site ayarları → Genel bölümünden gelir.</p>' : "") +
       '<form class="form panel" novalidate><div class="form" data-fields><p class="muted">Yükleniyor…</p></div><div class="form-actions"><button class="btn btn-primary" type="submit">Kaydet ve yayınla</button>' +
       (hasPreview ? '<button class="btn btn-ghost" type="button" data-preview>Önizle</button>' : "") +
       (isNew ? "" : '<a class="btn btn-ghost" data-back href="' + page + '">Sayfaya dön</a>' + (can("icerik.sil") && !single ? '<button class="btn btn-danger" type="button" data-del>Sil</button>' : "")) + "</div></form>";
-    var load = isNew ? Promise.resolve({ values: kind === "topic" ? { forum: "haber" } : kind === "member" ? { group: "Öğretim Elemanları" } : {} }) : api("GET", "/items/" + kind + "/" + id);
+    var load = isNew ? Promise.resolve({ values: kind === "topic" ? { forum: yazi ? "" : "haber" } : kind === "member" ? { group: "Öğretim Elemanları" } : {} }) : api("GET", "/items/" + kind + "/" + id);
     load.then(function (j) {
       if (!isNew) $("[data-h]", main).textContent = j.label;
       return buildForm($("[data-fields]", main), kind, j.values, { admin: true }).then(function (form) {
@@ -1497,6 +1506,486 @@
             if (y) api("DELETE", "/admin/items/" + kind + "/" + id).then(function () { toast("Kayıt silindi."); go("#/yonetim/icerik/" + kind); }).catch(fail);
           });
         });
+      });
+    }).catch(fail);
+  }
+
+  /* ---------------------------------------------------------------- Bağlantı Yönetimi */
+  // Bağlantılar rehberi (baglantilar.html) haberlerden bağımsızdır: kendi kategorileri, toplu işlemleri ve içe / dışa aktarması var.
+  // Ekleme ve düzenleme "icerik.kaynak" (Editör, Yönetici); silme "icerik.sil" (Yönetici). Sunucu her istekte ayrıca denetler.
+  var LINK_TABS = [["", "Tüm bağlantılar"], ["yeni", "Yeni bağlantı ekle"], ["kategoriler", "Kategoriler"], ["toplu", "Toplu işlemler"], ["gorunum", "Görünüm ayarları"]];
+  var SEARCH_IC = svg('<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>');
+  function linkHead(cur, lead) {
+    return '<h1 class="page-title">Bağlantı Yönetimi</h1><p class="page-lead">' + lead + '</p><nav class="tabs" aria-label="Bağlantı yönetimi">' + LINK_TABS.map(function (t) {
+      return '<a href="#/yonetim/baglantilar' + (t[0] ? "/" + t[0] : "") + '"' + (t[0] === cur ? ' aria-current="page"' : "") + ">" + t[1] + "</a>";
+    }).join("") + "</nav>";
+  }
+  // Kategori seçenekleri: alt kategoriler girintili; except: kendisi ve alt kategorileri listelenmez
+  function linkCatOptions(cats, sel, except) {
+    return cats.filter(function (c) { return !except || (c.key !== except && c.parent !== except); }).map(function (c) {
+      return '<option value="' + esc(c.key) + '"' + (c.key === sel ? " selected" : "") + ">" + (c.parent ? "— " : "") + esc(c.name) + "</option>";
+    }).join("");
+  }
+  function hostOf(u) { var m = /^https?:\/\/([^/:?#]+)/i.exec(u || ""); return m ? m[1].replace(/^www\./i, "") : ""; }
+  // Silme bildirimi: "Geri al" ile kayıtlar geri dönüşüm kutusundan hemen geri getirilir
+  function undoToast(msg, ids, after) {
+    var t = document.createElement("div");
+    t.className = "toast has-action";
+    t.innerHTML = '<span>' + esc(msg) + '</span><button type="button" class="toast-btn" data-undo>Geri al</button>';
+    $(".toast-zone").appendChild(t);
+    var b = $("[data-undo]", t);
+    b.addEventListener("click", function () {
+      b.disabled = true;
+      rawApi("POST", "/admin/links/restore", { ids: ids }).then(function () { t.remove(); toast("Geri getirildi."); if (after) after(); }).catch(function (e) { b.disabled = false; fail(e); });
+    });
+    setTimeout(function () { t.remove(); }, 12000);
+  }
+  // Aynı adres ya da ad kayıtlıysa sorulur: true (yine de kaydet) / false
+  function askDuplicate(list) {
+    return new Promise(function (resolve) {
+      var answer = false;
+      dialog('<h3>Benzer bağlantı zaten kayıtlı</h3><p>Aynı bağlantıyı yanlışlıkla ikinci kez eklemiş olabilirsiniz:</p><ul class="dup-list">' + list.map(function (d) {
+        return '<li><a href="#/yonetim/baglantilar/' + d.id + '" target="_blank" rel="noopener">#' + d.id + " " + esc(d.name) + "</a> · " + (d.reason === "url" ? "aynı adres" : "aynı ad") + (d.url ? '<br><span class="muted">' + esc(d.url) + "</span>" : "") + "</li>";
+      }).join("") + '</ul><div class="form-actions"><button class="btn btn-primary" data-yes>Yine de kaydet</button><button class="btn btn-ghost" data-close>Vazgeç</button></div>', function (d) {
+        $("[data-yes]", d).addEventListener("click", function () { answer = true; d.close(); });
+        d.addEventListener("close", function () { resolve(answer); }, { once: true });
+      });
+    });
+  }
+  // Yeni içerik eklerken tür seçimi: Haber ve Yazı haber formunu, Bağlantı bağlantı formunu açar
+  function typeSwitch(cur) {
+    var items = [];
+    if (can("icerik.topic")) items.push(["haber", "Haber", "#/yonetim/icerik/topic/yeni"], ["yazi", "Yazı", "#/yonetim/icerik/topic/yeni?tur=yazi"]);
+    if (can("icerik.kaynak")) items.push(["link", "Bağlantı", "#/yonetim/baglantilar/yeni"]);
+    if (items.length < 2) return "";
+    return '<div class="type-switch" role="group" aria-label="İçerik türü"><span class="lbl">İçerik türü:</span>' + items.map(function (x) {
+      return '<a class="btn btn-sm ' + (x[0] === cur ? "btn-primary" : "btn-ghost") + '" href="' + x[2] + '"' + (x[0] === cur ? ' aria-current="page"' : "") + ">" + x[1] + "</a>";
+    }).join("") + "</div>";
+  }
+
+  function viewLinks(params) {
+    setTitle("Bağlantı Yönetimi");
+    var st = { q: decodeURIComponent(params.q || ""), cat: decodeURIComponent(params.cat || ""), status: params.status || "", sort: params.sort || "az", offset: 0 };
+    var sel = {}, first = true, t, last = null, del = can("icerik.sil");
+    main.innerHTML = linkHead("", 'Bağlantılar rehberindeki kayıtlar (<a href="/baglantilar.html" target="_blank" rel="noopener">sitede aç</a>). Rehber haberlerden bağımsızdır; sitede kategorilere ayrılmış, alfabetik kısa listeler olarak görünür.') +
+      '<div class="toolbar-row"><label class="input">' + SEARCH_IC + '<input type="search" data-q placeholder="Ad, açıklama, adres ya da etiket ara…" aria-label="Bağlantı ara" value="' + esc(st.q) + '"></label>' +
+      '<select class="select" data-cat aria-label="Kategori"><option value="">Tüm kategoriler</option></select>' +
+      '<select class="select" data-status aria-label="Durum"><option value="">Tüm durumlar</option><option value="aktif">Aktif</option><option value="pasif">Pasif</option></select>' +
+      '<select class="select" data-sort aria-label="Sıralama"></select><a class="btn btn-primary btn-sm" href="#/yonetim/baglantilar/yeni">Yeni bağlantı</a></div>' +
+      '<div class="bulk-bar" data-bulk hidden role="region" aria-label="Seçilen bağlantılar"><strong data-bulk-n></strong><select class="select" data-bulk-cat aria-label="Taşınacak kategori"><option value="">Kategoriye taşı…</option></select>' +
+      '<button type="button" class="btn btn-ghost btn-sm" data-bulk-move>Taşı</button><button type="button" class="btn btn-ghost btn-sm" data-bulk-on>Aktif yap</button><button type="button" class="btn btn-ghost btn-sm" data-bulk-off>Pasif yap</button>' +
+      (del ? '<button type="button" class="btn btn-danger btn-sm" data-bulk-del>Sil</button>' : "") + '<button type="button" class="btn btn-ghost btn-sm" data-bulk-clear>Seçimi kaldır</button></div>' +
+      '<div data-l><p class="muted">Yükleniyor…</p></div>';
+    var qEl = $("[data-q]", main), catEl = $("[data-cat]", main), stEl = $("[data-status]", main), sortEl = $("[data-sort]", main), bar = $("[data-bulk]", main), box = $("[data-l]", main);
+    stEl.value = st.status;
+    var ids = function () { return Object.keys(sel).map(Number); };
+    var drawBar = function () {
+      var n = ids().length;
+      bar.hidden = !n;
+      $("[data-bulk-n]", bar).textContent = n + " bağlantı seçili";
+    };
+    var load = function () {
+      var qs = "q=" + encodeURIComponent(st.q) + "&cat=" + encodeURIComponent(st.cat) + "&status=" + st.status + "&sort=" + st.sort + "&offset=" + st.offset + "&limit=50";
+      api("GET", "/admin/links?" + qs).then(function (j) {
+        last = j;
+        if (first) {
+          first = false;
+          catEl.insertAdjacentHTML("beforeend", linkCatOptions(j.categories, st.cat));
+          $("[data-bulk-cat]", bar).insertAdjacentHTML("beforeend", linkCatOptions(j.categories, ""));
+          sortEl.innerHTML = Object.keys(j.sorts).map(function (k) { return '<option value="' + k + '"' + (k === st.sort ? " selected" : "") + ">" + esc(j.sorts[k]) + "</option>"; }).join("");
+        }
+        if (!j.items.length) {
+          box.innerHTML = '<div class="empty">' + (st.q || st.cat || st.status ? "Aramanızla eşleşen bağlantı yok." : 'Henüz bağlantı yok. <a href="#/yonetim/baglantilar/yeni">İlk bağlantıyı ekleyin</a> ya da <a href="#/yonetim/baglantilar/toplu">dosyadan içe aktarın</a>.') + "</div>";
+          return;
+        }
+        var allOn = j.items.every(function (it) { return sel[it.id]; });
+        // "hepsini seç" tablonun üstünde: telefonda tablo kartlara dönüşünce başlık satırı gizlenir
+        box.innerHTML = '<div class="list-head"><p class="muted">' + j.total + " bağlantı" + (j.total > j.limit ? " · " + (j.offset + 1) + "–" + Math.min(j.offset + j.limit, j.total) + " gösteriliyor" : "") + "</p>" +
+          '<label class="check"><input type="checkbox" data-all' + (allOn ? " checked" : "") + "> <span>Bu sayfadakilerin hepsini seç</span></label></div>" +
+          '<div class="p-table-wrap"><table class="p-table link-table"><thead><tr><th class="sel"><span class="sr-only">Seç</span></th><th>Bağlantı adı</th><th>Kategori</th><th>URL</th><th>Durum</th><th>İşlemler</th></tr></thead><tbody>' +
+          j.items.map(function (it) {
+            return '<tr><td class="sel"><input type="checkbox" data-sel="' + it.id + '" aria-label="Seç: ' + esc(it.name) + '"' + (sel[it.id] ? " checked" : "") + "></td>" +
+              '<td><a class="lk-title" href="#/yonetim/baglantilar/' + it.id + '">' + esc(it.name) + "</a>" + (it.desc ? '<div class="sub clamp-1">' + esc(it.desc) + "</div>" : "") + "</td>" +
+              "<td>" + esc(it.category_label) + "</td>" +
+              '<td class="sub">' + (it.url ? '<a href="' + esc(it.url) + '" target="_blank" rel="noopener noreferrer">' + esc(hostOf(it.url) || it.url) + "</a>" : '<span class="badge b-rose">adres yok</span>') + "</td>" +
+              "<td>" + (it.status === "pasif" ? '<span class="badge">Pasif</span>' : '<span class="badge b-brand">Aktif</span>') + "</td>" +
+              '<td><div class="actions"><a class="btn btn-ghost btn-sm" href="#/yonetim/baglantilar/' + it.id + '">Düzenle</a>' +
+              (j.canDelete ? '<button type="button" class="btn btn-ghost btn-sm" data-del="' + it.id + '" data-name="' + esc(it.name) + '">Sil</button>' : "") + "</div></td></tr>";
+          }).join("") + '</tbody></table></div><div class="form-actions" style="justify-content:center;margin-top:14px">' +
+          (j.offset > 0 ? '<button class="btn btn-ghost btn-sm" data-prev>Önceki</button>' : "") + (j.offset + j.limit < j.total ? '<button class="btn btn-ghost btn-sm" data-next>Sonraki</button>' : "") + "</div>";
+        $$("[data-sel]", box).forEach(function (cb) { cb.addEventListener("change", function () { if (cb.checked) sel[cb.dataset.sel] = 1; else delete sel[cb.dataset.sel]; drawBar(); }); });
+        $("[data-all]", box).addEventListener("change", function (e) {
+          j.items.forEach(function (it) { if (e.target.checked) sel[it.id] = 1; else delete sel[it.id]; });
+          $$("[data-sel]", box).forEach(function (cb) { cb.checked = e.target.checked; });
+          drawBar();
+        });
+        $$("[data-del]", box).forEach(function (b) {
+          b.addEventListener("click", function () {
+            confirmBox("“" + b.dataset.name + "” geri dönüşüm kutusuna taşınacak ve sitede görünmeyecek.", "Sil", true).then(function (y) {
+              if (!y) return;
+              api("DELETE", "/admin/links/" + b.dataset.del).then(function () { delete sel[b.dataset.del]; drawBar(); undoToast("Bağlantı silindi.", [+b.dataset.del], load); load(); }).catch(fail);
+            });
+          });
+        });
+        var p = $("[data-prev]", box), n = $("[data-next]", box);
+        p && p.addEventListener("click", function () { st.offset -= j.limit; load(); window.scrollTo(0, 0); });
+        n && n.addEventListener("click", function () { st.offset += j.limit; load(); window.scrollTo(0, 0); });
+      }).catch(fail);
+    };
+    qEl.addEventListener("input", function () { clearTimeout(t); t = setTimeout(function () { st.q = qEl.value.trim(); st.offset = 0; load(); }, 250); });
+    catEl.addEventListener("change", function () { st.cat = catEl.value; st.offset = 0; load(); });
+    stEl.addEventListener("change", function () { st.status = stEl.value; st.offset = 0; load(); });
+    sortEl.addEventListener("change", function () { st.sort = sortEl.value; st.offset = 0; load(); });
+    var bulk = function (action, value, msg) {
+      var list = ids();
+      api("POST", "/admin/links/bulk", { ids: list, action: action, value: value }).then(function (r) {
+        sel = {}; drawBar();
+        if (action === "delete") undoToast(r.count + " bağlantı silindi.", r.ids, load); else toast(msg.replace("%d", r.count));
+        load();
+      }).catch(fail);
+    };
+    $("[data-bulk-move]", bar).addEventListener("click", function () {
+      var v = $("[data-bulk-cat]", bar).value;
+      if (!v) return toast("Önce taşınacak kategoriyi seçin.", true);
+      bulk("category", v, "%d bağlantı taşındı. Site birkaç saniye içinde güncellenecek.");
+    });
+    $("[data-bulk-on]", bar).addEventListener("click", function () { bulk("status", "aktif", "%d bağlantı aktif yapıldı."); });
+    $("[data-bulk-off]", bar).addEventListener("click", function () { bulk("status", "pasif", "%d bağlantı pasif yapıldı; sitede görünmeyecek."); });
+    $("[data-bulk-clear]", bar).addEventListener("click", function () { sel = {}; drawBar(); $$("[data-sel], [data-all]", box).forEach(function (cb) { cb.checked = false; }); });
+    var bd = $("[data-bulk-del]", bar);
+    bd && bd.addEventListener("click", function () {
+      var n = ids().length;
+      confirmBox(n + " bağlantı geri dönüşüm kutusuna taşınacak ve sitede görünmeyecek. Geri dönüşüm kutusundan geri getirilebilir.", "Sil", true).then(function (y) { if (y) bulk("delete"); });
+    });
+    load();
+  }
+
+  function viewLinkEdit(id) {
+    var isNew = id === "yeni";
+    setTitle(isNew ? "Yeni bağlantı" : "Bağlantıyı düzenle");
+    main.innerHTML = (isNew ? linkHead("yeni", "Bağlantı adı, internet adresi ve kategori zorunludur; diğer alanlar isteğe bağlıdır.") + typeSwitch("link") :
+      '<p><a class="link-arrow" href="#/yonetim/baglantilar">← Tüm bağlantılar</a></p><h1 class="page-title" data-h>Bağlantıyı düzenle</h1>') + '<div data-f><p class="muted">Yükleniyor…</p></div>';
+    (isNew ? api("GET", "/admin/links/meta") : api("GET", "/admin/links/" + id)).then(function (j) {
+      var it = j.item || { name: "", url: "", category: "", sub: "", desc: "", hide_desc: false, logo: "", tags: [], status: "aktif", order: null };
+      var cats = j.categories, version = it.version;
+      if (!isNew) $("[data-h]", main).textContent = it.name;
+      if (!cats.length) {
+        $("[data-f]", main).innerHTML = '<div class="notice warn">Bağlantı eklemeden önce en az bir kategori gerekir. <a href="#/yonetim/baglantilar/kategoriler">Kategoriler</a> ekranından kategori açın ya da önerilen başlangıç kategorilerini ekleyin.</div>';
+        return;
+      }
+      var tops = cats.filter(function (c) { return !c.parent; });
+      var subOpts = function (cat, v) {
+        var kids = cats.filter(function (c) { return c.parent === cat; });
+        return '<option value="">' + (kids.length ? "— Alt kategori yok —" : "Bu kategorinin alt kategorisi yok") + "</option>" + kids.map(function (c) { return '<option value="' + esc(c.key) + '"' + (c.key === v ? " selected" : "") + ">" + esc(c.name) + "</option>"; }).join("");
+      };
+      var fld = function (key, label, input, hint, req) {
+        return '<div class="field" data-field="' + key + '"><label for="l-' + key + '">' + label + (req ? '<span class="req" aria-hidden="true">*</span>' : "") + "</label>" + input + (hint ? '<span class="hint">' + hint + "</span>" : "") + '<span class="err" hidden></span></div>';
+      };
+      $("[data-f]", main).innerHTML = '<form class="form panel" novalidate>' +
+        fld("name", "Bağlantı adı", '<input type="text" id="l-name" name="name" maxlength="200" required value="' + esc(it.name) + '">', "", true) +
+        fld("url", "İnternet adresi (URL)", '<input type="text" id="l-url" name="url" inputmode="url" autocomplete="off" spellcheck="false" maxlength="600" placeholder="https://" required value="' + esc(it.url) + '">',
+          'Yalnızca http:// ve https:// adresleri kabul edilir; “www.ornek.edu.tr” yazarsanız başına https:// eklenir. <a data-try target="_blank" rel="noopener noreferrer"' + (it.url ? ' href="' + esc(it.url) + '"' : " hidden") + ">Adresi yeni sekmede dene</a>", true) +
+        '<div class="notice warn" data-dup hidden role="status"></div>' +
+        '<div class="row2">' + fld("category", "Kategori", '<select id="l-category" name="category" required><option value="">Seçin…</option>' + tops.map(function (c) { return '<option value="' + esc(c.key) + '"' + (c.key === it.category ? " selected" : "") + ">" + esc(c.name) + "</option>"; }).join("") + "</select>",
+          '<a href="#/yonetim/baglantilar/kategoriler">Kategorileri yönet</a>', true) +
+        fld("sub", "Alt kategori", '<select id="l-sub" name="sub">' + subOpts(it.category, it.sub) + "</select>") + "</div>" +
+        fld("desc", "Kısa açıklama", '<textarea id="l-desc" name="desc" maxlength="500" rows="3">' + esc(it.desc) + "</textarea>", '<span data-count></span>') +
+        '<div class="field" data-field="hide_desc"><label class="check"><input type="checkbox" name="hide_desc"' + (it.hide_desc ? " checked" : "") + "> <span>Bu bağlantının açıklamasını sitede gösterme</span></label></div>" +
+        fieldHtml({ key: "logo", label: "Logo veya simge (isteğe bağlı; boşsa bağlantı simgesi görünür)", type: "image" }, it.logo, {}) +
+        '<div class="row2">' + fld("tags", "Etiketler", '<input type="text" id="l-tags" name="tags" maxlength="400" value="' + esc((it.tags || []).join(", ")) + '">', "Virgülle ayırın; sitede aramada kullanılır.") +
+        fld("order", "Özel sıralama önceliği", '<input type="number" id="l-order" name="order" min="1" max="9999" step="1" value="' + esc(it.order == null ? "" : it.order) + '">', "Küçük sayı önce gelir; yalnızca “Özel sıra” seçildiğinde kullanılır. Boş: sona.") + "</div>" +
+        '<fieldset class="field" data-field="status"><legend class="lbl">Yayın durumu</legend><div class="radio-row">' +
+        '<label class="check"><input type="radio" name="status" value="aktif"' + (it.status !== "pasif" ? " checked" : "") + "> <span>Aktif <span class=\"muted\">(sitede görünür)</span></span></label>" +
+        '<label class="check"><input type="radio" name="status" value="pasif"' + (it.status === "pasif" ? " checked" : "") + "> <span>Pasif <span class=\"muted\">(taslak; sitede görünmez)</span></span></label></div><span class=\"err\" hidden></span></fieldset>" +
+        '<div class="form-actions"><button class="btn btn-primary" type="submit">Kaydet</button><button class="btn btn-ghost" type="button" data-draft>Taslak olarak kaydet</button>' +
+        '<a class="btn btn-ghost" href="#/yonetim/baglantilar" data-cancel>İptal</a>' + (!isNew && can("icerik.sil") ? '<button class="btn btn-danger" type="button" data-del>Sil</button>' : "") + "</div></form>";
+      var f = $("form", main), el = function (n) { return f.elements[n]; };
+      setupImage($("[data-image]", f));
+      var values = function () {
+        return { name: el("name").value, url: el("url").value.trim(), category: el("category").value, sub: el("sub").value, desc: el("desc").value, hide_desc: el("hide_desc").checked,
+          logo: $('[data-image] input[type="hidden"]', f).value, tags: el("tags").value, order: el("order").value, status: $('input[name="status"]:checked', f).value };
+      };
+      var base = values();
+      el("category").addEventListener("change", function () { el("sub").innerHTML = subOpts(el("category").value, ""); });
+      // açıklama sayacı: 300 karakter önerilir
+      var count = function () {
+        var n = el("desc").value.length, c = $("[data-count]", f);
+        c.textContent = n + " / 300 karakter (önerilen sınır)" + (n > 300 ? " · Önerilenden uzun; listede kısa açıklama daha okunaklıdır." : "");
+        c.classList.toggle("over", n > 300);
+      };
+      el("desc").addEventListener("input", count); count();
+      // adres: şemasız adres https:// ile tamamlanır; tehlikeli şemalar hemen işaretlenir
+      var tryA = $("[data-try]", f), dupBox = $("[data-dup]", f);
+      var normUrl = function () {
+        var v = el("url").value.trim();
+        if (v && !/^[a-z][a-z0-9+.-]*:/i.test(v) && /^(\/\/)?[\w-]+(\.[\w-]+)+(:\d+)?([/?#]\S*)?$/i.test(v)) { v = "https://" + v.replace(/^\/\//, ""); el("url").value = v; }
+        var okUrl = /^https?:\/\/[^\s"'<>]+\.[^\s"'<>]+$/i.test(v), uf = $('[data-field="url"]', f), ue = $(".err", uf), wrong = !!v && !okUrl;
+        uf.classList.toggle("has-err", wrong); ue.hidden = !wrong;
+        ue.textContent = wrong ? "Geçerli bir adres girin. Yalnızca http:// ve https:// adresleri kabul edilir." : "";
+        tryA.hidden = !okUrl; if (okUrl) tryA.href = v;
+        return okUrl;
+      };
+      var checkDup = function () {
+        var v = values();
+        if (!v.name.trim() && !v.url) { dupBox.hidden = true; return; }
+        rawApi("GET", "/admin/links/check?url=" + encodeURIComponent(v.url) + "&name=" + encodeURIComponent(v.name) + (isNew ? "" : "&id=" + id)).then(function (r) {
+          dupBox.hidden = !r.duplicates.length;
+          dupBox.innerHTML = r.duplicates.length ? "<strong>Benzer kayıt var:</strong> " + r.duplicates.map(function (d) {
+            return '<a href="#/yonetim/baglantilar/' + d.id + '" target="_blank" rel="noopener">#' + d.id + " " + esc(d.name) + "</a> (" + (d.reason === "url" ? "aynı adres" : "aynı ad") + ")";
+          }).join(", ") + ". Kaydederseniz ayrıca onayınız istenir." : "";
+        }).catch(function () {});
+      };
+      el("url").addEventListener("blur", function () { normUrl(); checkDup(); });
+      el("name").addEventListener("blur", checkDup);
+      var send = function (draft, allowDup) {
+        normUrl();
+        var cur = values();
+        if (draft) cur.status = "pasif";
+        var data = isNew ? cur : changedValues(base, cur);
+        if (!data) return toast("Değişiklik yok.");
+        var b = draft ? $("[data-draft]", f) : $("button[type=submit]", f); busy(b, true);
+        var started = Date.now();
+        (isNew ? api("POST", "/admin/links", { data: data, allow_duplicate: !!allowDup }) : api("PUT", "/admin/links/" + id, { data: data, version: version, allow_duplicate: !!allowDup })).then(function (r) {
+          busy(b, false); showFieldErrors(f, {});
+          toast(cur.status === "pasif" ? "Taslak olarak kaydedildi (pasif); sitede görünmez." : "Kaydedildi. Site birkaç saniye içinde güncellenecek.");
+          if (cur.status !== "pasif") watchPublish("/baglantilar.html", started);
+          if (isNew) return go("#/yonetim/baglantilar/" + r.id);
+          base = cur; version = r.version || version;
+          if (draft) $('input[name="status"][value="pasif"]', f).checked = true;
+        }).catch(function (err) {
+          busy(b, false);
+          if (err.status === 409 && err.duplicates) return askDuplicate(err.duplicates).then(function (yes) { if (yes) send(draft, true); });
+          showFieldErrors(f, err.fields); fail(err);
+        });
+      };
+      f.addEventListener("submit", function (e) { e.preventDefault(); send(false); });
+      $("[data-draft]", f).addEventListener("click", function () { send(true); });
+      $("[data-cancel]", f).addEventListener("click", function (e) {
+        if (changedValues(base, values()) && !confirm("Kaydedilmemiş değişiklikler var. Kaydetmeden çıkılsın mı?")) e.preventDefault();
+      });
+      var d = $("[data-del]", f);
+      d && d.addEventListener("click", function () {
+        confirmBox("“" + it.name + "” geri dönüşüm kutusuna taşınacak ve sitede görünmeyecek.", "Sil", true).then(function (y) {
+          if (y) api("DELETE", "/admin/links/" + id).then(function () { undoToast("Bağlantı silindi.", [id]); go("#/yonetim/baglantilar"); }).catch(fail);
+        });
+      });
+      if (isNew) el("name").focus();
+    }).catch(fail);
+  }
+
+  function viewLinkCategories() {
+    setTitle("Bağlantı kategorileri");
+    main.innerHTML = linkHead("kategoriler", "Bağlantı kategorileri haber kategorilerinden ayrıdır. Sınırsız sayıda kategori ve alt kategori açabilirsiniz; sıra, sitedeki sırayı belirler. Bir kategori silinirken içindeki bağlantılar silinmez, seçtiğiniz kategoriye taşınır.") +
+      '<div data-c><p class="muted">Yükleniyor…</p></div>';
+    var box = $("[data-c]", main), del = can("icerik.sil");
+    var draw = function (j) {
+      var cats = j.categories, cnt = j.counts;
+      var tops = cats.filter(function (c) { return !c.parent; });
+      var have = tops.map(function (c) { return c.name.toLocaleLowerCase("tr"); });
+      var missing = j.suggested.filter(function (n) { return have.indexOf(n.toLocaleLowerCase("tr")) < 0; });
+      var sib = function (c) { return cats.filter(function (x) { return (x.parent || "") === (c.parent || ""); }); };
+      box.innerHTML = (missing.length ? '<div class="notice info"><strong>Önerilen başlangıç kategorileri:</strong> ' + missing.map(esc).join(", ") + '. <button type="button" class="btn btn-ghost btn-sm" data-suggest>Eksik olanları ekle</button></div>' : "") +
+        '<form class="form panel cat-new" novalidate><h2 style="font-size:1.1rem;margin:0">Yeni kategori</h2><div class="row2">' +
+        '<div class="field" data-field="name"><label for="lc-name">Kategori adı<span class="req" aria-hidden="true">*</span></label><input type="text" id="lc-name" name="name" maxlength="80" required><span class="err" hidden></span></div>' +
+        '<div class="field" data-field="parent"><label for="lc-parent">Üst kategori</label><select id="lc-parent" name="parent"><option value="">— Yok (üst düzey kategori) —</option>' + tops.map(function (c) { return '<option value="' + esc(c.key) + '">' + esc(c.name) + "</option>"; }).join("") + '</select><span class="err" hidden></span></div></div>' +
+        '<div class="field" data-field="description"><label for="lc-desc">Açıklama (isteğe bağlı; sitede kategori başlığının altında görünür)</label><input type="text" id="lc-desc" name="description" maxlength="300"><span class="err" hidden></span></div>' +
+        '<div class="form-actions"><button class="btn btn-primary" type="submit">Kategori ekle</button></div></form>' +
+        (cats.length ? '<div class="p-list" style="margin-top:18px">' + cats.map(function (c) {
+          var n = cnt[c.key] || { live: 0, active: 0, trash: 0 }, s = sib(c), i = s.indexOf(c), kids = cats.some(function (x) { return x.parent === c.key; });
+          return '<div class="p-item' + (c.parent ? " is-child" : "") + '"><div class="grow"><div class="t">' + (c.parent ? "└ " : "") + esc(c.name) + '</div><div class="s">' + n.live + " bağlantı" + (n.live !== n.active ? " (" + (n.live - n.active) + " pasif)" : "") +
+            (n.trash ? " · " + n.trash + " geri dönüşüm kutusunda" : "") + (c.description ? " · " + esc(c.description) : "") + '</div></div><div class="form-actions" style="padding:0">' +
+            '<button type="button" class="btn btn-ghost btn-sm" data-move="' + esc(c.key) + ':-1"' + (i === 0 ? " disabled" : "") + ' aria-label="' + esc(c.name) + ': yukarı taşı">↑</button>' +
+            '<button type="button" class="btn btn-ghost btn-sm" data-move="' + esc(c.key) + ':1"' + (i === s.length - 1 ? " disabled" : "") + ' aria-label="' + esc(c.name) + ': aşağı taşı">↓</button>' +
+            '<a class="btn btn-ghost btn-sm" href="#/yonetim/baglantilar?cat=' + encodeURIComponent(c.key) + '">Bağlantılar</a>' +
+            '<button type="button" class="btn btn-primary btn-sm" data-edit="' + esc(c.key) + '">Düzenle</button>' +
+            (del ? '<button type="button" class="btn btn-danger btn-sm" data-cdel="' + esc(c.key) + '"' + (kids ? ' disabled title="Önce alt kategorileri silin ya da taşıyın"' : "") + ">Sil</button>" : "") + "</div></div>";
+        }).join("") + "</div>" : '<div class="empty" style="margin-top:18px">Henüz bağlantı kategorisi yok.</div>');
+      var sg = $("[data-suggest]", box);
+      sg && sg.addEventListener("click", function () { busy(sg, true); api("POST", "/admin/link-categories/suggested").then(function (r) { toast(r.added.length + " kategori eklendi."); draw(r); }).catch(function (e) { busy(sg, false); fail(e); }); });
+      var nf = $(".cat-new", box);
+      nf.addEventListener("submit", function (e) {
+        e.preventDefault();
+        var b = $("button[type=submit]", nf); busy(b, true);
+        api("POST", "/admin/link-categories", { data: { name: nf.elements.name.value, parent: nf.elements.parent.value, description: nf.elements.description.value } }).then(function (r) {
+          toast("“" + r.item.name + "” kategorisi eklendi."); draw(r); $("#lc-name", box).focus();
+        }).catch(function (err) { busy(b, false); showFieldErrors(nf, err.fields); fail(err); });
+      });
+      $$("[data-move]", box).forEach(function (b) {
+        b.addEventListener("click", function () {
+          var p = b.dataset.move.split(":"), c = cats.filter(function (x) { return x.key === p[0]; })[0], s = sib(c).slice(), i = s.indexOf(c), k = i + Number(p[1]);
+          if (k < 0 || k >= s.length) return;
+          s[i] = s[k]; s[k] = c;
+          api("PUT", "/admin/link-categories/order", { items: s.map(function (x, n) { return { key: x.key, order: (n + 1) * 10 }; }) }).then(function (r) {
+            draw(r);
+            var again = $('[data-move="' + p[0] + ":" + p[1] + '"]', box);
+            if (again && !again.disabled) again.focus();
+          }).catch(fail);
+        });
+      });
+      $$("[data-edit]", box).forEach(function (b) {
+        b.addEventListener("click", function () {
+          var c = cats.filter(function (x) { return x.key === b.dataset.edit; })[0], kids = cats.some(function (x) { return x.parent === c.key; });
+          dialog('<h3>Kategoriyi düzenle</h3><form class="form" novalidate><div class="field" data-field="name"><label for="le-name">Kategori adı</label><input type="text" id="le-name" name="name" maxlength="80" value="' + esc(c.name) + '"><span class="err" hidden></span></div>' +
+            '<div class="field" data-field="parent"><label for="le-parent">Üst kategori</label><select id="le-parent" name="parent"' + (kids ? " disabled" : "") + '><option value="">— Yok (üst düzey kategori) —</option>' +
+            tops.filter(function (x) { return x.key !== c.key; }).map(function (x) { return '<option value="' + esc(x.key) + '"' + (x.key === c.parent ? " selected" : "") + ">" + esc(x.name) + "</option>"; }).join("") + "</select>" +
+            (kids ? '<span class="hint">Alt kategorileri olan bir kategori başka bir kategorinin altına taşınamaz.</span>' : '<span class="hint">Taşınan alt kategorinin bağlantıları da yeni üst kategoriye geçer.</span>') + '<span class="err" hidden></span></div>' +
+            '<div class="field" data-field="description"><label for="le-desc">Açıklama</label><input type="text" id="le-desc" name="description" maxlength="300" value="' + esc(c.description) + '"><span class="err" hidden></span></div>' +
+            '<div class="form-actions"><button class="btn btn-primary" type="submit">Kaydet</button><button class="btn btn-ghost" type="button" data-close>Vazgeç</button></div></form>', function (d) {
+            var ef = $("form", d);
+            ef.addEventListener("submit", function (e) {
+              e.preventDefault();
+              var data = { name: ef.elements.name.value, description: ef.elements.description.value };
+              if (!kids) data.parent = ef.elements.parent.value;
+              api("PUT", "/admin/link-categories/" + encodeURIComponent(c.key), { data: data }).then(function (r) { d.close(); toast("Kategori kaydedildi."); draw(r); })
+                .catch(function (err) { showFieldErrors(ef, err.fields); fail(err); });
+            });
+          });
+        });
+      });
+      $$("[data-cdel]", box).forEach(function (b) {
+        b.addEventListener("click", function () {
+          var c = cats.filter(function (x) { return x.key === b.dataset.cdel; })[0], n = cnt[c.key] || { live: 0, trash: 0 }, total = n.live + n.trash;
+          var remove = function (moveTo) {
+            api("DELETE", "/admin/link-categories/" + encodeURIComponent(c.key) + (moveTo ? "?move_to=" + encodeURIComponent(moveTo) : "")).then(function (r) {
+              toast("Kategori silindi." + (r.moved ? " " + r.moved + " bağlantı taşındı." : "")); draw(r);
+            }).catch(fail);
+          };
+          if (!total) return confirmBox("“" + c.name + "” kategorisi silinecek. Kategoride bağlantı yok.", "Sil", true).then(function (y) { if (y) remove(""); });
+          dialog('<h3>“' + esc(c.name) + '” silinsin mi?</h3><p>Bu kategoride <strong>' + total + "</strong> bağlantı var" + (n.trash ? " (" + n.trash + " tanesi geri dönüşüm kutusunda)" : "") + ". Bağlantılar silinmez; seçtiğiniz kategoriye taşınır.</p>" +
+            '<div class="field"><label for="ld-to">Bağlantıların taşınacağı kategori</label><select id="ld-to">' + (c.parent ? '<option value="' + esc(c.parent) + '">Üst kategoride bırak (alt kategorisiz)</option>' : '<option value="">Seçin…</option>') +
+            linkCatOptions(cats.filter(function (x) { return x.key !== c.parent; }), "", c.key) + '</select></div><div class="form-actions"><button class="btn btn-danger" data-ok>Taşı ve kategoriyi sil</button><button class="btn btn-ghost" data-close>Vazgeç</button></div>', function (d) {
+            $("[data-ok]", d).addEventListener("click", function () {
+              var to = $("#ld-to", d).value;
+              if (!to) return toast("Taşınacak kategoriyi seçin.", true);
+              d.close(); remove(to);
+            });
+          });
+        });
+      });
+    };
+    api("GET", "/admin/link-categories").then(draw).catch(fail);
+  }
+
+  function viewLinkBulk() {
+    setTitle("Bağlantılar: toplu işlemler");
+    main.innerHTML = linkHead("toplu", "Yüzlerce bağlantıyı CSV ya da Excel dosyasından ekleyin, bütün listeyi dışa aktarın, eski “Bağlantılar” haber kategorisindeki kayıtları rehbere taşıyın. Toplu kategori değiştirme, aktif / pasif yapma ve silme <a href=\"#/yonetim/baglantilar\">Tüm bağlantılar</a> listesinde, satırları seçerek yapılır.") +
+      '<section class="panel" style="margin-bottom:18px"><h2 style="font-size:1.15rem;margin-top:0">İçe aktar (CSV / Excel)</h2>' +
+      '<p class="muted" style="margin-top:0">İlk satır sütun başlıkları olmalı: <strong>Bağlantı adı</strong>, <strong>URL</strong>, Açıklama, Kategori, Alt kategori, Durum (Aktif / Pasif); isteğe bağlı Etiketler ve Sıra. Bulunmayan kategoriler içe aktarırken açılır. Kayıt yapılmadan önce ön izleme gösterilir. ' +
+      '<a href="/api/admin/links/import/template.csv" download>Örnek dosyayı indirin</a>.</p>' +
+      '<div class="form-actions"><label class="btn btn-primary">Dosya seç (.csv, .xlsx)<input type="file" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden data-file></label><span class="hint" data-file-status role="status" aria-live="polite"></span></div>' +
+      '<div data-preview></div></section>' +
+      '<section class="panel" style="margin-bottom:18px"><h2 style="font-size:1.15rem;margin-top:0">Dışa aktar</h2><p class="muted" style="margin-top:0">Bütün bağlantılar (pasifler dahil) kategori sırasıyla. Dışa aktarılan dosya düzenlenip yeniden içe aktarılabilir; kayıtlı adresler mükerrer olarak atlanır.</p>' +
+      '<div class="form-actions"><a class="btn btn-ghost" href="/api/admin/links/export?format=csv" download>CSV indir</a><a class="btn btn-ghost" href="/api/admin/links/export?format=xlsx" download>Excel indir</a></div></section>' +
+      '<section class="panel"><h2 style="font-size:1.15rem;margin-top:0">Eski “Bağlantılar” haber kategorisinden aktar</h2><div data-legacy><p class="muted">Yükleniyor…</p></div></section>';
+    var fileEl = $("[data-file]", main), status = $("[data-file-status]", main), pv = $("[data-preview]", main);
+    fileEl.addEventListener("change", function () {
+      var file = fileEl.files[0];
+      if (!file) return;
+      status.textContent = "Okunuyor…"; pv.innerHTML = "";
+      var fd = new FormData(); fd.append("file", file, file.name);
+      api("POST", "/admin/links/import/preview", fd).then(function (j) {
+        status.textContent = file.name; fileEl.value = "";
+        var s = j.summary, label = function (r) {
+          if (!r.ok) return '<span class="badge b-rose">Hatalı</span><div class="sub">' + esc(r.errors.join(" ")) + "</div>";
+          if (r.duplicate) return '<span class="badge b-gold">Zaten kayıtlı</span><div class="sub">#' + r.duplicate.id + " " + esc(r.duplicate.name) + "</div>";
+          return '<span class="badge b-brand">Eklenecek</span>';
+        };
+        var shown = j.rows.slice(0, 500);
+        pv.innerHTML = '<div class="notice ' + (s.invalid ? "warn" : "info") + '" style="margin-top:16px"><strong>' + s.total + " satır okundu:</strong> " + s.ok + " eklenecek, " + s.duplicates + " zaten kayıtlı, " + s.invalid + " hatalı." +
+          (s.new_categories.length ? "<br>Açılacak yeni kategoriler: " + s.new_categories.map(esc).join(", ") + "." : "") + "</div>" +
+          '<div class="p-table-wrap"><table class="p-table"><thead><tr><th>Satır</th><th>Bağlantı adı</th><th>URL</th><th>Kategori</th><th>Durum</th><th>Sonuç</th></tr></thead><tbody>' +
+          shown.map(function (r) {
+            return "<tr><td>" + r.line + "</td><td>" + esc(r.data.name) + "</td><td class=\"sub\">" + esc(r.data.url) + "</td><td>" + esc(r.data.category) + (r.data.sub ? " › " + esc(r.data.sub) : "") +
+              (r.new_category || r.new_sub ? ' <span class="badge">yeni</span>' : "") + "</td><td>" + (r.data.status === "pasif" ? "Pasif" : "Aktif") + "</td><td>" + label(r) + "</td></tr>";
+          }).join("") + "</tbody></table></div>" + (j.rows.length > shown.length ? '<p class="muted">İlk ' + shown.length + " satır gösteriliyor; hepsi içe aktarılır.</p>" : "") +
+          '<div class="form-actions" style="margin-top:14px"><label class="check"><input type="checkbox" data-skip checked> <span>Zaten kayıtlı olanları atla</span></label></div>' +
+          '<div class="form-actions"><button type="button" class="btn btn-primary" data-commit' + (s.ok + s.duplicates ? "" : " disabled") + ">Onayla ve içe aktar</button><button type=\"button\" class=\"btn btn-ghost\" data-cancel>Vazgeç</button></div><div data-report></div>";
+        var commit = $("[data-commit]", pv), skip = $("[data-skip]", pv);
+        var n = function () { return s.ok + (skip.checked ? 0 : s.duplicates); };
+        var label2 = function () { commit.textContent = n() + " kaydı onayla ve içe aktar"; commit.disabled = !n(); };
+        skip.addEventListener("change", label2); label2();
+        $("[data-cancel]", pv).addEventListener("click", function () { pv.innerHTML = ""; status.textContent = ""; });
+        commit.addEventListener("click", function () {
+          confirmBox(n() + " bağlantı eklenecek" + (s.new_categories.length ? " ve " + s.new_categories.length + " yeni kategori açılacak" : "") + ".", "İçe aktar").then(function (y) {
+            if (!y) return;
+            busy(commit, true);
+            var rows = j.rows.filter(function (r) { return r.ok; }).map(function (r) { return { line: r.line, name: r.data.name, url: r.data.url, desc: r.data.desc, category: r.data.category, sub: r.data.sub, status: r.data.status, tags: r.data.tags, order: r.data.order == null ? "" : r.data.order }; });
+            api("POST", "/admin/links/import/commit", { rows: rows, skip_duplicates: skip.checked }).then(function (r) {
+              commit.remove(); skip.closest(".form-actions").remove();
+              $("[data-report]", pv).innerHTML = '<div class="notice info" style="margin-top:14px"><strong>İçe aktarma tamamlandı:</strong> ' + r.created + " bağlantı eklendi, " + r.skipped + " atlandı, " + r.failed + " hatalı." +
+                (r.new_categories.length ? " Açılan kategoriler: " + r.new_categories.map(esc).join(", ") + "." : "") + ' <a href="#/yonetim/baglantilar?sort=new">Eklenenleri görün →</a>' +
+                (r.problems.length ? '<ul style="margin:8px 0 0">' + r.problems.slice(0, 50).map(function (p) { return "<li>" + p.line + ". satır: " + esc(p.error) + "</li>"; }).join("") + "</ul>" : "") + "</div>";
+              if (r.created) watchPublish("/baglantilar.html", Date.now() - 1000);
+            }).catch(function (e) { busy(commit, false); fail(e); });
+          });
+        });
+      }).catch(function (e) { status.textContent = ""; fileEl.value = ""; fail(e); });
+    });
+    var legacy = function (cat) {
+      var lb = $("[data-legacy]", main);
+      api("GET", "/admin/links/legacy" + (cat ? "?cat=" + encodeURIComponent(cat) : "")).then(function (j) {
+        var picker = '<div class="field" style="max-width:420px"><label for="lg-cat">Haber kategorisi</label><select id="lg-cat"><option value="">Seçin…</option>' + j.categories.map(function (c) {
+          return '<option value="' + esc(c.key) + '"' + (j.category && c.key === j.category.key ? " selected" : "") + ">" + esc(c.name) + "</option>"; }).join("") + "</select></div>";
+        if (!j.category) {
+          lb.innerHTML = '<p class="muted">Haber kategorileri arasında “Bağlantılar” adlı bir kategori bulunamadı. Bağlantı olarak açılmış haberler başka bir kategorideyse seçin.</p>' + picker;
+        } else {
+          var pending = j.items.filter(function (x) { return !x.moved_to; });
+          var catSel = function (x) {
+            return '<select data-target="' + x.id + '" aria-label="' + esc(x.title) + ': hedef kategori">' + (x.suggest_key ? "" : '<option value="new:' + esc(x.suggest) + '" selected>Yeni kategori: ' + esc(x.suggest) + "</option>") +
+              linkCatOptions(j.linkCategories, x.suggest_key) + "</select>";
+          };
+          lb.innerHTML = '<p class="muted" style="margin-top:0">“' + esc(j.category.name) + '” haber kategorisinde (alt kategorileriyle) <strong>' + j.items.length + "</strong> kayıt var. Seçtikleriniz bağlantıya dönüştürülür. <strong>Haber kayıtları silinmez</strong>; sayfaları yerinde kalır ve tekrar aktarılmasın diye “aktarıldı” olarak işaretlenir.</p>" + picker +
+            (j.items.length ? '<div class="p-table-wrap"><table class="p-table"><thead><tr><th class="sel"></th><th>Haber</th><th>Bağlantı adresi</th><th>Hedef kategori</th><th>Durum</th></tr></thead><tbody>' + j.items.map(function (x) {
+              return "<tr><td class=\"sel\">" + (x.moved_to ? "" : '<input type="checkbox" data-pick="' + x.id + '" checked aria-label="Aktar: ' + esc(x.title) + '">') + '</td><td><a href="/haber/' + x.id + '.html" target="_blank" rel="noopener">' + esc(x.title) + '</a><div class="sub">#' + x.id + " · " + esc(x.forum_name) + (x.desc ? " · " + esc(x.desc) : "") + "</div></td>" +
+                "<td>" + (x.moved_to ? '<span class="sub">' + esc(x.url) + "</span>" : '<input type="text" class="lg-url" data-url="' + x.id + '" value="' + esc(x.url) + '" aria-label="' + esc(x.title) + ': adres" placeholder="https://">') + "</td>" +
+                "<td>" + (x.moved_to ? "" : catSel(x)) + "</td><td>" + (x.moved_to ? '<span class="badge b-brand">Aktarıldı</span> <a href="#/yonetim/baglantilar/' + x.moved_to + '">#' + x.moved_to + "</a>" :
+                  x.duplicate ? '<span class="badge b-gold">Benzeri var</span><div class="sub">#' + x.duplicate.id + " " + esc(x.duplicate.name) + "</div>" : '<span class="badge">Aktarılmadı</span>') + "</td></tr>";
+            }).join("") + "</tbody></table></div>" : '<div class="empty">Bu kategoride kayıt yok.</div>') +
+            (j.category.redirect ? '<div class="notice info" style="margin-top:14px">Kategori sayfası Bağlantılar rehberine yönlendiriliyor ve menüde görünmüyor. Geri almak için: <a href="#/yonetim/kategoriler/' + encodeURIComponent(j.category.key) + '">Kategoriler ve menü</a>.</div>' :
+              j.canRedirect ? '<div class="form-actions" style="margin-top:14px"><label class="check"><input type="checkbox" data-redirect> <span>Aktarımdan sonra eski “' + esc(j.category.name) + '” kategorisini (ve alt kategorilerini) menüden kaldır, kategori sayfasını Bağlantılar rehberine yönlendir. Haberler silinmez.</span></label></div>' : "") +
+            (pending.length || (!j.category.redirect && j.canRedirect) ? '<div class="form-actions" style="margin-top:10px"><button type="button" class="btn btn-primary" data-transfer>Seçilenleri aktar</button></div>' : "") + '<div data-lg-report></div>';
+          var tb = $("[data-transfer]", lb);
+          tb && tb.addEventListener("click", function () {
+            var items = $$("[data-pick]:checked", lb).map(function (cb) { var id = cb.dataset.pick; return { id: +id, url: $('[data-url="' + id + '"]', lb).value.trim(), target: $('[data-target="' + id + '"]', lb).value }; });
+            var rd = $("[data-redirect]", lb), redirect = !!(rd && rd.checked);
+            if (!items.length && !redirect) return toast("Aktarılacak kayıt seçin.", true);
+            confirmBox((items.length ? items.length + " haber bağlantıya dönüştürülecek. Haber kayıtları silinmez." : "") + (redirect ? " Eski kategori menüden kaldırılıp sayfası Bağlantılar rehberine yönlendirilecek." : ""), "Aktar").then(function (y) {
+              if (!y) return;
+              busy(tb, true);
+              api("POST", "/admin/links/legacy", { category: j.category.key, items: items, redirect: redirect }).then(function (r) {
+                toast(r.created.length + " bağlantı oluşturuldu." + (r.redirected.length ? " Eski kategori yönlendirildi." : ""));
+                legacy(j.category.key);
+                if (r.skipped.length) setTimeout(function () { toast("Aktarılamayanlar: " + r.skipped.map(function (x) { return "#" + x.id + " " + x.error; }).join(" · "), true); }, 400);
+              }).catch(function (e) { busy(tb, false); fail(e); });
+            });
+          });
+        }
+        $("#lg-cat", lb).addEventListener("change", function (e) { if (e.target.value) legacy(e.target.value); });
+      }).catch(fail);
+    };
+    legacy("");
+  }
+
+  function viewLinkSettings() {
+    setTitle("Bağlantılar: görünüm ayarları");
+    main.innerHTML = linkHead("gorunum", "Ziyaretçi sayfasının (<a href=\"/baglantilar.html\" target=\"_blank\" rel=\"noopener\">Bağlantılar</a>) başlığı, tanıtım metni, açıklamaların görünürlüğü ve sıralaması. Kaydedince birkaç saniye içinde yayınlanır.") + '<div data-s><p class="muted">Yükleniyor…</p></div>';
+    api("GET", "/admin/links/settings").then(function (j) {
+      var g = j.group;
+      $("[data-s]", main).innerHTML = '<form class="form panel" novalidate>' + g.fields.map(function (f) { return settingField(f, j.values[f.key]); }).join("") +
+        '<p class="hint" style="margin:0">Açıklamalar kapalıyken sitede yalnızca bağlantı adları listelenir. Tek bir bağlantının açıklamasını gizlemek için bağlantının düzenleme ekranındaki seçeneği kullanın.</p>' +
+        '<div class="form-actions"><button class="btn btn-primary" type="submit">Kaydet</button><a class="btn btn-ghost" href="/baglantilar.html" target="_blank" rel="noopener">Sayfayı aç</a></div></form>';
+      var f = $("form", main);
+      f.addEventListener("submit", function (e) {
+        e.preventDefault();
+        var values = {};
+        g.fields.forEach(function (fd) { var el = f.elements[fd.key]; values[fd.key] = fd.type === "bool" ? el.checked : el.value; });
+        var b = $("button[type=submit]", f); busy(b, true);
+        var started = Date.now();
+        api("PUT", "/admin/links/settings", { values: values }).then(function (r) {
+          busy(b, false); showFieldErrors(f, {});
+          toast(r.changed.length ? "Kaydedildi. Site birkaç saniye içinde güncellenecek." : "Değişiklik yok.");
+          if (r.changed.length) watchPublish("/baglantilar.html", started);
+        }).catch(function (err) { busy(b, false); showFieldErrors(f, err.fields); fail(err); });
       });
     }).catch(fail);
   }
@@ -1736,8 +2225,18 @@
       if (path[1] === "site") return viewSite();
       if (path[1] === "yapay-zeka") return viewAiUsage(path[2]);
       if (path[1] === "icerik" && path[2] && CONTENT[path[2]] && !can(KIND_PERM[path[2]])) return viewNoAccess();
+      // Bağlantılar kendi yönetim ekranlarında (eski "icerik/link" adresleri oraya gider)
+      if (path[1] === "icerik" && path[2] === "link") return go("#/yonetim/baglantilar" + (path[3] ? "/" + path[3] : ""));
+      if (path[1] === "baglantilar") {
+        if (!can("icerik.kaynak")) return viewNoAccess();
+        if (!path[2]) return viewLinks(params);
+        if (path[2] === "kategoriler") return viewLinkCategories();
+        if (path[2] === "toplu") return viewLinkBulk();
+        if (path[2] === "gorunum") return viewLinkSettings();
+        if (path[2] === "yeni" || /^\d+$/.test(path[2])) return viewLinkEdit(path[2] === "yeni" ? "yeni" : +path[2]);
+      }
       if (path[1] === "kategoriler" && can("site.ayar")) return path[2] === "menu" ? viewMenu() : path[2] ? viewCategoryEdit(decodeURIComponent(path[2])) : viewCategories();
-      if (path[1] === "icerik" && path[2]) return path[3] ? viewContentEdit(path[2], path[3] === "yeni" ? "yeni" : +path[3]) : viewContentList(path[2], "", 0, params.kat);
+      if (path[1] === "icerik" && path[2]) return path[3] ? viewContentEdit(path[2], path[3] === "yeni" ? "yeni" : +path[3], params) : viewContentList(path[2], "", 0, params.kat);
     }
     viewNotFound();
   }

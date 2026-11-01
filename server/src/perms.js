@@ -14,7 +14,7 @@ const PERMS = {
   "icerik.work": { label: "Eser kayıtlarını ekleme ve düzenleme", group: "İçerik" },
   "icerik.topic": { label: "Haber ve etkinlikleri ekleme ve düzenleme", group: "İçerik" },
   "icerik.album": { label: "Galeri albümlerini ve fotoğrafları ekleme ve düzenleme", group: "İçerik" },
-  "icerik.kaynak": { label: "Kaynaklar sayfasındaki bağlantı ve dosyaları ekleme ve düzenleme", group: "İçerik" },
+  "icerik.kaynak": { label: "Bağlantılar rehberi (ekleme, düzenleme, kategoriler, içe / dışa aktarma) ve Kaynaklar dosyaları", group: "İçerik" },
   "icerik.sayfa": { label: "Hakkında sayfasının metinlerini düzenleme", group: "İçerik" },
   "icerik.sil": { label: "Kayıt silme ve geri dönüşüm kutusundan geri getirme", group: "İçerik" },
   "yorum.yonet": { label: "Yorumları yayınlama ve gizleme", group: "İçerik" },

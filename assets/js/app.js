@@ -786,6 +786,56 @@
     fromHash();
   }
 
+  /* ---------- Bağlantılar rehberi: ad ve açıklamada arama (Türkçe karakter ve büyük/küçük harf duyarsız), kategori süzgeci.
+     Satırlar sayfada hazırdır; süzme yalnızca gizle/göster yapar (binlerce bağlantıda da hızlı). Kategori #anahtar ile paylaşılabilir. ---------- */
+  var lkBox = $("[data-links]");
+  if (lkBox) {
+    var lkRows = $$("li[data-f]", lkBox), lkQ = $("[data-lk-q]"), lkSel = $("[data-lk-cat]"), lkInfo = $("[data-lk-info]");
+    var lkEmpty = $("[data-lk-empty]"), lkClear = $("[data-lk-clear]"), lkPicks = $$("[data-lk-pick]"), lkCat = "", lkT;
+    var lkKeys = lkPicks.map(function (b) { return b.getAttribute("data-lk-pick"); });
+    var lkApply = function () {
+      var raw = lkQ.value.trim(), words = fold(raw).split(" ").filter(Boolean), n = 0;
+      lkRows.forEach(function (li) {
+        var f = li.getAttribute("data-f");
+        var on = (!lkCat || li.getAttribute("data-c") === lkCat || li.getAttribute("data-s") === lkCat) && words.every(function (w) { return f.indexOf(w) > -1; });
+        li.hidden = !on;
+        if (on) n++;
+      });
+      // boş kalan alt kategori ve kategori bölümleri gizlenir; başlıktaki sayı görünen satırları gösterir
+      $$("[data-lk-subsec], [data-lk-sec]", lkBox).forEach(function (sec) {
+        var k = $$("li[data-f]", sec).filter(function (li) { return !li.hidden; }).length;
+        sec.hidden = !k;
+        var c = $("[data-lk-n]", sec);
+        if (c) c.textContent = k;
+      });
+      lkPicks.forEach(function (b) { b.setAttribute("aria-pressed", b.getAttribute("data-lk-pick") === lkCat); });
+      if (lkSel.value !== lkCat) lkSel.value = lkCat;
+      lkInfo.textContent = n + " bağlantı" + (raw ? " · “" + raw + "” araması" : "");
+      lkEmpty.hidden = n > 0;
+      lkClear.hidden = !raw;
+    };
+    var lkPick = function (k, push) {
+      lkCat = lkKeys.indexOf(k) > -1 ? k : "";
+      lkApply();
+      if (push) history.replaceState(null, "", lkCat ? "#" + encodeURIComponent(lkCat) : location.pathname + location.search);
+    };
+    lkQ.addEventListener("input", function () { clearTimeout(lkT); lkT = setTimeout(lkApply, 120); });
+    lkQ.addEventListener("keydown", function (e) { if (e.key === "Escape" && lkQ.value) { lkQ.value = ""; lkApply(); } });
+    lkClear.addEventListener("click", function () { lkQ.value = ""; lkApply(); lkQ.focus(); });
+    lkSel.addEventListener("change", function () { lkPick(lkSel.value, true); });
+    lkPicks.forEach(function (b) {
+      b.addEventListener("click", function () {
+        lkPick(b.getAttribute("data-lk-pick"), true);
+        var top = $(".lk-main", lkBox).getBoundingClientRect().top;
+        if (top < 0) window.scrollTo({ top: window.scrollY + top - 140, behavior: "smooth" });
+      });
+    });
+    $("[data-lk-reset]").addEventListener("click", function () { lkQ.value = ""; lkPick("", true); lkQ.focus(); });
+    var lkFromHash = function () { lkPick(decodeURIComponent(location.hash.slice(1)), false); };
+    window.addEventListener("hashchange", lkFromHash);
+    lkFromHash();
+  }
+
   /* ---------- Galeri: Fotoğraflar / Videolar sekmeleri (#fotograflar, #videolar) ---------- */
   var galTabs = $$("[data-gal-tab]");
   if (galTabs.length) {
