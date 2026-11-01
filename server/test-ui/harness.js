@@ -84,6 +84,12 @@ const PANEL = [
   { name: "panel-kayitlar", url: "/panel/#/yonetim/kayitlar" },
   { name: "panel-yapay-zeka", url: "/panel/#/yonetim/yapay-zeka" },
   { name: "panel-oneri", url: "/panel/#/oneri/topic" },
+  { name: "panel-galeri", url: "/panel/#/yonetim/icerik/album" },
+  { name: "panel-album", url: "/panel/#/yonetim/icerik/album/8037" },
+  { name: "panel-album-yeni", url: "/panel/#/yonetim/icerik/album/yeni" },
+  { name: "panel-kaynak-baglanti", url: "/panel/#/yonetim/icerik/link" },
+  { name: "panel-kaynak-dosya", url: "/panel/#/yonetim/icerik/file/1" },
+  { name: "panel-hakkinda", url: "/panel/#/yonetim/icerik/page" },
 ];
 
 // Tarayıcıda çalışan ölçüm: yatay taşma, ekran dışına taşan öğeler, küçük dokunma hedefleri ve küçük yazılar.

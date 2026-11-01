@@ -13,7 +13,9 @@
     key: svg('<circle cx="7.5" cy="15.5" r="4.5"/><path d="m21 2-9.6 9.6M15.5 7.5l3 3L22 7l-3-3"/>'),
     users: svg('<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>')
   };
-  var KIND_LABEL = { member: "Akademisyen", work: "Eser", topic: "Haber / Etkinlik", claim: "Profil sahipliği" };
+  var KIND_LABEL = { member: "Akademisyen", work: "Eser", topic: "Haber / Etkinlik", claim: "Profil sahipliği", album: "Galeri albümü", link: "Kaynak bağlantısı", file: "Kaynak dosyası" };
+  // İçerik türünü düzenleme yetkisi (sunucuda content.js KIND_PERM ile aynı)
+  var KIND_PERM = { member: "icerik.member", work: "icerik.work", topic: "icerik.topic", album: "icerik.album", link: "icerik.kaynak", file: "icerik.kaynak", page: "icerik.sayfa" };
   var STATUS_LABEL = { pending: "Onay bekliyor", approved: "Onaylandı", rejected: "Reddedildi", active: "Etkin", blocked: "Engelli", visible: "Yayında", hidden: "Gizli" };
   var STATUS_BADGE = { pending: "b-gold", approved: "b-brand", rejected: "b-rose", active: "b-brand", blocked: "b-rose", visible: "b-brand", hidden: "" };
 
@@ -124,6 +126,12 @@
         '<label class="btn btn-ghost btn-sm">Görsel seç<input type="file" accept="image/jpeg,image/png,image/webp" hidden></label>' +
         '<button type="button" class="btn btn-ghost btn-sm" data-clear' + (v ? "" : " hidden") + ">Kaldır</button></div></div>" +
         '<span class="hint">JPG, PNG ya da WEBP; en fazla 5 MB.</span>';
+    } else if (f.type === "gallery") {
+      lbl = '<span class="lbl" id="' + id + '-l">' + esc(f.label) + "</span>";
+      input = '<div class="gallery-field" data-gallery-field="' + f.key + '" role="group" aria-labelledby="' + id + '-l"><div class="gf-list"></div>' +
+        '<div class="gf-actions"><label class="btn btn-primary btn-sm">Fotoğraf ekle<input type="file" accept="image/jpeg,image/png,image/webp" multiple hidden></label>' +
+        '<span class="hint" data-gf-status role="status" aria-live="polite"></span></div></div>' +
+        '<span class="hint">Birden çok fotoğraf seçebilirsiniz (JPG, PNG, WEBP). Büyük fotoğraflar yüklenmeden önce küçültülür. Buradaki sıra galerideki sıradır.</span>';
     } else {
       var type = { url: "url", email: "email", year: "number", int: "number", date: "date" }[f.type] || "text";
       if (f.type === "date") { var m = String(v).match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/); v = m ? m[3] + "-" + ("0" + m[2]).slice(-2) + "-" + ("0" + m[1]).slice(-2) : v; }
@@ -153,11 +161,16 @@
       });
       $$("[data-editor]", container).forEach(setupEditor);
       $$("[data-image]", container).forEach(setupImage);
+      $$("[data-gallery-field]", container).forEach(function (b) { setupGallery(b, values[b.getAttribute("data-gallery-field")]); });
       return {
         values: function () {
           var out = {};
           fields.forEach(function (f) {
             if (f.type === "html") { out[f.key] = $('[data-editor="' + f.key + '"] .editor-area', container).innerHTML; return; }
+            if (f.type === "gallery") {
+              out[f.key] = $('[data-gallery-field="' + f.key + '"]', container)._photos.map(function (p) { var o = { title: p.title, src: p.src, thumb: p.thumb }; if (p.id != null) o.id = p.id; return o; });
+              return;
+            }
             var el = $('[name="' + f.key + '"]', container);
             out[f.key] = el ? el.value : "";
           });
@@ -179,8 +192,80 @@
   }
 
   function uploadImage(file) {
-    var fd = new FormData(); fd.append("file", file);
+    var fd = new FormData(); fd.append("file", file, file.name || "gorsel." + ((file.type || "").split("/")[1] || "jpg"));
     return api("POST", "/uploads", fd).then(function (j) { return j.path; });
+  }
+
+  // Büyük ya da çok yüksek çözünürlüklü fotoğraflar (telefon kamerası) tarayıcıda 2400 px'e küçültülür (WebP, desteklenmezse JPEG).
+  // Görsel data: adresiyle okunur (güvenlik politikası blob: adreslerine izin vermez); assets/js/comment-editor.js prepareImage ile aynı yöntem.
+  function shrinkImage(file) {
+    var MAX = 2400;
+    return new Promise(function (resolve) {
+      var fr = new FileReader();
+      fr.onerror = function () { resolve(file); };
+      fr.onload = function () {
+        var img = new Image();
+        img.onerror = function () { resolve(file); };
+        img.onload = function () {
+          var w = img.naturalWidth, h = img.naturalHeight, k = Math.min(1, MAX / Math.max(w, h));
+          if (k === 1 && file.size <= 2.5 * 1024 * 1024) return resolve(file);
+          var c = document.createElement("canvas");
+          c.width = Math.round(w * k); c.height = Math.round(h * k);
+          var g = c.getContext("2d");
+          g.fillStyle = "#fff"; g.fillRect(0, 0, c.width, c.height);
+          g.drawImage(img, 0, 0, c.width, c.height);
+          // boyut sınırı aşıldıysa küçültülmüş hâli; yalnızca sıkıştırma içinse daha küçük olanı
+          var done = function (b) { resolve(b && (k < 1 || b.size < file.size) ? b : file); };
+          if (!c.toBlob) return resolve(file);
+          c.toBlob(function (b) { if (b && b.type === "image/webp") return done(b); c.toBlob(done, "image/jpeg", 0.86); }, "image/webp", 0.86);
+        };
+        img.src = fr.result;
+      };
+      fr.readAsDataURL(file);
+    });
+  }
+
+  // Albüm fotoğrafları: çoklu yükleme (sırayla, ilerlemeli), açıklama, sıralama ve kaldırma. Değer box._photos dizisindedir.
+  function setupGallery(box, initial) {
+    var list = $(".gf-list", box), input = $('input[type="file"]', box), status = $("[data-gf-status]", box);
+    box._photos = (Array.isArray(initial) ? initial : []).map(function (p) { return { id: p.id, title: p.title || "", src: p.src, thumb: p.thumb || p.src }; });
+    var draw = function (focus) {
+      var n = box._photos.length;
+      list.innerHTML = n ? box._photos.map(function (p, i) {
+        return '<div class="gf-item" data-i="' + i + '"><img src="/' + esc(p.thumb) + '" alt="" loading="lazy"><span class="gf-no">' + (i + 1) + "</span>" +
+          '<input type="text" maxlength="200" placeholder="Açıklama (isteğe bağlı)" aria-label="' + (i + 1) + '. fotoğrafın açıklaması" value="' + esc(p.title) + '">' +
+          '<div class="gf-btns"><button type="button" class="btn btn-ghost btn-sm" data-m="-1" aria-label="' + (i + 1) + '. fotoğrafı öne al"' + (i ? "" : " disabled") + ">←</button>" +
+          '<button type="button" class="btn btn-ghost btn-sm" data-m="1" aria-label="' + (i + 1) + '. fotoğrafı arkaya al"' + (i < n - 1 ? "" : " disabled") + ">→</button>" +
+          '<button type="button" class="btn btn-danger btn-sm" data-x aria-label="' + (i + 1) + '. fotoğrafı kaldır">Kaldır</button></div></div>';
+      }).join("") : '<div class="empty">Henüz fotoğraf yok. Fotoğraf eklenene kadar albüm galeride görünmez.</div>';
+      if (focus) { var el = $(focus, list); if (el) el.focus(); }
+    };
+    list.addEventListener("input", function (e) {
+      var it = e.target.closest(".gf-item");
+      if (it && e.target.tagName === "INPUT") box._photos[+it.getAttribute("data-i")].title = e.target.value;
+    });
+    list.addEventListener("click", function (e) {
+      var b = e.target.closest("button"); if (!b) return;
+      var i = +b.closest(".gf-item").getAttribute("data-i");
+      if (b.hasAttribute("data-x")) { box._photos.splice(i, 1); draw(); status.textContent = "Fotoğraf kaldırıldı; kaydedince galeriden de kalkar."; return; }
+      var j = i + (+b.getAttribute("data-m")), t = box._photos[i];
+      box._photos[i] = box._photos[j]; box._photos[j] = t;
+      draw('.gf-item[data-i="' + j + '"] [data-m="' + b.getAttribute("data-m") + '"]:not([disabled])');
+    });
+    input.addEventListener("change", function () {
+      var files = [].slice.call(input.files), total = files.length, ok = 0, bad = 0;
+      input.value = "";
+      var next = function () {
+        if (!files.length) { status.textContent = (ok ? ok + " fotoğraf eklendi; kaydetmeyi unutmayın." : "") + (bad ? " " + bad + " dosya yüklenemedi (yalnızca JPG, PNG, WEBP; en fazla 5 MB)." : ""); return; }
+        var f = files.shift();
+        status.textContent = "Yükleniyor… " + (ok + bad + 1) + " / " + total;
+        if (!/^image\/(jpeg|png|webp)$/.test(f.type)) { bad++; return next(); }
+        shrinkImage(f).then(uploadImage).then(function (p) { box._photos.push({ title: "", src: p, thumb: p }); ok++; draw(); })
+          .catch(function () { bad++; }).then(next);
+      };
+      next();
+    });
+    draw();
   }
 
   // ---- video: güvenli sağlayıcı listesi (sunucudaki content.js parseVideo ile aynı kurallar)
@@ -400,7 +485,9 @@
   // Form değerlerinden yalnızca değişenleri döndürür (sunucu yalnızca bunları işler; diğer alanlar korunur).
   function changedValues(base, cur) {
     var out = {}, n = 0;
-    Object.keys(cur).forEach(function (k) { if (String(cur[k] == null ? "" : cur[k]) !== String(base[k] == null ? "" : base[k])) { out[k] = cur[k]; n++; } });
+    // diziler (albüm fotoğrafları) içerikleriyle karşılaştırılır
+    var str = function (v) { return v == null ? "" : typeof v === "object" ? JSON.stringify(v) : String(v); };
+    Object.keys(cur).forEach(function (k) { if (str(cur[k]) !== str(base[k])) { out[k] = cur[k]; n++; } });
     return n ? out : null;
   }
   // Kaydettikten sonra site üretimi bitince haber verir ve sayfaya bağlantı gösterir.
@@ -442,7 +529,7 @@
   }
   function previewButton(form, f, label) {
     var pv = $("[data-preview]", f);
-    pv && pv.addEventListener("click", function () { var v = form.values(); previewDialog(v.title || v.name || label, v.body || v.ozet || ""); });
+    pv && pv.addEventListener("click", function () { var v = form.values(); previewDialog(v.title || v.name || label, v.body || v.ozet || v.about_html || ""); });
   }
 
   function setupImage(box) {
@@ -511,6 +598,9 @@
       if (can("icerik.member")) html += link("#/yonetim/icerik/member", "Akademisyenler");
       if (can("icerik.work")) html += link("#/yonetim/icerik/work", "Eserler");
       if (can("icerik.topic")) html += link("#/yonetim/icerik/topic", "Haber ve etkinlikler");
+      if (can("icerik.album")) html += link("#/yonetim/icerik/album", "Galeri albümleri");
+      if (can("icerik.kaynak")) html += link("#/yonetim/icerik/link", "Kaynaklar: bağlantılar") + link("#/yonetim/icerik/file", "Kaynaklar: dosyalar");
+      if (can("icerik.sayfa")) html += link("#/yonetim/icerik/page", "Hakkında sayfası");
       if (can("site.ayar")) html += link("#/yonetim/kategoriler", "Kategoriler ve menü");
       if (can("icerik.sil")) html += link("#/yonetim/cop", "Geri dönüşüm kutusu");
       if (can("site.ayar") || can("ai.ayar")) html += link("#/yonetim/ayarlar", "Site ayarları");
@@ -1319,15 +1409,30 @@
     }).catch(fail);
   }
 
-  var CONTENT = { member: ["Akademisyenler", "akademisyen"], work: ["Eserler", "eser"], topic: ["Haber ve etkinlikler", "haber"] };
+  var CONTENT = { member: ["Akademisyenler", "akademisyen"], work: ["Eserler", "eser"], topic: ["Haber ve etkinlikler", "haber"],
+    album: ["Galeri albümleri", "galeri"], link: ["Kaynaklar: bağlantılar", "kaynaklar"], file: ["Kaynaklar: dosyalar", "kaynaklar"], page: ["Hakkında sayfası", "hakkinda"] };
+  var CONTENT_LEAD = {
+    album: "Albümler galeride etkinlik adına göre gruplanır. Yeni albüm açıp fotoğrafları yükleyin; kaydedince galeride yayınlanır.",
+    link: "Kaynaklar sayfasındaki önerilen siteler ve dergiler; sayfada “Bölüm” başlıkları altında listelenir.",
+    file: "Kaynaklar sayfasındaki indirilebilir dosyalar; indirme adresi verilen dosya sitede bağlantı olarak görünür."
+  };
+  // Kaydın sitedeki sayfası (Sayfaya dön / Sitede yayında bağlantısı)
+  function contentPage(kind, id) {
+    // albüm numarası = etkinlik numarası × 1000 + albüm numarası (adres: galeri/etkinlik-albüm.html)
+    if (kind === "album") return typeof id === "number" ? "/galeri/" + Math.floor(id / 1000) + "-" + (id % 1000) + ".html" : "/galeri.html";
+    if (kind === "link" || kind === "file") return "/kaynaklar.html";
+    if (kind === "page") return "/hakkinda.html";
+    return "/" + CONTENT[kind][1] + "/" + id + ".html";
+  }
 
   function viewContentList(kind, q, offset, kat) {
     if (!CONTENT[kind]) return viewNotFound();
+    if (kind === "page") return viewContentEdit("page", 1); // tek kayıt
     setTitle(CONTENT[kind][0]);
     offset = offset || 0;
     kat = kat ? decodeURIComponent(kat) : "";
     var exp = { member: "akademisyenler", work: "eserler" }[kind];
-    main.innerHTML = '<h1 class="page-title">' + CONTENT[kind][0] + '</h1><p class="page-lead">Kayıtları doğrudan düzenleyin; değişiklikler kaydedince sitede yayınlanır.' +
+    main.innerHTML = '<h1 class="page-title">' + CONTENT[kind][0] + '</h1><p class="page-lead">' + (CONTENT_LEAD[kind] ? CONTENT_LEAD[kind] : "Kayıtları doğrudan düzenleyin; değişiklikler kaydedince sitede yayınlanır.") +
       (kind === "topic" ? " Bir içeriğin nerede görüneceğini kategorisi belirler; kategorileri <a href=\"#/yonetim/kategoriler\">Kategoriler ve menü</a> ekranından yönetin." : "") + "</p>" +
       '<div class="toolbar-row"><label class="input">' + svg('<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>') + '<input type="search" placeholder="Ara…" value="' + esc(q || "") + '" aria-label="Ara"></label>' +
       (kind === "topic" ? '<select class="select" data-kat aria-label="Kategori"><option value="">Tüm kategoriler</option></select>' : "") +
@@ -1361,13 +1466,15 @@
 
   function viewContentEdit(kind, id) {
     if (!CONTENT[kind]) return viewNotFound();
-    var isNew = id === "yeni";
+    var isNew = id === "yeni", single = kind === "page";
     setTitle(isNew ? "Yeni kayıt" : "Düzenle");
-    var page = isNew ? "" : "/" + CONTENT[kind][1] + "/" + id + ".html";
-    main.innerHTML = '<p><a class="link-arrow" href="#/yonetim/icerik/' + kind + '">← ' + CONTENT[kind][0] + '</a></p><h1 class="page-title" data-h>' + (isNew ? "Yeni kayıt" : "Düzenle") + "</h1>" +
+    var page = isNew ? "" : contentPage(kind, id);
+    var hasPreview = ["member", "work", "topic", "page"].indexOf(kind) > -1;
+    main.innerHTML = (single ? "" : '<p><a class="link-arrow" href="#/yonetim/icerik/' + kind + '">← ' + CONTENT[kind][0] + "</a></p>") + '<h1 class="page-title" data-h>' + (isNew ? "Yeni kayıt" : "Düzenle") + "</h1>" +
+      (single ? '<p class="page-lead">Sık sorulan sorular “Sık sorulan sorular” kategorisindeki içeriklerden, iletişim bilgileri Site ayarları → Genel bölümünden gelir.</p>' : "") +
       '<form class="form panel" novalidate><div class="form" data-fields><p class="muted">Yükleniyor…</p></div><div class="form-actions"><button class="btn btn-primary" type="submit">Kaydet ve yayınla</button>' +
-      '<button class="btn btn-ghost" type="button" data-preview>Önizle</button>' +
-      (isNew ? "" : '<a class="btn btn-ghost" data-back href="' + page + '">Sayfaya dön</a>' + (can("icerik.sil") ? '<button class="btn btn-danger" type="button" data-del>Sil</button>' : "")) + "</div></form>";
+      (hasPreview ? '<button class="btn btn-ghost" type="button" data-preview>Önizle</button>' : "") +
+      (isNew ? "" : '<a class="btn btn-ghost" data-back href="' + page + '">Sayfaya dön</a>' + (can("icerik.sil") && !single ? '<button class="btn btn-danger" type="button" data-del>Sil</button>' : "")) + "</div></form>";
     var load = isNew ? Promise.resolve({ values: kind === "topic" ? { forum: "haber" } : kind === "member" ? { group: "Öğretim Elemanları" } : {} }) : api("GET", "/items/" + kind + "/" + id);
     load.then(function (j) {
       if (!isNew) $("[data-h]", main).textContent = j.label;
@@ -1628,7 +1735,7 @@
       if (path[1] === "yorumlar") return viewComments(path[2]);
       if (path[1] === "site") return viewSite();
       if (path[1] === "yapay-zeka") return viewAiUsage(path[2]);
-      if (path[1] === "icerik" && path[2] && CONTENT[path[2]] && !can("icerik." + path[2])) return viewNoAccess();
+      if (path[1] === "icerik" && path[2] && CONTENT[path[2]] && !can(KIND_PERM[path[2]])) return viewNoAccess();
       if (path[1] === "kategoriler" && can("site.ayar")) return path[2] === "menu" ? viewMenu() : path[2] ? viewCategoryEdit(decodeURIComponent(path[2])) : viewCategories();
       if (path[1] === "icerik" && path[2]) return path[3] ? viewContentEdit(path[2], path[3] === "yeni" ? "yeni" : +path[3]) : viewContentList(path[2], "", 0, params.kat);
     }

@@ -53,8 +53,41 @@ const SCHEMAS = {
     { key: "image", label: "Kapak görseli", type: "image" },
     { key: "body", label: "Metin", type: "html", required: true, max: 60000 },
   ],
+  // Galeri albümü: galeride "etkinlik" adına göre gruplanır; adres (galeri/cid-sid.html) ilk kayıtta verilir ve değişmez.
+  album: [
+    { key: "event", label: "Etkinlik (galeride albümler bu ada göre gruplanır)", type: "text", required: true, max: 160, get suggest() { return distinct("album", "event"); } },
+    { key: "name", label: "Albüm adı", type: "text", required: true, max: 160 },
+    { key: "photos", label: "Fotoğraflar", type: "gallery", maxItems: 500 },
+  ],
+  // Kaynaklar sayfası: önerilen siteler ve indirilebilir dosyalar
+  link: [
+    { key: "name", label: "Site / dergi adı", type: "text", required: true, max: 200 },
+    { key: "url", label: "Adres", type: "url", max: 600 },
+    { key: "category", label: "Bölüm (sayfada bu başlık altında listelenir)", type: "text", required: true, max: 80, get suggest() { return distinct("link", "category"); } },
+    { key: "sub", label: "Etiket (ör. Dergi, Tezler)", type: "text", max: 80, get suggest() { return distinct("link", "sub"); } },
+    { key: "desc", label: "Kısa açıklama", type: "text", max: 400 },
+  ],
+  file: [
+    { key: "name", label: "Dosya adı", type: "text", required: true, max: 200 },
+    { key: "url", label: "İndirme adresi (ör. Google Drive ya da kurum sitesindeki bağlantı)", type: "url", max: 600 },
+    { key: "category", label: "Tür (ör. Fontlar, Belgeler)", type: "text", max: 80, get suggest() { return distinct("file", "category"); } },
+    { key: "date", label: "Tarih", type: "date" },
+    { key: "desc", label: "Kısa açıklama", type: "text", max: 400 },
+  ],
+  // Hakkında sayfası (tek kayıt: page #1); sık sorulan sorular "sss" kategorisindeki haberlerden gelir
+  page: [
+    { key: "about_lead", label: "Sayfanın üstündeki giriş cümlesi", type: "text", max: 400 },
+    { key: "about_html", label: "Amacımız (sayfanın ana metni)", type: "html", max: 30000 },
+    { key: "policy", label: "Kullanım koşulları", type: "html", max: 30000 },
+  ],
 };
 const KINDS = Object.keys(SCHEMAS);
+// Türü düzenlemek için gereken yetki (bağlantı ve dosya tek yetki: Kaynaklar)
+const KIND_PERM = { member: "icerik.member", work: "icerik.work", topic: "icerik.topic", album: "icerik.album", link: "icerik.kaynak", file: "icerik.kaynak", page: "icerik.sayfa" };
+// Panelde öneri listesi: o türdeki kayıtlarda kullanılmış değerler
+function distinct(kind, key) {
+  return [...new Set(listItems(kind).map((it) => String(it[key] || "").trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, "tr"));
+}
 
 class ValidationError extends Error {
   constructor(fields) { super("Lütfen işaretli alanları düzeltin."); this.fields = fields; }
@@ -266,8 +299,26 @@ function normalize(kind, input, { partial = false, isAdmin = false } = {}) {
       }
       case "image": {
         v = String(v).trim().replace(/^\{ROOT\}/, "").replace(/^\//, "");
-        if (v && !/^(media|uploads)\/[\w./-]+\.(jpe?g|png|webp|gif)$/i.test(v)) { errors[f.key] = "Geçersiz görsel."; continue; }
+        if (v && !SITE_IMAGE.test(v)) { errors[f.key] = "Geçersiz görsel."; continue; }
         break;
+      }
+      // Albüm fotoğrafları: [{ title, src, thumb }] (yalnızca sitenin media/ ve uploads/ klasörlerindeki görseller)
+      case "gallery": {
+        let arr = v;
+        if (typeof arr === "string") { try { arr = JSON.parse(arr || "[]"); } catch { arr = null; } }
+        if (!Array.isArray(arr)) { errors[f.key] = "Geçersiz fotoğraf listesi."; continue; }
+        if (arr.length > f.maxItems) { errors[f.key] = `Bir albüme en fazla ${f.maxItems} fotoğraf eklenebilir.`; continue; }
+        const clean = (u) => String(u || "").trim().replace(/^\{ROOT\}/, "").replace(/^\//, "");
+        const photos = [];
+        for (const ph of arr) {
+          const src = clean(ph && ph.src), thumb = clean(ph && ph.thumb);
+          if (!SITE_IMAGE.test(src)) { photos.length = 0; errors[f.key] = "Fotoğraflardan biri geçersiz."; break; }
+          const o = { title: String(ph.title || "").replace(/[ -]/g, " ").replace(/\s+/g, " ").trim().slice(0, 200), thumb: SITE_IMAGE.test(thumb) ? thumb : src, src };
+          if (Number.isInteger(ph.id)) o.id = ph.id;
+          photos.push(o);
+        }
+        if (errors[f.key]) continue;
+        v = photos; break;
       }
       case "select": {
         v = String(v).trim();
@@ -297,6 +348,9 @@ function rankOf(title) {
   if (/^Dr\b/i.test(t)) return "Dr.";
   return t;
 }
+
+// Site klasöründeki görsel yolu ("..": üst klasöre çıkılamaz)
+const SITE_IMAGE = /^(media|uploads)\/(?!.*\.\.)[\w./-]+\.(jpe?g|png|webp|gif)$/i;
 
 // ---------------------------------------------------------------- okuma / yazma
 function getItem(kind, id) {
@@ -390,13 +444,27 @@ function applyFields(kind, existing, fields, user) {
     for (const k of ["university", "city", "bio", "photo", "web", "email"]) item[k] ??= "";
     item.hits ??= 0;
     item.added ||= trDate();
+  } else if (kind === "album") {
+    Object.assign(item, fields);
+    item.photos ??= [];
+    // Yeni albüm: aynı etkinliğin numarası (cid) ve yeni bir albüm numarası (sid); silinmiş albümler de sayılır
+    if (item.cid == null) {
+      const all = db.prepare("SELECT data FROM items WHERE kind = 'album'").all().map((r) => JSON.parse(r.data));
+      const same = all.find((a) => a.event === item.event && !(item.event == null));
+      item.cid = same ? same.cid : Math.max(0, ...all.map((a) => a.cid || 0)) + 1;
+      item.sid = Math.max(0, ...all.map((a) => a.sid || 0)) + 1;
+    }
+  } else {
+    Object.assign(item, fields); // bağlantı, dosya, Hakkında sayfası
+    for (const f of SCHEMAS[kind]) item[f.key] ??= "";
   }
   return item;
 }
 
 // createdBy yalnızca yeni kayıtta yazılır (kaydı ekleyen kişi; sahiplik kuralında kullanılır).
 function saveItem(kind, id, item, userId, createdBy = userId) {
-  if (id == null) id = nextId(kind);
+  // albüm numarası adresle (galeri/cid-sid.html) ve eski pic.asp?cid=&sid= bağlantılarıyla aynı kalır
+  if (id == null) id = kind === "album" ? item.cid * 1000 + item.sid : nextId(kind);
   item.id = id;
   db.prepare(
     `INSERT INTO items (kind, id, data, updated_at, updated_by, created_by) VALUES (?, ?, ?, strftime('%Y-%m-%d %H:%M:%f', 'now'), ?, ?)
@@ -456,6 +524,29 @@ function formValues(kind, item) {
   return v;
 }
 
+// Bağlantı adresleri ve Hakkında metni koddan veriye taşındı (panelden düzenlenebilsinler): var olan veritabanında
+// eksik olan alanlar depodaki data/links.json ve data/pages.json'dan bir kez doldurulur; dolu alana dokunulmaz.
+function fillFromSeed(seedDir) {
+  const done = [];
+  const seed = (f) => JSON.parse(fs.readFileSync(path.join(seedDir, f + ".json"), "utf8"));
+  const links = new Map(seed("links").map((l) => [l.id, l]));
+  for (const r of db.prepare("SELECT id, data FROM items WHERE kind = 'link'").all()) {
+    const it = JSON.parse(r.data), s = links.get(r.id);
+    if (it.url || !s || !s.url || s.name !== it.name) continue;
+    it.url = s.url;
+    db.prepare("UPDATE items SET data = ? WHERE kind = 'link' AND id = ?").run(JSON.stringify(it), r.id);
+    done.push("link:" + r.id);
+  }
+  const row = db.prepare("SELECT data FROM items WHERE kind = 'page' AND id = 1").get();
+  if (row) {
+    const pg = JSON.parse(row.data), s = seed("pages");
+    let changed = false;
+    for (const k of ["about_lead", "about_html"]) if (!pg[k] && s[k]) { pg[k] = s[k]; changed = true; }
+    if (changed) { db.prepare("UPDATE items SET data = ? WHERE kind = 'page' AND id = 1").run(JSON.stringify(pg)); done.push("page:1"); }
+  }
+  return done;
+}
+
 // Site üreteci (scripts/build.py) için data/*.json dosyalarını yazar.
 function exportAll(dir) {
   fs.mkdirSync(dir, { recursive: true });
@@ -479,6 +570,6 @@ function exportAll(dir) {
 }
 
 module.exports = {
-  SCHEMAS, KINDS, RANKS, GROUPS, WORK_TYPES, ValidationError, normalize, cleanHtml, htmlText, commentInput, commentHtml, COMMENT_LIMITS,
+  SCHEMAS, KINDS, KIND_PERM, fillFromSeed, RANKS, GROUPS, WORK_TYPES, ValidationError, normalize, cleanHtml, htmlText, commentInput, commentHtml, COMMENT_LIMITS,
   getItem, itemVersion, listItems, applyFields, parseVideo, videoFigure, fixEmbedCodes, splitEventForums, eventKind, saveItem, deleteItem, ownsItem, ownItems, formValues, exportAll, trDate, plain,
 };

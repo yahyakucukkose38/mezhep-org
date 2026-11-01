@@ -89,7 +89,8 @@ api.get("/items/:kind/:id", (req, res) => {
   if (!C.KINDS.includes(kind) || id == null) return A.fail(res, 404, "Bulunamadı.");
   const item = C.getItem(kind, id);
   if (!item) return A.fail(res, 404, "Bulunamadı.");
-  ok(res, { id, values: C.formValues(kind, item), label: item.name || item.title, version: C.itemVersion(kind, id) });
+  const label = kind === "album" ? `${item.event} — ${item.name}` : kind === "page" ? "Hakkında sayfası" : item.name || item.title;
+  ok(res, { id, values: C.formValues(kind, item), label, version: C.itemVersion(kind, id) });
 });
 
 // Düzenleme ekranı açıldıktan sonra kayıt başkası tarafından değiştirildiyse 409 (üzerine yazma koruması).
@@ -180,7 +181,10 @@ const upload = multer({
   fileFilter: (_req, file, cb) => cb(null, !!EXT[file.mimetype]),
 });
 
-api.post("/uploads", A.requireActive, A.rateLimit({ windowMs: 60 * 60e3, max: 60, key: (r) => "u" + r.user.id }), (req, res) => {
+// Saatlik yükleme sınırı: üyeler 60; albüme toplu fotoğraf yükleyen galeri yetkilileri 600
+const uploadLimit = A.rateLimit({ windowMs: 60 * 60e3, max: 60, key: (r) => "u" + r.user.id });
+const galleryUploadLimit = A.rateLimit({ windowMs: 60 * 60e3, max: 600, key: (r) => "ug" + r.user.id });
+api.post("/uploads", A.requireActive, (req, res, next) => (P.can(req.user, "icerik.album") ? galleryUploadLimit : uploadLimit)(req, res, next), (req, res) => {
   upload.single("file")(req, res, (err) => {
     if (err) return bad(res, err.code === "LIMIT_FILE_SIZE" ? "Dosya en fazla 5 MB olabilir." : "Dosya yüklenemedi.");
     if (!req.file) return bad(res, "Yalnızca JPG, PNG veya WEBP görsel yükleyebilirsiniz.");
@@ -711,12 +715,15 @@ admin.get("/logs", need("kayit.gor"), (req, res) => {
 });
 
 // ---- içerik
-const kindPerm = (req, res, next) => (C.KINDS.includes(req.params.kind) ? need("icerik." + req.params.kind)(req, res, next) : A.fail(res, 404, "Bulunamadı."));
+const kindPerm = (req, res, next) => (C.KINDS.includes(req.params.kind) ? need(C.KIND_PERM[req.params.kind])(req, res, next) : A.fail(res, 404, "Bulunamadı."));
 
 // cats: kategori anahtarı → ad (haber listelerinde bir kez okunur)
 function summary(kind, it, cats = CAT.topicChoices().labels) {
   if (kind === "member") return { id: it.id, title: it.name, sub: [it.title, it.university].filter(Boolean).join(" · ") };
   if (kind === "work") return { id: it.id, title: it.title, sub: [it.author, it.year, it.type].filter(Boolean).join(" · ") };
+  if (kind === "album") return { id: it.id, title: it.name, sub: [it.event, (it.photos || []).length + " fotoğraf"].join(" · ") };
+  if (kind === "link" || kind === "file") return { id: it.id, title: it.name, sub: [it.category, it.sub, it.url ? "" : "adres yok"].filter(Boolean).join(" · ") };
+  if (kind === "page") return { id: it.id, title: "Hakkında sayfası", sub: "Amacımız ve kullanım koşulları" };
   return { id: it.id, title: it.title, sub: [cats[it.forum] || it.forum, it.date].filter(Boolean).join(" · ") };
 }
 
@@ -740,6 +747,7 @@ admin.get("/items/:kind", kindPerm, (req, res) => {
 
 admin.post("/items/:kind", kindPerm, wrap((req, res) => {
   const { kind } = req.params;
+  if (kind === "page") return bad(res, "Hakkında sayfası tek kayıttır; yenisi eklenmez, düzenlenir.");
   const fields = C.normalize(kind, req.body?.data || {}, { isAdmin: true });
   const item = C.saveItem(kind, null, C.applyFields(kind, null, fields, req.user), req.user.id);
   log(req.user.id, "icerik-ekle", `${kind}:${item.id}`);
@@ -762,6 +770,7 @@ admin.put("/items/:kind/:id", kindPerm, wrap((req, res) => {
 
 admin.delete("/items/:kind/:id", need("icerik.sil"), (req, res) => {
   const { kind } = req.params, id = int(req.params.id);
+  if (kind === "page") return bad(res, "Hakkında sayfası silinemez; metinleri düzenlenebilir.");
   if (!C.KINDS.includes(kind) || !C.deleteItem(kind, id, req.user.id)) return A.fail(res, 404, "Bulunamadı.");
   log(req.user.id, "icerik-sil", `${kind}:${id}`);
   rebuild.schedule(`${kind}:${id} silindi`);
@@ -771,7 +780,7 @@ admin.delete("/items/:kind/:id", need("icerik.sil"), (req, res) => {
 // ---- geri dönüşüm kutusu
 admin.get("/trash", need("icerik.sil"), (_req, res) => {
   const rows = db.prepare(`SELECT i.kind, i.id, i.data, i.updated_at, u.name AS by_name FROM items i LEFT JOIN users u ON u.id = i.updated_by
-    WHERE i.deleted = 1 AND i.kind IN ('member', 'work', 'topic') ORDER BY i.updated_at DESC LIMIT 300`).all();
+    WHERE i.deleted = 1 AND i.kind IN ('member', 'work', 'topic', 'album', 'link', 'file') ORDER BY i.updated_at DESC LIMIT 300`).all();
   const cats = CAT.topicChoices().labels;
   ok(res, { items: rows.map((r) => ({ kind: r.kind, ...summary(r.kind, JSON.parse(r.data), cats), deleted_at: r.updated_at, by_name: r.by_name })) });
 });

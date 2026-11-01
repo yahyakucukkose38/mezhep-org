@@ -265,3 +265,66 @@ test("paylaşım çubuğu: yalnızca simge, tek satır, eş boy; fareyle bilgi b
   assert.match(await page.evaluate(() => navigator.clipboard.readText()), /\/haber\/265\.html$/);
   await ctx.close();
 });
+
+test("panel: yeni galeri albümü (çoklu yükleme, küçültme, sıralama, açıklama), Hakkında ve Kaynaklar düzenlenir", async () => {
+  const C = require("../src/content");
+  for (const [engine, vp] of [["chromium", { width: 1280, height: 800, touch: false }], ["webkit", { width: 390, height: 844, touch: true }]]) {
+    const ctx = await context(engine, vp);
+    const page = await ctx.newPage();
+    const errs = [];
+    page.on("pageerror", (e) => errs.push(e.message));
+    await open(page, "/panel/#/yonetim/icerik/album/yeni");
+    const ev = `Arayüz Deneme ${engine}`;
+    await page.locator('[name="event"]').fill(ev);
+    await page.locator('[name="name"]').fill("Açılış");
+    // biri tarayıcıda üretilmiş büyük (3200×2400) fotoğraf: yüklemeden önce küçültülür
+    const big = await page.evaluate(() => { const c = document.createElement("canvas"); c.width = 3200; c.height = 2400; const g = c.getContext("2d");
+      for (let i = 0; i < 300; i++) { g.fillStyle = `hsl(${i * 47 % 360} 60% 50%)`; g.fillRect((i * 131) % 3200, (i * 71) % 2400, 220, 160); } return c.toDataURL("image/png").split(",")[1]; });
+    const small = Buffer.from("89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d4944415478da63f8ffff3f0005fe02fea7d6a0a50000000049454e44ae426082", "hex");
+    await page.locator(".gallery-field input[type=file]").setInputFiles([{ name: "buyuk.png", mimeType: "image/png", buffer: Buffer.from(big, "base64") }, { name: "kucuk.png", mimeType: "image/png", buffer: small }]);
+    await page.locator("[data-gf-status]").filter({ hasText: "2 fotoğraf eklendi" }).waitFor({ timeout: 20000 });
+    assert.equal(await page.locator(".gf-item").count(), 2);
+    // ikinci fotoğrafı öne al, açıklama yaz
+    await page.locator('.gf-item[data-i="1"] [data-m="-1"]').click();
+    await page.locator('.gf-item[data-i="0"] input').fill("Kürsüdeki konuşmacılar");
+    const m = await page.evaluate(H.measure, vp.touch);
+    assert.equal(m.overflow, false, `${engine}: yatay taşma`);
+    await page.locator("form button[type=submit]").click();
+    await page.waitForURL(/#\/yonetim\/icerik\/album\/\d+$/);
+    const id = +page.url().split("/").pop();
+    const al = C.getItem("album", id);
+    assert.equal(al.event, ev);
+    assert.equal(al.photos.length, 2);
+    assert.equal(al.photos[0].title, "Kürsüdeki konuşmacılar");
+    assert.match(al.photos[1].src, /^uploads\/\d{4}-\d{2}\/[0-9a-f]{24}\.(webp|jpg)$/, "büyük fotoğraf küçültülerek yüklendi");
+    assert.equal(await page.locator("[data-back]").getAttribute("href"), `/galeri/${al.cid}-${al.sid}.html`);
+    // düzenleme ekranında fotoğrafı kaldırıp kaydetme
+    await page.locator(".gf-item").first().waitFor();
+    await page.locator('.gf-item[data-i="0"] [data-x]').click();
+    await page.locator("form button[type=submit]").click();
+    await page.waitForFunction((i) => fetch("/api/items/album/" + i).then((r) => r.json()).then((j) => j.values.photos.length === 1), id);
+    assert.deepEqual(errs, [], engine);
+    await ctx.close();
+  }
+  // Hakkında: mevcut metin editörde; değişiklik kaydedilir. Menüde yeni bölümler.
+  const ctx = await context("chromium", { width: 1280, height: 800, touch: false });
+  const page = await ctx.newPage();
+  await open(page, "/panel/#/yonetim/icerik/page");
+  const nav = await page.locator("nav a").allTextContents();
+  for (const t of ["Galeri albümleri", "Kaynaklar: bağlantılar", "Kaynaklar: dosyalar", "Hakkında sayfası"]) assert.ok(nav.some((x) => x.includes(t)), t);
+  const area = page.locator('[data-editor="about_html"] .editor-area');
+  assert.ok((await area.innerText()).includes("Mezhepler Tarihi"));
+  assert.equal(await page.locator("[data-del]").count(), 0, "Hakkında silinemez");
+  await page.locator('[name="about_lead"]').fill("Arayüz testinden giriş cümlesi.");
+  await page.locator("form button[type=submit]").click();
+  await page.waitForFunction(() => fetch("/api/items/page/1").then((r) => r.json()).then((j) => j.values.about_lead === "Arayüz testinden giriş cümlesi."));
+  // Kaynaklar: bağlantı adresi ekleme
+  await open(page, "/panel/#/yonetim/icerik/link/yeni");
+  await page.locator('[name="name"]').fill("Arayüz Dergisi");
+  await page.locator('[name="url"]').fill("https://ornek.org/dergi");
+  await page.locator('[name="category"]').fill("Dergiler");
+  await page.locator("form button[type=submit]").click();
+  await page.waitForURL(/#\/yonetim\/icerik\/link\/\d+$/);
+  assert.equal(C.getItem("link", +page.url().split("/").pop()).url, "https://ornek.org/dergi");
+  await ctx.close();
+});

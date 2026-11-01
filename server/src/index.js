@@ -107,6 +107,9 @@ if (require.main === module) {
   // Etkinlik bölümü üçe ayrıldı (Etkinlik / Sempozyum / Koordinasyon): mevcut kayıtlar bir kez taşınır.
   const split = require("./db").runOnce("etkinlik-kategorileri-2026-10", () => require("./content").splitEventForums());
   if (split && split.length) { log(null, "etkinlik-kategorileri", `${split.length} kayıt: ${split.join(", ")}`.slice(0, 500)); console.log(`[icerik] etkinlik kategorileri ayrıldı: ${split.length} kayıt`); }
+  // Kaynaklar bağlantı adresleri ve Hakkında metni artık veride (panelden düzenlenir): eksikler bir kez doldurulur.
+  const filled = require("./db").runOnce("sayfa-kaynak-alanlari-2026-10", () => require("./content").fillFromSeed(cfg.SEED_DIR));
+  if (filled && filled.length) { log(null, "icerik-alan-doldur", filled.join(", ")); console.log(`[icerik] eksik alanlar dolduruldu: ${filled.join(", ")}`); }
   // Kategorisi tanımlı olmayan haberler için gizli kategori açılır (hiçbir kayıt listelerden düşmez).
   const orphans = require("./categories").adoptOrphans();
   if (orphans.length) { log(null, "kategori-ekle", `tanımsız bölümler kategoriye dönüştürüldü: ${orphans.join(", ")}`); console.log(`[icerik] tanımsız kategori: ${orphans.join(", ")}`); }

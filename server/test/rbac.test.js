@@ -18,10 +18,11 @@ require("../src/rebuild").schedule = () => {};
 let base, server;
 class Client {
   constructor() { this.cookie = ""; }
-  async call(method, url, body) {
-    const h = { "x-mz": "1", "content-type": "application/json" };
+  // raw: FormData (dosya yükleme) olduğu gibi gönderilir
+  async call(method, url, body, { raw } = {}) {
+    const h = { "x-mz": "1", ...(raw ? {} : { "content-type": "application/json" }) };
     if (this.cookie) h.cookie = this.cookie;
-    const r = await fetch(base + "/api" + url, { method, headers: h, body: body === undefined ? undefined : JSON.stringify(body) });
+    const r = await fetch(base + "/api" + url, { method, headers: h, body: raw || (body === undefined ? undefined : JSON.stringify(body)) });
     const set = r.headers.get("set-cookie");
     if (set) this.cookie = set.split(";")[0];
     const text = await r.text();
@@ -281,4 +282,97 @@ test("yorum.sil yetkisi var olan Yönetici rolüne bir kez eklenir; Editör ve M
   delete require.cache[require.resolve("../src/perms")];
   require("../src/perms");
   assert.ok(!perms("yonetici").includes("yorum.sil"));
+});
+
+test("galeri, kaynaklar ve Hakkında: Editör ekler ve düzenler, silemez; diğerleri dokunamaz", async () => {
+  const P = require("../src/perms");
+  for (const p of ["icerik.album", "icerik.kaynak", "icerik.sayfa"]) {
+    assert.ok(P.permsOf("editor").includes(p) && P.permsOf("yonetici").includes(p) && P.permsOf("super").includes(p), p);
+    assert.ok(!P.permsOf("moderator").includes(p) && !P.permsOf("akademisyen").includes(p) && !P.permsOf("uye").includes(p), p);
+  }
+  for (const kind of ["album", "link", "file", "page"]) {
+    assert.equal((await U.editor.call("GET", `/admin/items/${kind}`)).status, 200, kind);
+    for (const who of ["moderator", "hoca", "uye"]) assert.equal((await U[who].call("GET", `/admin/items/${kind}`)).status, 403, `${who} ${kind}`);
+    assert.equal((await new Client().call("GET", `/admin/items/${kind}`)).status, 401);
+  }
+  // mevcut kayıtlar panelde listelenir
+  assert.equal((await U.editor.call("GET", "/admin/items/album")).body.total, C.listItems("album").length);
+  assert.equal((await U.editor.call("GET", "/admin/items/link")).body.total, 8);
+
+  // bağlantı: adres doğrulanır
+  assert.equal((await U.editor.call("POST", "/admin/items/link", { data: { name: "Kötü", url: "javascript:alert(1)", category: "Dergiler" } })).status, 400);
+  const l = await U.editor.call("POST", "/admin/items/link", { data: { name: "İLAM Araştırma Dergisi", url: "https://dergipark.org.tr/tr/pub/ilam", category: "Dergiler", sub: "Dergi", desc: "Hakemli dergi" } });
+  assert.equal(l.status, 200, l.text);
+  assert.equal(C.getItem("link", l.body.id).url, "https://dergipark.org.tr/tr/pub/ilam");
+  const f = await U.editor.call("POST", "/admin/items/file", { data: { name: "Transkripsiyon kılavuzu", url: "https://ornek.edu.tr/kilavuz.pdf", category: "Belgeler", date: "2026-10-29" } });
+  assert.equal(f.status, 200, f.text);
+  assert.equal(C.getItem("file", f.body.id).date, "29.10.2026");
+
+  // albüm: fotoğraf yolu güvenliği
+  const png = new FormData();
+  png.append("file", new Blob([Buffer.from("89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d4944415478da63f8ffff3f0005fe02fea7d6a0a50000000049454e44ae426082", "hex")], { type: "image/png" }), "a.png");
+  const up = await U.editor.call("POST", "/uploads", undefined, { raw: png });
+  assert.equal(up.status, 200, up.text);
+  for (const src of ["../../etc/passwd.jpg", "uploads/../../gizli.jpg", "https://kotu.example/x.jpg", "uploads/x.svg", "javascript:alert(1)"]) {
+    const r = await U.editor.call("POST", "/admin/items/album", { data: { event: "Deneme 2026", name: "Açılış", photos: [{ title: "x", src }] } });
+    assert.equal(r.status, 400, src);
+  }
+  // yeni etkinlik: yeni etkinlik numarası; aynı etkinlikteki ikinci albüm aynı numarayı alır; adres numaradan türer
+  const maxCid = Math.max(...C.listItems("album").map((a) => a.cid));
+  const a1 = await U.editor.call("POST", "/admin/items/album", { data: { event: "Deneme 2026", name: "Açılış", photos: [{ title: "Açılış <b>konuşması</b>", src: "/" + up.body.path }] } });
+  assert.equal(a1.status, 200, a1.text);
+  const al = C.getItem("album", a1.body.id);
+  assert.equal(al.cid, maxCid + 1);
+  assert.equal(a1.body.id, al.cid * 1000 + al.sid);
+  assert.deepEqual(al.photos, [{ title: "Açılış <b>konuşması</b>", thumb: up.body.path, src: up.body.path }]);
+  const a2 = await U.editor.call("POST", "/admin/items/album", { data: { event: "Deneme 2026", name: "Oturumlar", photos: [] } });
+  assert.equal(C.getItem("album", a2.body.id).cid, al.cid);
+  // düzenleme: fotoğraf sırası ve açıklama; adres değişmez
+  const g = await U.editor.call("GET", `/items/album/${a1.body.id}`);
+  assert.equal(g.body.label, "Deneme 2026 — Açılış");
+  const photos = [{ title: "İkinci", src: up.body.path }, { ...g.body.values.photos[0], title: "Açılış" }];
+  assert.equal((await U.editor.call("PUT", `/admin/items/album/${a1.body.id}`, { data: { photos }, version: g.body.version })).status, 200);
+  assert.deepEqual(C.getItem("album", a1.body.id).photos.map((p) => p.title), ["İkinci", "Açılış"]);
+  assert.equal(C.getItem("album", a1.body.id).cid, al.cid);
+
+  // Hakkında: tek kayıt; düzenlenir, eklenemez, silinemez
+  const pg = await U.editor.call("GET", "/items/page/1");
+  assert.ok(pg.body.values.about_html.includes("Mezhepler Tarihi"), "mevcut metin panelde görünür");
+  assert.equal((await U.editor.call("PUT", "/admin/items/page/1", { data: { about_lead: "Yeni giriş cümlesi.", about_html: "<p>Yeni <script>x</script>amaç metni.</p>" }, version: pg.body.version })).status, 200);
+  assert.equal(C.getItem("page", 1).about_html, "<p>Yeni amaç metni.</p>");
+  assert.ok(C.getItem("page", 1).policy, "kullanım koşulları korunur");
+  assert.equal((await U.super.call("POST", "/admin/items/page", { data: { about_lead: "x" } })).status, 400);
+  assert.equal((await U.super.call("DELETE", "/admin/items/page/1")).status, 400);
+
+  // silme: Editör silemez; Yönetici siler, geri dönüşüm kutusundan geri gelir
+  assert.equal((await U.editor.call("DELETE", `/admin/items/link/${l.body.id}`)).status, 403);
+  assert.equal((await U.yonetici.call("DELETE", `/admin/items/album/${a2.body.id}`)).status, 200);
+  assert.ok((await U.yonetici.call("GET", "/admin/trash")).body.items.some((x) => x.kind === "album" && x.id === a2.body.id));
+  assert.equal((await U.yonetici.call("POST", `/admin/trash/album/${a2.body.id}/restore`)).status, 200);
+  assert.ok(C.getItem("album", a2.body.id));
+
+  // site üreteci: kaydedilenler sayfalarda
+  const cfg = require("../src/config"), rebuild = require("../src/rebuild");
+  await rebuild.run();
+  assert.ok(rebuild.state.ok, rebuild.state.log);
+  const page = (p) => fs.readFileSync(path.join(cfg.SITE_DIR, p), "utf8");
+  assert.ok(page("galeri.html").includes("Deneme 2026"));
+  assert.ok(page(`galeri/${al.cid}-${al.sid}.html`).includes(up.body.path));
+  assert.ok(page("kaynaklar.html").includes('href="https://dergipark.org.tr/tr/pub/ilam"') && page("kaynaklar.html").includes('href="https://ornek.edu.tr/kilavuz.pdf"'));
+  assert.ok(page("kaynaklar.html").includes('href="https://dergipark.org.tr/tr/pub/kader"'), "taşınan eski adresler");
+  assert.ok(page("hakkinda.html").includes("Yeni giriş cümlesi.") && page("hakkinda.html").includes("Yeni amaç metni."));
+});
+
+test("bağlantı adresleri ve Hakkında metni var olan veritabanına bir kez, yalnızca boşsa doldurulur", () => {
+  const cfg = require("../src/config");
+  const k = C.listItems("link").find((x) => x.name === "KADER");
+  db.prepare("UPDATE items SET data = ? WHERE kind = 'link' AND id = ?").run(JSON.stringify({ ...k, url: "" }), k.id);
+  const pg = C.getItem("page", 1);
+  db.prepare("UPDATE items SET data = ? WHERE kind = 'page' AND id = 1").run(JSON.stringify({ ...pg, about_lead: "" }));
+  const done = C.fillFromSeed(cfg.SEED_DIR);
+  assert.ok(done.includes("link:" + k.id) && done.includes("page:1"), done.join());
+  assert.equal(C.getItem("link", k.id).url, "https://dergipark.org.tr/tr/pub/kader");
+  assert.ok(C.getItem("page", 1).about_lead.includes("Koordinasyon Sitesi"));
+  assert.equal(C.getItem("page", 1).about_html, "<p>Yeni amaç metni.</p>", "dolu alana dokunulmaz");
+  assert.deepEqual(C.fillFromSeed(cfg.SEED_DIR), [], "yapılacak iş kalmadı");
 });

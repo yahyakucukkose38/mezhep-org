@@ -1163,8 +1163,10 @@ def build_gallery():
 
 
 # ---------------------------------------------------------------- KAYNAKLAR
-KNOWN_URLS = {"e-Makalat": "https://dergipark.org.tr/tr/pub/emakalat", "KADER": "https://dergipark.org.tr/tr/pub/kader",
-              "Kelam.Org": "http://www.kelam.org", "TDV İSAM Devam Eden İlahiyat Tezleri": "https://ktp.isam.org.tr"}
+# Bağlantılar ve dosyalar panelden yönetilir (Kaynaklar: bağlantılar / dosyalar); adresi olmayan kayıt bağlantısız kart olarak görünür.
+def safe_url(u):
+    u = (u or "").strip()
+    return u if re.match(r"^https?://[^\s\"'<>]+$", u) else ""
 
 
 def build_resources():
@@ -1175,19 +1177,26 @@ def build_resources():
     for cat, ls in groups.items():
         items = ""
         for l in ls:
-            url = KNOWN_URLS.get(l["name"])
+            url = safe_url(l.get("url"))
             tag = "a" if url else "div"
             attr = ' href="%s" target="_blank" rel="noopener"' % url if url else ""
             foot = '<div class="foot"><span class="link-arrow">Siteye git %s</span></div>' % ic("ext") if url else ""
             items += f'<{tag} class="card{" hover" if url else ""}"{attr}><div class="meta"><span class="badge">{E(l["sub"])}</span></div><h3>{E(l["name"])}</h3><p>{E(l["desc"])}</p>{foot}</{tag}>'
         lk += f'<h3 style="margin:28px 0 14px">{E(cat)}</h3><div class="grid grid-3">{items}</div>'
-    fl = "".join(f'<div class="card"><span class="ic" style="width:44px;height:44px;border-radius:12px;display:grid;place-items:center;background:var(--gold-soft);color:var(--gold)">{ic("file")}</span><h3>{E(f["name"])}</h3><p>{E(f["desc"])}</p><div class="foot"><span>{E(f["category"])}</span><span>{tr_date(f["date"])}</span></div></div>' for f in files)
+    def file_card(f):
+        url = safe_url(f.get("url"))
+        tag, attr = ("a", ' href="%s" target="_blank" rel="noopener"' % E(url)) if url else ("div", "")
+        get = '<span class="link-arrow">İndir %s</span>' % ic("ext") if url else ""
+        return (f'<{tag} class="card{" hover" if url else ""}"{attr}><span class="ic" style="width:44px;height:44px;border-radius:12px;display:grid;place-items:center;background:var(--gold-soft);color:var(--gold)">{ic("file")}</span>'
+                f'<h3>{E(f["name"])}</h3><p>{E(f.get("desc", ""))}</p><div class="foot"><span>{E(f.get("category", ""))}</span><span>{tr_date(f.get("date", ""))}</span>{get}</div></{tag}>')
+    fl = "".join(file_card(f) for f in files)
+    no_url = any(not safe_url(f.get("url")) for f in files)
     # "Yayınlar" ve kaynaklar sayfasına eklenen diğer kategoriler (panel: Kategoriler → Diğer sayfalarda göster → Kaynaklar)
     blocks = "".join(h.replace("{ALT}", " alt") for h in page_blocks("kaynaklar"))
     body = page_hero("Kaynaklar", "Mezhepler tarihçisinin bilmesi gereken siteler, dergiler, yeni kitap tanıtımları ve indirilebilir araçlar.", [("index.html", "Ana Sayfa"), ("", "Kaynaklar")])
     body += f'''<section class="section"><div class="container"><div class="section-head"><div><div class="eyebrow">Bağlantılar</div><h2>Önerilen siteler ve dergiler</h2><p>“Mezhepler tarihçisi bunu görmeli!” dediğiniz siteleri bize iletin.</p></div></div>{lk}</div></section>
 {blocks}
-<section class="section"><div class="container"><div class="section-head"><div><div class="eyebrow">Araçlar</div><h2>İndirilebilir dosyalar</h2><p>Transkripsiyon yazı tipleri ve yardımcı belgeler. Dosyaların kendisi için lütfen site yöneticisiyle iletişime geçin.</p></div></div><div class="grid grid-3">{fl}</div></div></section>'''
+<section class="section"><div class="container"><div class="section-head"><div><div class="eyebrow">Araçlar</div><h2>İndirilebilir dosyalar</h2><p>Transkripsiyon yazı tipleri ve yardımcı belgeler.{" İndirme bağlantısı olmayan dosyalar için lütfen site yöneticisiyle iletişime geçin." if no_url else ""}</p></div></div><div class="grid grid-3">{fl}</div></div></section>'''
     layout("kaynaklar.html", "Kaynaklar", body, "Mezhepler tarihi kaynakları, bağlantılar ve dosyalar", "kaynaklar.html")
 
 
@@ -1195,15 +1204,12 @@ def build_resources():
 def build_about():
     sss = cat_items("sss") if "sss" in CATS else []
     faq = "".join(f'<details class="panel"><summary style="cursor:pointer;font-weight:600;font-family:var(--serif);font-size:1.1rem">{E(t["title"])}</summary><div class="prose" style="margin-top:14px">{t["posts"][0]["html"]}</div></details>' for t in sss)
-    body = page_hero("Hakkında", "www.mezhep.org, İlahiyat ve İslami İlimler Fakülteleri İslam Mezhepleri Tarihi Anabilim Dalı Koordinasyon Sitesi olarak hizmet vermektedir.", [("index.html", "Ana Sayfa"), ("", "Hakkında")], "2006'dan beri")
+    # giriş cümlesi, "Amacımız" ve kullanım koşulları panelden düzenlenir (Hakkında sayfası)
+    body = page_hero("Hakkında", pages.get("about_lead", ""), [("index.html", "Ana Sayfa"), ("", "Hakkında")], "2006'dan beri")
+    about = pages.get("about_html", "")
     body += f'''<div class="container detail">
   <div>
-    <div class="panel prose"><h2 style="margin-top:0">Amacımız</h2>
-      <p>Mezhep.Org, Türkiye'deki ilahiyat fakültelerinde İslam Mezhepleri Tarihi alanında çalışan akademisyenleri, bu alanda hazırlanan tezleri, kitapları, makaleleri ve tebliğleri tek bir çatı altında toplamak amacıyla kurulmuştur.</p>
-      <p>Sitemizin en temel amacı; <strong>Mezhepler Tarihi çalışmalarını eksiksiz ve özetleriyle birlikte derlemektir.</strong> Gelişmesi ve zenginleşmesi için İslam Mezhepleri ile ilgilenen herkesin katkılarını beklemekteyiz. Üyelerimizden, öncelikle kendi çalışmaları olmak üzere, tashih ve eklemeler bekliyoruz.</p>
-      <p>Site ayrıca bilim dalına dair güncel haberleri (yeni doktorlar, unvan ve atamalar, vefatlar), sempozyum ve koordinasyon toplantısı duyurularını ve bu etkinliklerden fotoğrafları arşivlemektedir.</p>
-      <blockquote>Saygılarımızla, Mezhep.Org adına Ahmet İshak DEMİR</blockquote>
-    </div>
+    {('<div class="panel prose"><h2 style="margin-top:0">Amacımız</h2>%s</div>' % about) if about.strip() else ""}
     <div class="bento" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr));margin-top:18px">
       <div class="tile"><span class="ic">{ic("users")}</span><div class="num" style="font-size:2.2rem">{STATS["members"]}</div><p>Akademisyen</p></div>
       <div class="tile gold"><span class="ic">{ic("book")}</span><div class="num" style="font-size:2.2rem">{STATS["works"]}</div><p>Eser</p></div>
@@ -1213,7 +1219,7 @@ def build_about():
     <h2 id="sss" style="margin:48px 0 18px">Sık sorulan sorular</h2>
     <div style="display:flex;flex-direction:column;gap:12px">{faq}</div>
     <h2 id="kosullar" style="margin:48px 0 18px">Kullanım koşulları</h2>
-    <div class="panel prose">{pages["policy"]}</div>
+    <div class="panel prose">{pages.get("policy", "")}</div>
   </div>
   <aside id="iletisim">
     <div class="panel"><h3>İletişim</h3><p style="color:var(--ink-2);margin:0 0 16px">Tashih, ekleme ve önerileriniz için site yöneticisine ulaşabilirsiniz.</p>

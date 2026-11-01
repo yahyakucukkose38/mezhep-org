@@ -13,6 +13,9 @@ const PERMS = {
   "icerik.member": { label: "Akademisyen kayıtlarını ekleme ve düzenleme", group: "İçerik" },
   "icerik.work": { label: "Eser kayıtlarını ekleme ve düzenleme", group: "İçerik" },
   "icerik.topic": { label: "Haber ve etkinlikleri ekleme ve düzenleme", group: "İçerik" },
+  "icerik.album": { label: "Galeri albümlerini ve fotoğrafları ekleme ve düzenleme", group: "İçerik" },
+  "icerik.kaynak": { label: "Kaynaklar sayfasındaki bağlantı ve dosyaları ekleme ve düzenleme", group: "İçerik" },
+  "icerik.sayfa": { label: "Hakkında sayfasının metinlerini düzenleme", group: "İçerik" },
   "icerik.sil": { label: "Kayıt silme ve geri dönüşüm kutusundan geri getirme", group: "İçerik" },
   "yorum.yonet": { label: "Yorumları yayınlama ve gizleme", group: "İçerik" },
   "yorum.sil": { label: "Yorumları silme ve geri getirme", group: "İçerik" },
@@ -34,7 +37,7 @@ const DEFAULT_ROLES = [
   { key: "super", label: "Süper Yönetici", description: "Tüm yetkiler; rolleri ve diğer yöneticileri yönetir.", perms: ["*"], system: 1 },
   { key: "yonetici", label: "Yönetici", description: "Rol yönetimi dışındaki tüm yönetim işleri.", perms: ALL.filter((p) => p !== "yetki.yonet"), system: 0 },
   { key: "editor", label: "Editör", description: "İçerik ve önerileri yönetir; üyelere dokunmaz.",
-    perms: ["onay.member", "onay.work", "onay.topic", "icerik.member", "icerik.work", "icerik.topic", "yorum.yonet", "site.yayin"], system: 0 },
+    perms: ["onay.member", "onay.work", "onay.topic", "icerik.member", "icerik.work", "icerik.topic", "icerik.album", "icerik.kaynak", "icerik.sayfa", "yorum.yonet", "site.yayin"], system: 0 },
   { key: "moderator", label: "Moderatör", description: "Üyelik başvurularını, profil taleplerini ve yorumları yönetir.",
     perms: ["uye.onay", "onay.claim", "yorum.yonet"], system: 0 },
   { key: "akademisyen", label: "Akademisyen", description: "Kendi profilini ve eserlerini onaysız günceller. Profil sahipliği onaylanan üyelere otomatik verilir.",
@@ -60,6 +63,18 @@ db.exec(`CREATE TABLE IF NOT EXISTS roles (
     const perms = y ? JSON.parse(y.perms) : null;
     if (perms && !perms.includes("*") && !perms.includes("yorum.sil")) db.prepare("UPDATE roles SET perms = ? WHERE key = 'yonetici'").run(JSON.stringify([...perms, "yorum.sil"]));
     db.prepare("INSERT INTO migrations (name) VALUES ('yorum-sil-yetkisi')").run();
+  }
+  // Galeri, Kaynaklar ve Hakkında panelden düzenlenebilir oldu: yetkileri var olan Yönetici ve Editör rollerine bir kez eklenir
+  // (silme Yönetici'deki "icerik.sil" yetkisinde kalır).
+  if (!db.prepare("SELECT 1 FROM migrations WHERE name = 'galeri-kaynak-sayfa-yetkisi'").get()) {
+    for (const key of ["yonetici", "editor"]) {
+      const r = db.prepare("SELECT perms FROM roles WHERE key = ?").get(key);
+      const perms = r ? JSON.parse(r.perms) : null;
+      if (!perms || perms.includes("*")) continue;
+      const add = ["icerik.album", "icerik.kaynak", "icerik.sayfa"].filter((p) => !perms.includes(p));
+      if (add.length) db.prepare("UPDATE roles SET perms = ? WHERE key = ?").run(JSON.stringify([...perms, ...add]), key);
+    }
+    db.prepare("INSERT INTO migrations (name) VALUES ('galeri-kaynak-sayfa-yetkisi')").run();
   }
   // Eski şema: users.role ('admin'/'member') → users.role_key
   const cols = db.prepare("PRAGMA table_info(users)").all().map((c) => c.name);

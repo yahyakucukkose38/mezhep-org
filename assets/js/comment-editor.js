@@ -48,7 +48,8 @@
           var g = c.getContext("2d");
           g.fillStyle = "#fff"; g.fillRect(0, 0, c.width, c.height); // JPEG'e düşülürse saydam alanlar siyah olmasın
           g.drawImage(img, 0, 0, c.width, c.height);
-          var done = function (b) { resolve(b && b.size < file.size ? b : file); };
+          // boyut sınırı aşıldıysa küçültülmüş hâli; yalnızca sıkıştırma içinse daha küçük olanı
+          var done = function (b) { resolve(b && (k < 1 || b.size < file.size) ? b : file); };
           if (!c.toBlob) return resolve(file);
           c.toBlob(function (b) {
             if (b && b.type === "image/webp") return done(b);
